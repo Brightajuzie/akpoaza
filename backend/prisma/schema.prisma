@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  CUSTOMER
+  HANDYMAN
+  VENDOR
+  ADMIN
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  APPLE
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentProvider {
+  STRIPE
+  PAYSTACK
+  FLUTTERWAVE
+  OPAY
+  NONE
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING_REVIEW
+  VERIFIED
+  REJECTED
+}
+
+model User {
+  id                 String             @id @default(uuid())
+  email              String             @unique
+  passwordHash       String?            // Nullable for OAuth users
+  name               String
+  role               Role               @default(CUSTOMER)
+  provider           AuthProvider       @default(LOCAL)
+  providerId         String?            // ID from Google/Apple
+  profileImage       String?
+  phone              String?
+  address            String?
+  latitude           Float?
+  longitude          Float?
+  currentLat         Float?
+  currentLng         Float?
+  specialty          String?            // Specialty of handyman (e.g. Plumbing, Electrical, General)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  bvnHash            String?
+  kycReferenceId     String?
+  kycSubmittedAt     DateTime?
+  opayPhone          String?
+  rejectionReason    String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  orders             Order[]
+  bookings           Booking[]          @relation("CustomerBookings")
+  jobs               Booking[]          @relation("HandymanJobs")
+  reviewsGiven       Review[]           @relation("ReviewAuthor")
+  reviewsReceived    Review[]           @relation("ReviewHandyman")
+  products           Product[]          @relation("VendorProducts")
+  wallet             Wallet?
+  escrows            Escrow[]           @relation("ProviderEscrows")
+}
+
+model Product {
+  id          String      @id @default(uuid())
+  name        String
+  description String
+  price       Float
+  stock       Int         @default(0)
+  imageUrl    String?
+  category    String?     // General merchandise category
+  featured    Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  vendorId    String?
+  vendor      User?       @relation("VendorProducts", fields: [vendorId], references: [id])
+
+  orderItems  OrderItem[]
+  reviews     Review[]    @relation("ReviewProduct")
+}
+
+model Order {
+  id              String          @id @default(uuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id])
+  totalAmount     Float
+  isSplitPayment  Boolean         @default(false)
+  amountPaid      Float           @default(0.0)
+  status          OrderStatus     @default(PENDING)
+  paymentProvider PaymentProvider @default(NONE)
+  paymentRef      String?         // Reference ID from Stripe/Paystack/Flutterwave
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  items           OrderItem[]
+  escrows         Escrow[]
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int     @default(1)
+  price     Float   // Price at the time of purchase
+}
+
+model Service {
+  id          String    @id @default(uuid())
+  name        String
+  description String
+  category    String
+  basePrice   Float
+  featured    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  bookings    Booking[]
+  reviews     Review[]  @relation("ReviewService")
+}
+
+model Booking {
+  id                String   @id @default(uuid())
+  customerId        String
+  customer          User     @relation("CustomerBookings", fields: [customerId], references: [id])
+  handymanId        String?
+  handyman          User?    @relation("HandymanJobs", fields: [handymanId], references: [id])
+  serviceId         String
+  service           Service  @relation(fields: [serviceId], references: [id])
+  isSplitPayment    Boolean  @default(false)
+  amountPaid        Float    @default(0.0)
+  status            String   @default("PENDING") // PENDING, ACCEPTED, COMPLETED, CANCELLED
+  scheduledAt       DateTime
+  address           String
+  latitude          Float?
+  longitude         Float?
+  handymanLatitude  Float?
+  handymanLongitude Float?
+  totalPrice        Float
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  escrows           Escrow[]
+}
+
+model Review {
+  id          String   @id @default(uuid())
+  authorId    String
+  author      User     @relation("ReviewAuthor", fields: [authorId], references: [id])
+  
+  productId   String?
+  product     Product? @relation("ReviewProduct", fields: [productId], references: [id])
+  
+  serviceId   String?
+  service     Service? @relation("ReviewService", fields: [serviceId], references: [id])
+  
+  handymanId  String?
+  handyman    User?    @relation("ReviewHandyman", fields: [handymanId], references: [id])
+
+  rating      Int      // 1 to 5
+  comment     String?
+  createdAt   DateTime @default(now())
+}
+
+model AppSetting {
+  key   String @id
+  value String
+}
+
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  body        String
+  type        String   // BOOKING | ORDER | SYSTEM
+  read        Boolean  @default(false)
+  referenceId String?
+  createdAt   DateTime @default(now())
+}
+
+model Wallet {
+  id             String        @id @default(uuid())
+  userId         String        @unique
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance        Float         @default(0.0)
+  pendingBalance Float         @default(0.0)
+  transactions   Transaction[]
+  withdrawals    Withdrawal[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  walletId    String
+  wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount      Float
+  type        String   // DEPOSIT, WITHDRAWAL, COMMISSION, REVENUE, PENDING_CLEARANCE, ESCROW_RELEASE
+  status      String   @default("COMPLETED") // PENDING, COMPLETED, FAILED
+  description String?
+  referenceId String?  // ID of booking or order or withdrawal
+  createdAt   DateTime @default(now())
+}
+
+model Escrow {
+  id               String    @id @default(uuid())
+  bookingId        String?
+  booking          Booking?  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  orderId          String?
+  order            Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  providerId       String
+  provider         User      @relation("ProviderEscrows", fields: [providerId], references: [id], onDelete: Cascade)
+  amount           Float
+  commissionAmount Float
+  providerAmount   Float
+  status           String    @default("HELD") // HELD, RELEASED, REFUNDED
+  autoReleaseAt    DateTime?
+  releasedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model Withdrawal {
+  id            String   @id @default(uuid())
+  walletId      String
+  wallet        Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  amount        Float
+  fee           Float
+  netAmount     Float
+  status        String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  payoutMethod  String   @default("BANK_TRANSFER")
+  accountNumber String?
+  bankName      String?
+  bankCode      String?
+  instant       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
