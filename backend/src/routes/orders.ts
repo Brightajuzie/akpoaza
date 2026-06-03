@@ -227,7 +227,7 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
     if (status === 'DELIVERED') {
       await prisma.escrow.updateMany({
         where: { orderId: id, status: 'HELD' },
-        data: { autoReleaseAt: new Date(Date.now() + 48 * 60 * 60 * 1000) },
+        data: { autoReleaseAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
       });
     }
 

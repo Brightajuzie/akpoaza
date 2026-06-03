@@ -251,7 +251,7 @@ describe('Escrow and Wallet Settlement Integration Tests', () => {
       expect(handymanWallet?.balance).toBe(0.0);
     });
 
-    it('should set autoReleaseAt to 48 hours in the future when handyman marks job completed', async () => {
+    it('should set autoReleaseAt to 24 hours in the future when handyman marks job completed', async () => {
       const res = await request(app)
         .patch(`/api/bookings/${bookingId}/status`)
         .set('Authorization', `Bearer ${handymanToken}`)
@@ -265,7 +265,7 @@ describe('Escrow and Wallet Settlement Integration Tests', () => {
       
       const diffMs = escrow!.autoReleaseAt!.getTime() - Date.now();
       const diffHours = diffMs / (1000 * 60 * 60);
-      expect(diffHours).toBeCloseTo(48, 1);
+      expect(diffHours).toBeCloseTo(24, 1);
     });
 
     it('should split and release funds instantly when customer confirms completion', async () => {

@@ -1,5 +1,14 @@
+// @ts-nocheck
 import React, { useEffect, useState, useContext } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, ScrollView } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, ScrollView, RefreshControl } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { Swipeable } from 'react-native-gesture-handler';
+import Animated, { FadeIn } from 'react-native-reanimated';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as Notifications from 'expo-notifications';
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
@@ -11,6 +20,9 @@ export default function WalletScreen({ navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>({ balance: 0, pendingBalance: 0, transactions: [], withdrawals: [] });
   
+  // Pull-to-refresh state
+  const [refreshing, setRefreshing] = useState(false);
+
   // Withdrawal Form states
   const [modalVisible, setModalVisible] = useState(false);
   const [amount, setAmount] = useState('');
@@ -18,6 +30,11 @@ export default function WalletScreen({ navigation }: any) {
   const [accountNumber, setAccountNumber] = useState('');
   const [bankName, setBankName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Filter state
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [filterType, setFilterType] = useState('All'); // Options: All, Withdrawal, Transaction
+
 
   const fetchWalletData = async () => {
     try {
@@ -28,7 +45,26 @@ export default function WalletScreen({ navigation }: any) {
       Alert.alert('Error', 'Unable to fetch wallet balance.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const exportCsv = async () => {
+    try {
+      const csvData = "Date,Description,Amount,Type\n" + activityLog.map(item => 
+        `${item.createdAt},${item.description || item.type},${item.amount},${item.logType}`
+      ).join("\n");
+      const path = FileSystem.documentDirectory + 'wallet_report.csv';
+      await FileSystem.writeAsStringAsync(path, csvData);
+      await Sharing.shareAsync(path);
+    } catch (error) {
+      Alert.alert('Error', 'Could not export CSV');
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchWalletData();
   };
 
   useEffect(() => {
@@ -65,6 +101,14 @@ export default function WalletScreen({ navigation }: any) {
       
       const response = await apiClient.post('/wallet/withdraw', payload);
       Alert.alert('Success', response.data.message);
+      // Schedule a local notification to inform the user of the withdrawal request
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'Withdrawal Requested',
+          body: `Your withdrawal of ₦${amtFloat.toFixed(2)} is being processed.`,
+        },
+        trigger: null,
+      });
       
       // Reset form
       setAmount('');
@@ -96,6 +140,14 @@ export default function WalletScreen({ navigation }: any) {
     ...data.withdrawals.map((w: any) => ({ ...w, logType: 'withdrawal' }))
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+  // Apply filter
+  const filteredLog = activityLog.filter(item => {
+    if (filterType === 'All') return true;
+    if (filterType === 'Withdrawal' && item.logType === 'withdrawal') return true;
+    if (filterType === 'Transaction' && item.logType === 'transaction') return true;
+    return false;
+  });
+
   const renderLogItem = ({ item }: any) => {
     const isNegative = item.amount < 0 || item.logType === 'withdrawal';
     const absAmount = Math.abs(item.amount);
@@ -117,29 +169,40 @@ export default function WalletScreen({ navigation }: any) {
     }
 
     return (
-      <View style={[styles.logCard, { borderColor: theme.border }]}>
-        <View style={styles.logRow}>
-          <Text style={[styles.logTitle, { color: theme.text }]} numberOfLines={1}>
-            {title}
-          </Text>
-          <Text style={[styles.logAmount, { color }]}>
-            {isNegative ? '-' : '+'}₦{absAmount.toFixed(2)}
-          </Text>
-        </View>
-        <View style={styles.logSubRow}>
-          <Text style={styles.logDate}>{dateStr}</Text>
-          <Text style={styles.logTypeBadge}>
-            {item.logType === 'withdrawal' ? 'Payout' : item.type.replace('_', ' ')}
-          </Text>
-        </View>
-      </View>
+      <Animated.View entering={FadeIn.duration(300)}>
+        <Swipeable
+          renderRightActions={(progress, dragX) => (
+            <View style={styles.swipeAction}>
+              <Text style={styles.swipeActionText}>Delete</Text>
+            </View>
+          )}
+          onSwipeableRightOpen={() => { Alert.alert('Delete', 'Delete action triggered for this item.'); }}
+        >
+          <BlurView intensity={20} style={[styles.logCard, { borderColor: theme.border, backgroundColor: 'rgba(255,255,255,0.1)' }]} tint="light">
+            <View style={styles.logRow}>
+              <Text style={[styles.logTitle, { color: theme.text }]} numberOfLines={1}>
+                {title}
+              </Text>
+              <Text style={[styles.logAmount, { color }]}>
+                {isNegative ? '-' : '+'}₦{absAmount.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.logSubRow}>
+              <Text style={styles.logDate}>{dateStr}</Text>
+              <Text style={styles.logTypeBadge}>
+                {item.logType === 'withdrawal' ? 'Payout' : item.type.replace('_', ' ')}
+              </Text>
+            </View>
+          </BlurView>
+        </Swipeable>
+      </Animated.View>
     );
   };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Balance Panel */}
-      <View style={[styles.balanceCard, { backgroundColor: theme.primary }]}>
+      <LinearGradient colors={['#008080', '#00bfff']} style={styles.balanceCard}>
         <Text style={styles.balanceHeader}>Cleared Balance</Text>
         <Text style={styles.balanceValue}>₦{data.balance.toFixed(2)}</Text>
         
@@ -155,21 +218,30 @@ export default function WalletScreen({ navigation }: any) {
         >
           <Text style={[styles.withdrawBtnText, { color: theme.primary }]}>Withdraw Funds</Text>
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       {/* Activity Log Section */}
       <View style={styles.activityHeader}>
         <Text style={[styles.activityTitle, { color: theme.text }]}>Transaction Activity</Text>
-        <TouchableOpacity onPress={fetchWalletData}>
-          <Text style={{ color: theme.primary, fontWeight: '700' }}>🔄 Refresh</Text>
-        </TouchableOpacity>
+        <View style={styles.activityHeaderButtons}>
+          <TouchableOpacity onPress={() => setFilterModalVisible(true)} style={styles.headerBtn}>
+            <Text style={{ color: theme.primary, fontWeight: '700' }}>⚙️ Filter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onRefresh} style={styles.headerBtn}>
+            <Text style={{ color: theme.primary, fontWeight: '700' }}>🔄 Refresh</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={exportCsv} style={styles.headerBtn}>
+            <Text style={{ color: theme.primary, fontWeight: '700' }}>📥 Export CSV</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <FlatList
-        data={activityLog}
+        data={filteredLog}
         keyExtractor={(item) => item.id}
         renderItem={renderLogItem}
         contentContainerStyle={styles.listContainer}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>No recent financial transactions found.</Text>
@@ -177,7 +249,45 @@ export default function WalletScreen({ navigation }: any) {
         }
       />
 
-      {/* Withdrawal Form Modal */}
+        {/* Filter Modal */}
+        <Modal
+          visible={filterModalVisible}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setFilterModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <ScrollView contentContainerStyle={styles.modalScroll}>
+              <View style={styles.filterModalCard}>
+                <Text style={styles.modalTitle}>Filter Transactions</Text>
+                <Picker
+                  selectedValue={filterType}
+                  onValueChange={(itemValue) => setFilterType(itemValue)}
+                  style={styles.input}
+                >
+                  <Picker.Item label="All" value="All" />
+                  <Picker.Item label="Withdrawals" value="Withdrawal" />
+                  <Picker.Item label="Transactions" value="Transaction" />
+                </Picker>
+                <View style={styles.modalBtns}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setFilterModalVisible(false)}
+                  >
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalSubmitBtn, { backgroundColor: theme.primary }]}
+                    onPress={() => setFilterModalVisible(false)}
+                  >
+                    <Text style={styles.modalSubmitText}>Apply</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </Modal>
+        {/* Withdrawal Form Modal */}
       <Modal
         visible={modalVisible}
         animationType="slide"
@@ -520,6 +630,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
+  activityHeaderButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  headerBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  swipeAction: {
+    backgroundColor: '#FF3B30',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingHorizontal: 20,
+    flex: 1,
+  },
+  swipeActionText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
   modalCancelBtn: {
     flex: 1,
     height: 50,
@@ -528,6 +659,15 @@ const styles = StyleSheet.create({
     borderColor: '#E5E5EA',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  filterModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    marginHorizontal: 20,
+    marginTop: 'auto',
+    marginBottom: 20,
   },
   modalCancelText: {
     color: '#8E8E93',

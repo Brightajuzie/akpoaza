@@ -337,7 +337,7 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
     } else if (status === 'COMPLETED' && updatedBooking.customerId) {
       await prisma.escrow.updateMany({
         where: { bookingId: id, status: 'HELD' },
-        data: { autoReleaseAt: new Date(Date.now() + 48 * 60 * 60 * 1000) },
+        data: { autoReleaseAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
       });
       await createNotification(
         prisma,

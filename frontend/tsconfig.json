@@ -5,6 +5,10 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"]
-    }
+    },
+
+    "skipLibCheck": true,
+    "jsx": "react-native",
+    "types": ["react-native"]
   }
 }
