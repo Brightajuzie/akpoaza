@@ -35,7 +35,7 @@ function getOrCreateWallet(userId) {
         return wallet;
     });
 }
-function createEscrowForPaidItem(checkoutType, id) {
+function createEscrowForPaidItem(checkoutType, id, paidAmount) {
     return __awaiter(this, void 0, void 0, function* () {
         const setting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'commission_rate' } });
         const commissionRate = setting ? parseFloat(setting.value) : 0.15;
@@ -51,19 +51,25 @@ function createEscrowForPaidItem(checkoutType, id) {
                 if (!booking.handymanId) {
                     throw new Error('Booking has no handyman assigned');
                 }
-                const existing = yield tx.escrow.findFirst({
+                const existingEscrows = yield tx.escrow.findMany({
                     where: { bookingId: id },
                 });
-                if (existing)
-                    return existing;
-                const totalAmount = booking.totalPrice;
-                const commissionAmount = totalAmount * commissionRate;
-                const providerAmount = totalAmount - commissionAmount;
+                const totalEscrowed = existingEscrows.reduce((sum, e) => sum + e.amount, 0);
+                // Determine transaction amount
+                let transactionAmount = paidAmount;
+                if (transactionAmount === undefined) {
+                    transactionAmount = booking.isSplitPayment ? booking.totalPrice / 2 : booking.totalPrice;
+                }
+                if (totalEscrowed >= booking.totalPrice) {
+                    return existingEscrows[existingEscrows.length - 1];
+                }
+                const commissionAmount = transactionAmount * commissionRate;
+                const providerAmount = transactionAmount - commissionAmount;
                 const escrow = yield tx.escrow.create({
                     data: {
                         bookingId: id,
                         providerId: booking.handymanId,
-                        amount: totalAmount,
+                        amount: transactionAmount,
                         commissionAmount,
                         providerAmount,
                         status: 'HELD',
@@ -82,6 +88,15 @@ function createEscrowForPaidItem(checkoutType, id) {
                         pendingBalance: providerAmount,
                     },
                 });
+                // Increment amountPaid on booking
+                yield tx.booking.update({
+                    where: { id },
+                    data: {
+                        amountPaid: {
+                            increment: transactionAmount,
+                        },
+                    },
+                });
                 const walletRecord = yield tx.wallet.findUnique({ where: { userId: booking.handymanId } });
                 if (walletRecord) {
                     yield tx.transaction.create({
@@ -90,7 +105,7 @@ function createEscrowForPaidItem(checkoutType, id) {
                             amount: providerAmount,
                             type: 'PENDING_CLEARANCE',
                             status: 'COMPLETED',
-                            description: `Pending clearance for booking #${id.substring(0, 8)} (${booking.service.name})`,
+                            description: `Pending clearance for booking #${id.substring(0, 8)} (${booking.service.name}) - payment ₦${transactionAmount.toFixed(2)}`,
                             referenceId: id,
                         },
                     });
@@ -111,6 +126,17 @@ function createEscrowForPaidItem(checkoutType, id) {
                 if (!order) {
                     throw new Error('Order not found');
                 }
+                const existingEscrows = yield tx.escrow.findMany({
+                    where: { orderId: id },
+                });
+                const totalEscrowed = existingEscrows.reduce((sum, e) => sum + e.amount, 0);
+                let transactionAmount = paidAmount;
+                if (transactionAmount === undefined) {
+                    transactionAmount = order.isSplitPayment ? order.totalAmount / 2 : order.totalAmount;
+                }
+                if (totalEscrowed >= order.totalAmount) {
+                    return existingEscrows;
+                }
                 const vendorItemsMap = new Map();
                 for (const item of order.items) {
                     const vendorId = item.product.vendorId;
@@ -123,21 +149,17 @@ function createEscrowForPaidItem(checkoutType, id) {
                 }
                 const escrows = [];
                 for (const [vendorId, items] of vendorItemsMap.entries()) {
-                    const existing = yield tx.escrow.findFirst({
-                        where: { orderId: id, providerId: vendorId },
-                    });
-                    if (existing) {
-                        escrows.push(existing);
-                        continue;
-                    }
                     const vendorSubtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-                    const commissionAmount = vendorSubtotal * commissionRate;
-                    const providerAmount = vendorSubtotal - commissionAmount;
+                    // Calculate fraction of this vendor's subtotal relative to order total
+                    const fraction = vendorSubtotal / order.totalAmount;
+                    const vendorAmountPaidThisTime = transactionAmount * fraction;
+                    const commissionAmount = vendorAmountPaidThisTime * commissionRate;
+                    const providerAmount = vendorAmountPaidThisTime - commissionAmount;
                     const escrow = yield tx.escrow.create({
                         data: {
                             orderId: id,
                             providerId: vendorId,
-                            amount: vendorSubtotal,
+                            amount: vendorAmountPaidThisTime,
                             commissionAmount,
                             providerAmount,
                             status: 'HELD',
@@ -164,13 +186,22 @@ function createEscrowForPaidItem(checkoutType, id) {
                                 amount: providerAmount,
                                 type: 'PENDING_CLEARANCE',
                                 status: 'COMPLETED',
-                                description: `Pending clearance for order #${id.substring(0, 8)}`,
+                                description: `Pending clearance for order #${id.substring(0, 8)} - payment ₦${vendorAmountPaidThisTime.toFixed(2)}`,
                                 referenceId: id,
                             },
                         });
                     }
                     escrows.push(escrow);
                 }
+                // Update order amountPaid
+                yield tx.order.update({
+                    where: { id },
+                    data: {
+                        amountPaid: {
+                            increment: transactionAmount,
+                        },
+                    },
+                });
                 return escrows;
             }
         }));

@@ -22,9 +22,12 @@ import KYCStatusScreen from '../screens/KYCStatusScreen';
 import LiveTrackingScreen from '../screens/LiveTrackingScreen';
 import VideoCallScreen from '../screens/VideoCallScreen';
 import WalletScreen from '../screens/WalletScreen';
+import BookParcelScreen from '../screens/BookParcelScreen';
+import OnboardingScreen from '../screens/OnboardingScreen';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
+import * as SecureStore from 'expo-secure-store';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -130,14 +133,36 @@ const navStyles = StyleSheet.create({
 
 export default function AppNavigator() {
   const { isLoading } = React.useContext(AuthContext);
+  const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
 
-  if (isLoading) {
+  useEffect(() => {
+    async function checkOnboarding() {
+      try {
+        const hasSeen = await SecureStore.getItemAsync('hasSeenOnboarding');
+        if (hasSeen === 'true') {
+          setIsFirstLaunch(false);
+        } else {
+          setIsFirstLaunch(true);
+        }
+      } catch (error) {
+        setIsFirstLaunch(true);
+      }
+    }
+    checkOnboarding();
+  }, []);
+
+  if (isLoading || isFirstLaunch === null) {
     return null; // Or a loading spinner
   }
 
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Main">
+      <Stack.Navigator initialRouteName={isFirstLaunch ? 'Onboarding' : 'Main'}>
+        <Stack.Screen 
+          name="Onboarding" 
+          component={OnboardingScreen} 
+          options={{ headerShown: false }}
+        />
         <Stack.Screen 
           name="Main" 
           component={MainTabs} 
@@ -212,6 +237,11 @@ export default function AppNavigator() {
           name="Wallet" 
           component={WalletScreen} 
           options={{ title: 'Virtual Wallet' }} 
+        />
+        <Stack.Screen 
+          name="BookParcel" 
+          component={BookParcelScreen} 
+          options={{ title: '🚚 Book Delivery Rider', headerBackTitle: 'Home' }} 
         />
       </Stack.Navigator>
     </NavigationContainer>

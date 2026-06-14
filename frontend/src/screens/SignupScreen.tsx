@@ -29,16 +29,18 @@ export default function SignupScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(false);
 
   // Step 1: Account setup
-  const [role, setRole] = useState('CUSTOMER'); // CUSTOMER, HANDYMAN, VENDOR
+  const [role, setRole] = useState('CUSTOMER'); // CUSTOMER, HANDYMAN, VENDOR, RIDER
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isOpaySignup, setIsOpaySignup] = useState(false);
   const [opayPhone, setOpayPhone] = useState('');
 
-  // Step 2: Professional Details (Handyman/Vendor)
+  // Step 2: Professional Details (Handyman/Vendor/Rider)
   const [specialty, setSpecialty] = useState('Plumbing');
   const [address, setAddress] = useState('');
+  const [vehicleType, setVehicleType] = useState('MOTORCYCLE'); // BICYCLE, MOTORCYCLE, CAR
+  const [licensePlate, setLicensePlate] = useState('');
   
   // Step 3: Identity Selection (BVN or NIN)
   const [identityType, setIdentityType] = useState<'BVN' | 'NIN'>('BVN');
@@ -169,10 +171,14 @@ export default function SignupScreen({ route, navigation }: any) {
     }
   };
 
-  // Perform background register for Handyman/Vendor, acquiring the JWT token
+  // Perform background register for Handyman/Vendor/Rider, acquiring the JWT token
   const handleVerifyProfessionAndRegister = async () => {
     if (!address.trim()) {
       Alert.alert('Address Required', 'Please enter your work/store address.');
+      return;
+    }
+    if (role === 'RIDER' && !licensePlate.trim()) {
+      Alert.alert('License Plate Required', 'Please enter your license plate number.');
       return;
     }
 
@@ -195,6 +201,8 @@ export default function SignupScreen({ route, navigation }: any) {
         address,
         latitude,
         longitude,
+        vehicleType: role === 'RIDER' ? vehicleType : null,
+        licensePlate: role === 'RIDER' ? licensePlate : null,
       });
 
       // Login the user to secure local auth header defaults
@@ -420,6 +428,16 @@ export default function SignupScreen({ route, navigation }: any) {
               >
                 <Text style={[styles.roleButtonText, role === 'VENDOR' && { color: OPAY_GREEN }]}>Vendor</Text>
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.roleButton,
+                  role === 'RIDER' && { backgroundColor: OPAY_GREEN + '15', borderColor: OPAY_GREEN }
+                ]}
+                onPress={() => setRole('RIDER')}
+              >
+                <Text style={[styles.roleButtonText, role === 'RIDER' && { color: OPAY_GREEN }]}>Rider</Text>
+              </TouchableOpacity>
             </View>
 
             {role !== 'CUSTOMER' && (
@@ -518,6 +536,46 @@ export default function SignupScreen({ route, navigation }: any) {
                       </TouchableOpacity>
                     );
                   })}
+                </View>
+              </View>
+            )}
+
+            {role === 'RIDER' && (
+              <View>
+                <View style={styles.fieldSection}>
+                  <Text style={styles.fieldLabel}>Select Vehicle Type</Text>
+                  <View style={styles.specialtyRow}>
+                    {['BICYCLE', 'MOTORCYCLE', 'CAR'].map(typeOpt => {
+                      const isActive = vehicleType === typeOpt;
+                      const emoji = typeOpt === 'BICYCLE' ? '🚲' : typeOpt === 'MOTORCYCLE' ? '🏍️' : '🚗';
+                      return (
+                        <TouchableOpacity
+                          key={typeOpt}
+                          style={[
+                            styles.specPill,
+                            isActive && { backgroundColor: OPAY_GREEN, borderColor: OPAY_GREEN }
+                          ]}
+                          onPress={() => setVehicleType(typeOpt)}
+                        >
+                          <Text style={[styles.specText, isActive && { color: '#FFF' }]}>
+                            {emoji} {typeOpt.charAt(0) + typeOpt.slice(1).toLowerCase()}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={styles.fieldSection}>
+                  <Text style={styles.fieldLabel}>License Plate Number</Text>
+                  <TextInput
+                    style={[styles.input, { borderColor: theme.border }]}
+                    placeholder="e.g. ABC-123-XYZ"
+                    value={licensePlate}
+                    onChangeText={setLicensePlate}
+                    placeholderTextColor="#8E8E93"
+                    autoCapitalize="characters"
+                  />
                 </View>
               </View>
             )}
@@ -754,6 +812,18 @@ export default function SignupScreen({ route, navigation }: any) {
                   <Text style={styles.summaryLabel}>Specialty</Text>
                   <Text style={styles.summaryValue}>{specialty}</Text>
                 </View>
+              )}
+              {role === 'RIDER' && (
+                <>
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryLabel}>Vehicle Type</Text>
+                    <Text style={styles.summaryValue}>{vehicleType}</Text>
+                  </View>
+                  <View style={styles.summaryItem}>
+                    <Text style={styles.summaryLabel}>License Plate</Text>
+                    <Text style={styles.summaryValue}>{licensePlate}</Text>
+                  </View>
+                </>
               )}
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryLabel}>Address</Text>

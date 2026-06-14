@@ -22,6 +22,7 @@ import userRoutes from './routes/users';
 import kycRoutes from './routes/kyc';
 import uploadRoutes from './routes/upload';
 import walletRoutes from './routes/wallet';
+import parcelsRoutes from './routes/parcels';
 import { errorHandler } from './middleware/errorHandler';
 import prisma from './lib/prisma';
 import { triggerSplitWebhook } from './lib/wallet';
@@ -63,6 +64,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/parcels', parcelsRoutes);
 
 // Centralized Error Handler
 app.use(errorHandler);
@@ -83,6 +85,21 @@ if (process.env.NODE_ENV !== 'test') {
 
     socket.on('update_location', (data) => {
       socket.to(`booking_${data.bookingId}`).emit('location_update', {
+        role: data.role,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        timestamp: Date.now()
+      });
+    });
+
+    socket.on('join_order', (orderId) => {
+      socket.join(`order_${orderId}`);
+      console.log(`Socket ${socket.id} joined order_${orderId}`);
+    });
+
+    socket.on('update_order_location', (data) => {
+      socket.to(`order_${data.orderId}`).emit('order_location_update', {
+        role: data.role,
         latitude: data.latitude,
         longitude: data.longitude,
         timestamp: Date.now()
@@ -93,6 +110,34 @@ if (process.env.NODE_ENV !== 'test') {
       console.log('Socket disconnected:', socket.id);
     });
   });
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n[ERROR] Port ${PORT} is already in use.`);
+      console.error(`[FIX]   Run: npx kill-port ${PORT}   (or change PORT in your .env)\n`);
+      process.exit(1);
+    } else {
+      throw err;
+    }
+  });
+
+  // Graceful shutdown — nodemon sends SIGTERM on file-change restarts.
+  // Closing the server here ensures the port is released before the new
+  // process tries to bind, preventing the EADDRINUSE crash loop.
+  const shutdown = async (signal: string) => {
+    console.log(`\n[${signal}] Graceful shutdown — closing server...`);
+    server.closeAllConnections?.();
+    server.close(async () => {
+      await prisma.$disconnect();
+      console.log('[Shutdown] Server closed. Port released.');
+      process.exit(0);
+    });
+    // Force-exit after 3 s if connections hang
+    setTimeout(() => process.exit(0), 3000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
 
   server.listen(PORT, () => {
     console.log(`Server with Socket.IO is running on port ${PORT}`);

@@ -366,6 +366,66 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
 
 // (Admin: Get ALL bookings is now declared near the top of this file, before dynamic /:id routes.)
 
+// Admin forcefully cancels a booking
+router.patch('/:id/admin-cancel', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const role = req.user?.role;
+  if (role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
+
+  try {
+    const updatedBooking = await prisma.booking.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
+      include: { customer: true, handyman: true, service: true },
+    });
+
+    if (updatedBooking.customerId) {
+      await createNotification(prisma, updatedBooking.customerId, '❌ Booking Cancelled by Admin', `Your booking for "${updatedBooking.service?.name}" was cancelled by the administrator.`, 'BOOKING', id).catch(() => {});
+    }
+    if (updatedBooking.handymanId) {
+      await createNotification(prisma, updatedBooking.handymanId, '❌ Job Cancelled by Admin', `The job for "${updatedBooking.service?.name}" was cancelled by the administrator.`, 'JOB', id).catch(() => {});
+    }
+
+    res.json(updatedBooking);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Admin forcefully reassigns a booking
+router.patch('/:id/admin-reassign', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { newHandymanId } = req.body;
+  const role = req.user?.role;
+
+  if (role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
+  if (!newHandymanId) return res.status(400).json({ error: 'newHandymanId is required' });
+
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id } });
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    const oldHandymanId = booking.handymanId;
+
+    const updatedBooking = await prisma.booking.update({
+      where: { id },
+      data: { handymanId: newHandymanId, status: 'ACCEPTED' },
+      include: { customer: true, handyman: true, service: true },
+    });
+
+    if (updatedBooking.customerId) {
+      await createNotification(prisma, updatedBooking.customerId, '🔄 Handyman Reassigned', `Your booking for "${updatedBooking.service?.name}" has been assigned to a new professional.`, 'BOOKING', id).catch(() => {});
+    }
+    if (oldHandymanId) {
+      await createNotification(prisma, oldHandymanId, '🔄 Job Reassigned', `You have been unassigned from the job "${updatedBooking.service?.name}" by an administrator.`, 'JOB', id).catch(() => {});
+    }
+    await createNotification(prisma, newHandymanId, '💼 New Job Assigned (Admin)', `An admin assigned you to a new job: "${updatedBooking.service?.name}".`, 'JOB', id).catch(() => {});
+
+    res.json(updatedBooking);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Customer confirms job completed (releases escrow)
 router.post('/:id/confirm-completion', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const { id } = req.params;

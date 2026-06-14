@@ -31,7 +31,7 @@ const FLUTTERWAVE_BASE_URL = 'https://api.flutterwave.com/v3';
 // Create a checkout session/intent based on the payment provider
 router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
-    const { checkoutType, id, provider } = req.body;
+    const { checkoutType, id, provider, isSplit } = req.body;
     if (!checkoutType || !id || !provider) {
         return res.status(400).json({ error: 'checkoutType, id, and provider are required' });
     }
@@ -39,6 +39,7 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
         let totalAmount = 0;
         let userEmail = '';
         let userName = '';
+        let isSplitPaymentChosen = !!isSplit;
         if (checkoutType === 'order') {
             const order = yield prisma_1.default.order.findUnique({
                 where: { id },
@@ -46,9 +47,20 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
             });
             if (!order)
                 return res.status(404).json({ error: 'Order not found' });
-            totalAmount = order.totalAmount;
-            userEmail = order.user.email;
-            userName = order.user.name;
+            // Update isSplitPayment status on Order — preserve existing true flag
+            const updatedOrder = yield prisma_1.default.order.update({
+                where: { id },
+                data: { isSplitPayment: order.isSplitPayment || isSplitPaymentChosen },
+                include: { user: true },
+            });
+            userEmail = updatedOrder.user.email;
+            userName = updatedOrder.user.name;
+            if (updatedOrder.amountPaid > 0) {
+                totalAmount = updatedOrder.totalAmount - updatedOrder.amountPaid;
+            }
+            else {
+                totalAmount = updatedOrder.isSplitPayment ? updatedOrder.totalAmount / 2 : updatedOrder.totalAmount;
+            }
         }
         else if (checkoutType === 'booking') {
             const booking = yield prisma_1.default.booking.findUnique({
@@ -57,9 +69,20 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
             });
             if (!booking)
                 return res.status(404).json({ error: 'Booking not found' });
-            totalAmount = booking.totalPrice;
-            userEmail = booking.customer.email;
-            userName = booking.customer.name;
+            // Update isSplitPayment status on Booking — preserve existing true flag
+            const updatedBooking = yield prisma_1.default.booking.update({
+                where: { id },
+                data: { isSplitPayment: booking.isSplitPayment || isSplitPaymentChosen },
+                include: { customer: true },
+            });
+            userEmail = updatedBooking.customer.email;
+            userName = updatedBooking.customer.name;
+            if (updatedBooking.amountPaid > 0) {
+                totalAmount = updatedBooking.totalPrice - updatedBooking.amountPaid;
+            }
+            else {
+                totalAmount = updatedBooking.isSplitPayment ? updatedBooking.totalPrice / 2 : updatedBooking.totalPrice;
+            }
         }
         else {
             return res.status(400).json({ error: 'Invalid checkoutType' });
@@ -155,7 +178,7 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
                 const host = req.get('host') || 'localhost:5000';
                 return res.json({
                     provider: 'OPAY',
-                    authorizationUrl: `http://${host}/api/payments/opay/mock-pay?reference=${reference}&amount=${totalAmount}`,
+                    authorizationUrl: `http://${host}/api/payments/opay/mock-pay?reference=${reference}&amount=${totalAmount.toFixed(2)}`,
                     reference,
                 });
             }
@@ -197,7 +220,7 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
                 const host = req.get('host') || 'localhost:5000';
                 return res.json({
                     provider: 'OPAY',
-                    authorizationUrl: `http://${host}/api/payments/opay/mock-pay?reference=${reference}&amount=${totalAmount}`,
+                    authorizationUrl: `http://${host}/api/payments/opay/mock-pay?reference=${reference}&amount=${totalAmount.toFixed(2)}`,
                     reference,
                 });
             }
@@ -223,12 +246,22 @@ router.get('/paystack/verify/:reference', (req, res, next) => __awaiter(void 0, 
         const data = response.data.data;
         if (data.status === 'success') {
             const { checkoutType, id } = data.metadata || {};
+            const chargedAmount = data.amount / 100;
             if (checkoutType === 'order') {
                 const order = yield prisma_1.default.order.update({
                     where: { id },
                     data: { status: 'PAID', paymentProvider: 'PAYSTACK', paymentRef: reference },
                 });
-                yield (0, wallet_1.createEscrowForPaidItem)('order', id).catch(err => console.error("Escrow hold failed for order:", err));
+                yield (0, wallet_1.createEscrowForPaidItem)('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
+                // Auto-release only on final split payment installment; regular orders wait for confirm-receipt.
+                const updatedOrder = yield prisma_1.default.order.findUnique({ where: { id } });
+                if (updatedOrder && updatedOrder.isSplitPayment && updatedOrder.amountPaid >= updatedOrder.totalAmount) {
+                    const activeEscrows = yield prisma_1.default.escrow.findMany({ where: { orderId: id, status: 'HELD' } });
+                    for (const esc of activeEscrows) {
+                        yield (0, wallet_1.releaseEscrow)(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
+                    }
+                    yield prisma_1.default.order.update({ where: { id }, data: { status: 'DELIVERED' } });
+                }
                 return res.json({ status: 'success', message: 'Order payment verified.', order });
             }
             else if (checkoutType === 'booking') {
@@ -236,7 +269,17 @@ router.get('/paystack/verify/:reference', (req, res, next) => __awaiter(void 0, 
                     where: { id },
                     data: { status: 'ACCEPTED' },
                 });
-                yield (0, wallet_1.createEscrowForPaidItem)('booking', id).catch(err => console.error("Escrow hold failed for booking:", err));
+                yield (0, wallet_1.createEscrowForPaidItem)('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
+                // Auto-release escrows only when this is the FINAL split payment installment.
+                // Regular (non-split) full payments stay ACCEPTED until customer confirms via confirm-completion.
+                const updatedBooking = yield prisma_1.default.booking.findUnique({ where: { id } });
+                if (updatedBooking && updatedBooking.isSplitPayment && updatedBooking.amountPaid >= updatedBooking.totalPrice) {
+                    const activeEscrows = yield prisma_1.default.escrow.findMany({ where: { bookingId: id, status: 'HELD' } });
+                    for (const esc of activeEscrows) {
+                        yield (0, wallet_1.releaseEscrow)(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
+                    }
+                    yield prisma_1.default.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
+                }
                 return res.json({ status: 'success', message: 'Booking payment verified.', booking });
             }
             return res.status(400).json({ error: 'Invalid checkout type in payment metadata' });
@@ -264,12 +307,22 @@ router.get('/flutterwave/verify/:transactionId', (req, res, next) => __awaiter(v
         const data = response.data.data;
         if (data.status === 'successful') {
             const { checkoutType, id } = data.meta || {};
+            const chargedAmount = data.amount;
             if (checkoutType === 'order') {
                 const order = yield prisma_1.default.order.update({
                     where: { id },
                     data: { status: 'PAID', paymentProvider: 'FLUTTERWAVE', paymentRef: String(transactionId) },
                 });
-                yield (0, wallet_1.createEscrowForPaidItem)('order', id).catch(err => console.error("Escrow hold failed for order:", err));
+                yield (0, wallet_1.createEscrowForPaidItem)('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
+                // Auto-release only on final split payment installment; regular orders wait for confirm-receipt.
+                const updatedOrder = yield prisma_1.default.order.findUnique({ where: { id } });
+                if (updatedOrder && updatedOrder.isSplitPayment && updatedOrder.amountPaid >= updatedOrder.totalAmount) {
+                    const activeEscrows = yield prisma_1.default.escrow.findMany({ where: { orderId: id, status: 'HELD' } });
+                    for (const esc of activeEscrows) {
+                        yield (0, wallet_1.releaseEscrow)(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
+                    }
+                    yield prisma_1.default.order.update({ where: { id }, data: { status: 'DELIVERED' } });
+                }
                 return res.json({ status: 'success', message: 'Order payment verified.', order });
             }
             else if (checkoutType === 'booking') {
@@ -277,7 +330,16 @@ router.get('/flutterwave/verify/:transactionId', (req, res, next) => __awaiter(v
                     where: { id },
                     data: { status: 'ACCEPTED' },
                 });
-                yield (0, wallet_1.createEscrowForPaidItem)('booking', id).catch(err => console.error("Escrow hold failed for booking:", err));
+                yield (0, wallet_1.createEscrowForPaidItem)('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
+                // Auto-release only on final split payment installment; regular bookings wait for customer confirm-completion.
+                const updatedBooking = yield prisma_1.default.booking.findUnique({ where: { id } });
+                if (updatedBooking && updatedBooking.isSplitPayment && updatedBooking.amountPaid >= updatedBooking.totalPrice) {
+                    const activeEscrows = yield prisma_1.default.escrow.findMany({ where: { bookingId: id, status: 'HELD' } });
+                    for (const esc of activeEscrows) {
+                        yield (0, wallet_1.releaseEscrow)(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
+                    }
+                    yield prisma_1.default.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
+                }
                 return res.json({ status: 'success', message: 'Booking payment verified.', booking });
             }
             return res.status(400).json({ error: 'Invalid checkout type in payment metadata' });
@@ -321,13 +383,23 @@ router.post('/webhook', (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         if (event.type === 'payment_intent.succeeded') {
             const paymentIntent = event.data.object;
             const { checkoutType, id } = paymentIntent.metadata;
+            const chargedAmount = paymentIntent.amount / 100;
             try {
                 if (checkoutType === 'order') {
                     yield prisma_1.default.order.update({
                         where: { id },
                         data: { status: 'PAID', paymentProvider: 'STRIPE', paymentRef: paymentIntent.id },
                     });
-                    yield (0, wallet_1.createEscrowForPaidItem)('order', id).catch(err => console.error("Escrow hold failed for order:", err));
+                    yield (0, wallet_1.createEscrowForPaidItem)('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
+                    // Auto-release only on final split payment installment; regular orders wait for confirm-receipt.
+                    const updatedOrder = yield prisma_1.default.order.findUnique({ where: { id } });
+                    if (updatedOrder && updatedOrder.isSplitPayment && updatedOrder.amountPaid >= updatedOrder.totalAmount) {
+                        const activeEscrows = yield prisma_1.default.escrow.findMany({ where: { orderId: id, status: 'HELD' } });
+                        for (const esc of activeEscrows) {
+                            yield (0, wallet_1.releaseEscrow)(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
+                        }
+                        yield prisma_1.default.order.update({ where: { id }, data: { status: 'DELIVERED' } });
+                    }
                     console.log(`Order ${id} marked as PAID.`);
                 }
                 else if (checkoutType === 'booking') {
@@ -335,7 +407,16 @@ router.post('/webhook', (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                         where: { id },
                         data: { status: 'ACCEPTED' },
                     });
-                    yield (0, wallet_1.createEscrowForPaidItem)('booking', id).catch(err => console.error("Escrow hold failed for booking:", err));
+                    yield (0, wallet_1.createEscrowForPaidItem)('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
+                    // Auto-release only on final split payment installment; regular bookings wait for customer confirm-completion.
+                    const updatedBooking = yield prisma_1.default.booking.findUnique({ where: { id } });
+                    if (updatedBooking && updatedBooking.isSplitPayment && updatedBooking.amountPaid >= updatedBooking.totalPrice) {
+                        const activeEscrows = yield prisma_1.default.escrow.findMany({ where: { bookingId: id, status: 'HELD' } });
+                        for (const esc of activeEscrows) {
+                            yield (0, wallet_1.releaseEscrow)(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
+                        }
+                        yield prisma_1.default.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
+                    }
                     console.log(`Booking ${id} marked as ACCEPTED.`);
                 }
             }
@@ -491,11 +572,21 @@ router.get('/opay/verify/:reference', (req, res, next) => __awaiter(void 0, void
         // Try finding order
         const order = yield prisma_1.default.order.findUnique({ where: { id } });
         if (order) {
+            const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
             yield prisma_1.default.order.update({
                 where: { id },
                 data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: reference },
             });
-            yield (0, wallet_1.createEscrowForPaidItem)('order', id).catch(err => console.error("Escrow hold failed for order:", err));
+            yield (0, wallet_1.createEscrowForPaidItem)('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
+            // Auto-release only on final split payment installment; regular orders wait for confirm-receipt.
+            const updatedOrder = yield prisma_1.default.order.findUnique({ where: { id } });
+            if (updatedOrder && updatedOrder.isSplitPayment && updatedOrder.amountPaid >= updatedOrder.totalAmount) {
+                const activeEscrows = yield prisma_1.default.escrow.findMany({ where: { orderId: id, status: 'HELD' } });
+                for (const esc of activeEscrows) {
+                    yield (0, wallet_1.releaseEscrow)(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
+                }
+                yield prisma_1.default.order.update({ where: { id }, data: { status: 'DELIVERED' } });
+            }
             return res.send(`
         <html>
           <body style="font-family: -apple-system, sans-serif; text-align: center; padding: 60px 20px; background-color: #f7f9fa;">
@@ -519,11 +610,21 @@ router.get('/opay/verify/:reference', (req, res, next) => __awaiter(void 0, void
         // Try finding booking
         const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
         if (booking) {
+            const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
             yield prisma_1.default.booking.update({
                 where: { id },
                 data: { status: 'ACCEPTED' },
             });
-            yield (0, wallet_1.createEscrowForPaidItem)('booking', id).catch(err => console.error("Escrow hold failed for booking:", err));
+            yield (0, wallet_1.createEscrowForPaidItem)('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
+            // Auto-release only on final split payment installment; regular bookings wait for customer confirm-completion.
+            const updatedBooking = yield prisma_1.default.booking.findUnique({ where: { id } });
+            if (updatedBooking && updatedBooking.isSplitPayment && updatedBooking.amountPaid >= updatedBooking.totalPrice) {
+                const activeEscrows = yield prisma_1.default.escrow.findMany({ where: { bookingId: id, status: 'HELD' } });
+                for (const esc of activeEscrows) {
+                    yield (0, wallet_1.releaseEscrow)(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
+                }
+                yield prisma_1.default.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
+            }
             return res.send(`
         <html>
           <body style="font-family: -apple-system, sans-serif; text-align: center; padding: 60px 20px; background-color: #f7f9fa;">

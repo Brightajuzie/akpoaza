@@ -1,11 +1,12 @@
 {
   "name": "handyman-ecommerce-backend",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Backend API for Handyman and E-commerce App",
   "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "dev": "nodemon src/index.ts",
+    "predev": "npx kill-port 5000",
+    "dev": "nodemon",
     "build": "tsc",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
@@ -21,6 +22,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "google-auth-library": "^10.6.2",
     "jimp": "^0.22.12",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.1.1",

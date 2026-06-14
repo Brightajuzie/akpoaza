@@ -8,14 +8,8 @@ import Constants from 'expo-constants';
 const getBackendURL = (): string => {
   const envURL = process.env.EXPO_PUBLIC_API_URL;
 
-  // Priority 1: Explicit non-loopback env var (e.g. LAN IP or public URL)
-  const isEnvLoopback =
-    !envURL ||
-    envURL.includes('10.0.2.2') ||
-    envURL.includes('localhost') ||
-    envURL.includes('127.0.0.1');
-
-  if (envURL && !isEnvLoopback) {
+  // Priority 1: Use explicitly defined environment variable if it exists
+  if (envURL) {
     console.log('[ApiClient] Using EXPO_PUBLIC_API_URL:', envURL);
     return envURL;
   }
@@ -95,9 +89,8 @@ const getBackendURL = (): string => {
     }
   }
 
-  // Fallback for production / non-dev builds
-  const fallback =
-    Platform.OS === 'android' ? 'http://172.20.10.2:5000/api' : 'http://localhost:5000/api';
+  // Fallback for production / non-dev builds if no env var was provided
+  const fallback = Platform.OS === 'android' ? 'http://10.0.2.2:5000/api' : 'http://localhost:5000/api';
   console.log('[ApiClient] Using fallback baseURL:', fallback);
   return fallback;
 };

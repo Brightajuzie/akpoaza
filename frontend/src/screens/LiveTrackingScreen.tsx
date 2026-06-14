@@ -9,28 +9,44 @@ import { SettingsContext } from '../context/SettingsContext';
 const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') || 'http://172.20.10.2:5000';
 
 export default function LiveTrackingScreen({ route, navigation }: any) {
-  const { bookingId, role } = route.params; // role: 'CUSTOMER' or 'HANDYMAN'
+  const { bookingId, orderId, role } = route.params; // role: 'CUSTOMER', 'HANDYMAN', 'RIDER', 'ADMIN'
   const { theme } = useContext(SettingsContext);
   const { userToken } = useContext(AuthContext);
 
-  const [location, setLocation] = useState<any>(null);
-  const [partnerLocation, setPartnerLocation] = useState<any>(null);
+  const [location, setLocation] = useState<any>(null); // For Customer, Handyman, Rider
+  const [partnerLocation, setPartnerLocation] = useState<any>(null); // For Customer, Handyman, Rider
+  const [adminCustomerLoc, setAdminCustomerLoc] = useState<any>(null); // For Admin
+  const [adminHandymanLoc, setAdminHandymanLoc] = useState<any>(null); // For Admin
   const socketRef = useRef<any>(null);
   const mapRef = useRef<MapView>(null);
+
+  const isOrder = !!orderId;
+  const joinEvent = isOrder ? 'join_order' : 'join_booking';
+  const locationUpdateEvent = isOrder ? 'order_location_update' : 'location_update';
+  const updateLocationEvent = isOrder ? 'update_order_location' : 'update_location';
+  const idToJoin = orderId || bookingId;
 
   useEffect(() => {
     // Initialize socket
     socketRef.current = io(SOCKET_URL);
     
     socketRef.current.on('connect', () => {
-      socketRef.current.emit('join_booking', bookingId);
+      socketRef.current.emit(joinEvent, idToJoin);
     });
 
-    socketRef.current.on('location_update', (data: any) => {
-      setPartnerLocation({
-        latitude: data.latitude,
-        longitude: data.longitude,
-      });
+    socketRef.current.on(locationUpdateEvent, (data: any) => {
+      if (role === 'ADMIN') {
+        if (data.role === 'CUSTOMER') {
+          setAdminCustomerLoc({ latitude: data.latitude, longitude: data.longitude });
+        } else if (data.role === 'HANDYMAN' || data.role === 'RIDER') {
+          setAdminHandymanLoc({ latitude: data.latitude, longitude: data.longitude });
+        }
+      } else {
+        setPartnerLocation({
+          latitude: data.latitude,
+          longitude: data.longitude,
+        });
+      }
     });
 
     return () => {
@@ -38,7 +54,7 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
         socketRef.current.disconnect();
       }
     };
-  }, [bookingId]);
+  }, [idToJoin, role]);
 
   useEffect(() => {
     let locationSubscription: any;
@@ -71,8 +87,10 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
 
           // Emit to partner
           if (socketRef.current) {
-            socketRef.current.emit('update_location', {
+            socketRef.current.emit(updateLocationEvent, {
               bookingId,
+              orderId,
+              role,
               latitude: lat,
               longitude: lng,
             });
@@ -81,30 +99,52 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
       );
     };
 
-    startTracking();
+    if (role !== 'ADMIN') {
+      startTracking();
+    } else {
+      // Admin doesn't need to track own location, just show the map roughly centered.
+      setLocation({
+        latitude: 9.0820,
+        longitude: 8.6753, // rough center (e.g. Nigeria), will auto-recenter later
+        latitudeDelta: 5.0,
+        longitudeDelta: 5.0,
+      });
+    }
 
     return () => {
       if (locationSubscription) {
         locationSubscription.remove();
       }
     };
-  }, [bookingId]);
+  }, [idToJoin, role]);
 
   const fitMapToMarkers = () => {
-    if (mapRef.current && location && partnerLocation) {
-      mapRef.current.fitToCoordinates(
-        [
-          { latitude: location.latitude, longitude: location.longitude },
-          { latitude: partnerLocation.latitude, longitude: partnerLocation.longitude }
-        ],
-        { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true }
-      );
+    if (mapRef.current) {
+      if (role === 'ADMIN') {
+        if (adminCustomerLoc && adminHandymanLoc) {
+          mapRef.current.fitToCoordinates([adminCustomerLoc, adminHandymanLoc], { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true });
+        } else if (adminCustomerLoc) {
+          mapRef.current.animateToRegion({ ...adminCustomerLoc, latitudeDelta: 0.05, longitudeDelta: 0.05 });
+        } else if (adminHandymanLoc) {
+          mapRef.current.animateToRegion({ ...adminHandymanLoc, latitudeDelta: 0.05, longitudeDelta: 0.05 });
+        }
+      } else {
+        if (location && partnerLocation) {
+          mapRef.current.fitToCoordinates(
+            [
+              { latitude: location.latitude, longitude: location.longitude },
+              { latitude: partnerLocation.latitude, longitude: partnerLocation.longitude }
+            ],
+            { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true }
+          );
+        }
+      }
     }
   };
 
   useEffect(() => {
     fitMapToMarkers();
-  }, [location, partnerLocation]);
+  }, [location, partnerLocation, adminCustomerLoc, adminHandymanLoc]);
 
   return (
     <View style={styles.container}>
@@ -113,14 +153,25 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
           ref={mapRef}
           style={styles.map}
           initialRegion={location}
-          showsUserLocation={true}
+          showsUserLocation={role !== 'ADMIN'}
         >
-          {partnerLocation && (
-            <Marker
-              coordinate={partnerLocation}
-              title={role === 'CUSTOMER' ? 'Handyman Location' : 'Customer Location'}
-              pinColor="blue"
-            />
+          {role === 'ADMIN' ? (
+            <>
+              {adminCustomerLoc && (
+                <Marker coordinate={adminCustomerLoc} title="Customer Location" pinColor="green" />
+              )}
+              {adminHandymanLoc && (
+                <Marker coordinate={adminHandymanLoc} title={isOrder ? 'Rider Location' : 'Handyman Location'} pinColor="blue" />
+              )}
+            </>
+          ) : (
+            partnerLocation && (
+              <Marker
+                coordinate={partnerLocation}
+                title={role === 'CUSTOMER' ? (isOrder ? 'Rider Location' : 'Handyman Location') : 'Customer Location'}
+                pinColor="blue"
+              />
+            )
           )}
         </MapView>
       ) : (
@@ -131,7 +182,9 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
 
       <View style={styles.overlay}>
         <Text style={styles.statusText}>
-          {partnerLocation ? 'Partner connected' : 'Waiting for partner...'}
+          {role === 'ADMIN' 
+            ? ((adminCustomerLoc && adminHandymanLoc) ? 'Both connected' : 'Waiting for users...')
+            : (partnerLocation ? 'Partner connected' : 'Waiting for partner...')}
         </Text>
         <TouchableOpacity style={[styles.btn, { backgroundColor: theme.primary }]} onPress={() => fitMapToMarkers()}>
           <Text style={styles.btnText}>Recenter</Text>

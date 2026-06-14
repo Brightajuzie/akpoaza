@@ -364,7 +364,7 @@ router.get('/admin/reviews', authenticateToken, async (req: AuthRequest, res: Re
 
     const reviews = await prisma.user.findMany({
       where: {
-        role: { in: ['VENDOR', 'HANDYMAN'] },
+        role: { in: ['VENDOR', 'HANDYMAN', 'RIDER'] },
         verificationStatus: { not: 'UNVERIFIED' },
       },
       select: {

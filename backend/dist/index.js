@@ -84,6 +84,7 @@ if (process.env.NODE_ENV !== 'test') {
         });
         socket.on('update_location', (data) => {
             socket.to(`booking_${data.bookingId}`).emit('location_update', {
+                role: data.role,
                 latitude: data.latitude,
                 longitude: data.longitude,
                 timestamp: Date.now()
@@ -93,6 +94,33 @@ if (process.env.NODE_ENV !== 'test') {
             console.log('Socket disconnected:', socket.id);
         });
     });
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`\n[ERROR] Port ${PORT} is already in use.`);
+            console.error(`[FIX]   Run: npx kill-port ${PORT}   (or change PORT in your .env)\n`);
+            process.exit(1);
+        }
+        else {
+            throw err;
+        }
+    });
+    // Graceful shutdown — nodemon sends SIGTERM on file-change restarts.
+    // Closing the server here ensures the port is released before the new
+    // process tries to bind, preventing the EADDRINUSE crash loop.
+    const shutdown = (signal) => __awaiter(void 0, void 0, void 0, function* () {
+        var _a;
+        console.log(`\n[${signal}] Graceful shutdown — closing server...`);
+        (_a = server.closeAllConnections) === null || _a === void 0 ? void 0 : _a.call(server);
+        server.close(() => __awaiter(void 0, void 0, void 0, function* () {
+            yield prisma_1.default.$disconnect();
+            console.log('[Shutdown] Server closed. Port released.');
+            process.exit(0);
+        }));
+        // Force-exit after 3 s if connections hang
+        setTimeout(() => process.exit(0), 3000).unref();
+    });
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
     server.listen(PORT, () => {
         console.log(`Server with Socket.IO is running on port ${PORT}`);
         // Background interval loop (every 30 seconds for fast sandbox testing)

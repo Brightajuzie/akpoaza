@@ -71,7 +71,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
 
       const initSheet = await initPaymentSheet({
         paymentIntentClientSecret: clientSecret,
-        merchantDisplayName: 'Handyman E-commerce',
+        merchantDisplayName: 'FixMart',
       });
 
       if (initSheet.error) {

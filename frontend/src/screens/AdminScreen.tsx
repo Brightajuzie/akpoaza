@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useContext } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, ActivityIndicator, Modal, Image, Platform
+  Alert, ActivityIndicator, Modal, Image, Platform, Linking
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import MapComponent from '../components/MapComponent';
 
 // ─── AI Filter Configuration ────────────────────────────────────────────────
 const AI_FILTERS = [
@@ -21,11 +23,12 @@ const AI_FILTERS = [
 export default function AdminScreen() {
   const { userInfo } = useContext(AuthContext);
   const { theme, settings, updateSettings } = useContext(SettingsContext);
+  const navigation = useNavigation<any>();
 
   const isVendor = userInfo?.role === 'VENDOR';
   const isAdmin  = userInfo?.role === 'ADMIN';
 
-  const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc'>(
+  const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders'>(
     'products'
   );
 
@@ -47,6 +50,7 @@ export default function AdminScreen() {
   const [selectedFilter, setSelectedFilter]   = useState('none');
   const [uploadingImage, setUploadingImage]   = useState(false);
   const [uploadedSizeKB, setUploadedSizeKB]   = useState<string | null>(null);
+  const [removeBg, setRemoveBg]               = useState(false);
 
   // Services state (Admin only)
   const [services, setServices]               = useState<any[]>([]);
@@ -85,16 +89,47 @@ export default function AdminScreen() {
   const [bookings, setBookings]                   = useState<any[]>([]);
   const [bookingsLoading, setBookingsLoading]     = useState(false);
   const [updatingBookingId, setUpdatingBookingId] = useState<string | null>(null);
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [reassignBookingId, setReassignBookingId] = useState<string | null>(null);
 
   // Users state (Admin only)
   const [users, setUsers]                   = useState<any[]>([]);
   const [usersLoading, setUsersLoading]     = useState(false);
+  const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | 'HANDYMAN' | 'VENDOR' | 'CUSTOMER'>('ALL');
+
+  // User management – form/modal state
+  const [showUserFormModal, setShowUserFormModal]   = useState(false);
+  const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
+  const [editingUserId, setEditingUserId]           = useState<string | null>(null);
+  const [selectedUserDetails, setSelectedUserDetails] = useState<any | null>(null);
+  const [userFormSaving, setUserFormSaving]         = useState(false);
+
+  // User form fields
+  const [uName, setUName]                     = useState('');
+  const [uEmail, setUEmail]                   = useState('');
+  const [uPassword, setUPassword]             = useState('');
+  const [uRole, setURole]                     = useState<'CUSTOMER' | 'HANDYMAN' | 'VENDOR'>('CUSTOMER');
+  const [uPhone, setUPhone]                   = useState('');
+  const [uOpayPhone, setUOpayPhone]           = useState('');
+  const [uSpecialty, setUSpecialty]           = useState('');
+  const [uAddress, setUAddress]               = useState('');
+  const [uVerificationStatus, setUVerificationStatus] = useState<'UNVERIFIED' | 'VERIFIED' | 'PENDING_REVIEW' | 'REJECTED'>('UNVERIFIED');
 
   // KYC Reviews state (Admin only)
   const [kycReviews, setKycReviews]                 = useState<any[]>([]);
   const [kycLoading, setKycLoading]                 = useState(false);
   const [reviewingUserId, setReviewingUserId]       = useState<string | null>(null);
   const [rejectionReasonInput, setRejectionReasonInput] = useState('');
+
+  // Orders state (Admin only)
+  const [orders, setOrders]                         = useState<any[]>([]);
+  const [ordersLoading, setOrdersLoading]           = useState(false);
+  const [orderStatusFilter, setOrderStatusFilter]   = useState<string>('ALL');
+  const [showAssignRiderModal, setShowAssignRiderModal] = useState(false);
+  const [assigningOrderId, setAssigningOrderId]     = useState<string | null>(null);
+  const [assigningRiderId, setAssigningRiderId]     = useState<string | null>(null);
+  const [riders, setRiders]                         = useState<any[]>([]);
+  const [ridersLoading, setRidersLoading]           = useState(false);
 
   // ─── Data Fetching ───────────────────────────────────────────────────────
   const fetchData = async () => {
@@ -146,6 +181,154 @@ export default function AdminScreen() {
     }
   };
 
+  const fetchOrders = async () => {
+    setOrdersLoading(true);
+    try {
+      const res = await apiClient.get('/orders/admin/all');
+      setOrders(res.data || []);
+    } catch (e) {
+      console.error('Failed to load orders', e);
+    } finally {
+      setOrdersLoading(false);
+    }
+  };
+
+  const fetchRiders = async () => {
+    setRidersLoading(true);
+    try {
+      const res = await apiClient.get('/orders/riders');
+      setRiders(res.data || []);
+    } catch (e) {
+      console.error('Failed to load riders', e);
+    } finally {
+      setRidersLoading(false);
+    }
+  };
+
+  const handleAssignRider = async (orderId: string, riderId: string) => {
+    setAssigningRiderId(riderId);
+    try {
+      await apiClient.patch(`/orders/${orderId}/assign-rider`, { riderId });
+      Alert.alert('✅ Rider Assigned', 'The rider has been notified about this delivery.');
+      setShowAssignRiderModal(false);
+      setAssigningOrderId(null);
+      fetchOrders();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || 'Failed to assign rider.');
+    } finally {
+      setAssigningRiderId(null);
+    }
+  };
+
+  const handleUpdateOrderStatus = async (orderId: string, status: string) => {
+    try {
+      await apiClient.patch(`/orders/${orderId}/status`, { status });
+      Alert.alert('Updated', `Order status changed to ${status}.`);
+      fetchOrders();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || 'Failed to update order status.');
+    }
+  };
+
+  const getOrderStatusColor = (status: string) => {
+    switch (status) {
+      case 'PENDING':     return { bg: '#FFF3E0', text: '#FF9500' };
+      case 'PAID':        return { bg: '#E8F5E9', text: '#34C759' };
+      case 'SHIPPED':     return { bg: '#E3F2FD', text: '#007AFF' };
+      case 'DELIVERED':   return { bg: '#E8F5E9', text: '#34C759' };
+      case 'CANCELLED':   return { bg: '#FFEBEE', text: '#FF3B30' };
+      default:            return { bg: '#F2F2F7', text: '#8E8E93' };
+    }
+  };
+
+  const resetUserForm = () => {
+    setEditingUserId(null);
+    setUName(''); setUEmail(''); setUPassword('');
+    setURole('CUSTOMER'); setUPhone(''); setUOpayPhone('');
+    setUSpecialty(''); setUAddress(''); setUVerificationStatus('UNVERIFIED');
+  };
+
+  const openUserCreate = () => {
+    resetUserForm();
+    setShowUserFormModal(true);
+  };
+
+  const openUserEdit = (u: any) => {
+    setEditingUserId(u.id);
+    setUName(u.name || '');
+    setUEmail(u.email || '');
+    setUPassword('');
+    setURole(u.role || 'CUSTOMER');
+    setUPhone(u.phone || '');
+    setUOpayPhone(u.opayPhone || '');
+    setUSpecialty(u.specialty || '');
+    setUAddress(u.address || '');
+    setUVerificationStatus(u.verificationStatus || 'UNVERIFIED');
+    setShowUserFormModal(true);
+  };
+
+  const openUserDetails = (u: any) => {
+    setSelectedUserDetails(u);
+    setShowUserDetailsModal(true);
+  };
+
+  const handleSaveUser = async () => {
+    if (!uName || !uEmail || !uRole) {
+      Alert.alert('Validation', 'Name, Email and Role are required.');
+      return;
+    }
+    if (!editingUserId && !uPassword) {
+      Alert.alert('Validation', 'Password is required when creating a new user.');
+      return;
+    }
+    setUserFormSaving(true);
+    try {
+      const payload: any = {
+        name: uName, email: uEmail, role: uRole,
+        phone: uPhone || null, opayPhone: uOpayPhone || null,
+        specialty: uSpecialty || null, address: uAddress || null,
+        verificationStatus: uVerificationStatus,
+      };
+      if (uPassword) payload.password = uPassword;
+
+      if (editingUserId) {
+        await apiClient.put(`/users/${editingUserId}`, payload);
+        Alert.alert('✅ Updated', 'User profile updated successfully.');
+      } else {
+        await apiClient.post('/users', payload);
+        Alert.alert('✅ Created', 'New user account created successfully.');
+      }
+      setShowUserFormModal(false);
+      resetUserForm();
+      fetchUsers();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || 'Failed to save user.');
+    } finally {
+      setUserFormSaving(false);
+    }
+  };
+
+  const handleDeleteUser = (u: any) => {
+    Alert.alert(
+      '⚠️ Delete User',
+      `Permanently delete "${u.name}" and all their associated data (orders, bookings, reviews, wallet)? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive', onPress: async () => {
+            try {
+              await apiClient.delete(`/users/${u.id}`);
+              Alert.alert('Deleted', 'User and all related records removed.');
+              fetchUsers();
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.error || 'Failed to delete user.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleUpdateBookingStatus = async (bookingId: string, status: string) => {
     setUpdatingBookingId(bookingId);
     try {
@@ -156,6 +339,58 @@ export default function AdminScreen() {
       Alert.alert('Error', e.response?.data?.error || 'Failed to update booking status.');
     } finally {
       setUpdatingBookingId(null);
+    }
+  };
+
+  const handleAdminCancel = async (bookingId: string) => {
+    Alert.alert('Cancel Booking', 'Are you sure you want to forcibly cancel this booking?', [
+      { text: 'No', style: 'cancel' },
+      { text: 'Yes, Cancel', style: 'destructive', onPress: async () => {
+        setUpdatingBookingId(bookingId);
+        try {
+          await apiClient.patch(`/bookings/${bookingId}/admin-cancel`);
+          Alert.alert('Cancelled', 'Booking has been cancelled by Admin.');
+          fetchBookings();
+        } catch (e: any) {
+          Alert.alert('Error', e.response?.data?.error || 'Failed to cancel booking.');
+        } finally {
+          setUpdatingBookingId(null);
+        }
+      }}
+    ]);
+  };
+
+  const handleAdminReassign = async (handymanId: string) => {
+    if (!reassignBookingId) return;
+    setUpdatingBookingId(reassignBookingId);
+    setShowReassignModal(false);
+    try {
+      await apiClient.patch(`/bookings/${reassignBookingId}/admin-reassign`, { newHandymanId: handymanId });
+      Alert.alert('Reassigned', 'Booking has been assigned to the new handyman.');
+      fetchBookings();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || 'Failed to reassign booking.');
+    } finally {
+      setUpdatingBookingId(null);
+      setReassignBookingId(null);
+    }
+  };
+
+  const handleInitiateCall = async (targetUser: any, audioOnly = false) => {
+    const baseRoom = `akpoaza-call-${targetUser.name.replace(/\s+/g, '-').toLowerCase()}-${targetUser.id.substring(0, 8)}`;
+    const roomName = audioOnly ? `${baseRoom}#config.startWithVideoMuted=true` : baseRoom;
+    
+    try {
+      await apiClient.post('/notifications', {
+        userId: targetUser.id,
+        title: audioOnly ? '📞 Incoming Audio Call' : '📹 Incoming Video Call',
+        body: `Admin is calling you. Click here to join the call.`,
+        type: 'CALL',
+        referenceId: roomName,
+      });
+      navigation.navigate('VideoCall', { roomName });
+    } catch (e: any) {
+      Alert.alert('Call Failed', 'Could not alert user about the incoming call.');
     }
   };
 
@@ -199,6 +434,8 @@ export default function AdminScreen() {
       fetchBookings();
       fetchUsers();
       fetchKycReviews();
+      fetchOrders();
+      fetchRiders();
     }
   }, []);
 
@@ -254,6 +491,7 @@ export default function AdminScreen() {
       setImageTarget(target);
       setPickedImageUri(asset.uri);
       setSelectedFilter('none');
+      setRemoveBg(false);
       setUploadedSizeKB(null);
       setShowImageModal(true);
     }
@@ -275,6 +513,7 @@ export default function AdminScreen() {
         type: mimeType,
       } as any);
       formData.append('filter', selectedFilter);
+      formData.append('removeBg', removeBg ? 'true' : 'false');
 
       const response = await apiClient.post('/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -400,6 +639,7 @@ export default function AdminScreen() {
     setCategory('');
     setImageUrl('');
     setPickedImageUri(null);
+    setRemoveBg(false);
     setUploadedSizeKB(null);
   };
 
@@ -618,6 +858,30 @@ export default function AdminScreen() {
             ))}
           </View>
 
+
+          {/* Remove Background Toggle */}
+          <Text style={styles.filterSectionLabel}>BACKGROUND REMOVAL</Text>
+          <TouchableOpacity
+            style={[styles.removeBgCard, removeBg && { borderColor: '#00C896', backgroundColor: '#00C89610' }]}
+            onPress={() => setRemoveBg(prev => !prev)}
+            disabled={uploadingImage}
+            activeOpacity={0.8}
+          >
+            <View style={styles.removeBgLeft}>
+              <Text style={styles.removeBgIcon}>{'\u2702\uFE0F'}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.removeBgTitle, removeBg && { color: '#00C896' }]}>
+                  {removeBg ? 'Background Removal ON' : 'Remove Background'}
+                </Text>
+                <Text style={styles.removeBgSubtitle}>
+                  {removeBg ? 'Light backgrounds made transparent (PNG output)' : 'Tap to auto-remove white/light backgrounds'}
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.removeBgToggle, { backgroundColor: removeBg ? '#00C896' : '#3A3A3C' }]}>
+              <Text style={styles.removeBgToggleText}>{removeBg ? 'ON' : 'OFF'}</Text>
+            </View>
+          </TouchableOpacity>
           {/* Compression Info */}
           <View style={styles.compressionInfoCard}>
             <Text style={styles.compressionInfoTitle}>🤖 AI Compression Pipeline</Text>
@@ -656,10 +920,242 @@ export default function AdminScreen() {
     </Modal>
   );
 
+  // ─── User Form Modal ─────────────────────────────────────────────────────
+  const renderUserFormModal = () => (
+    <Modal
+      visible={showUserFormModal}
+      animationType="slide"
+      onRequestClose={() => !userFormSaving && setShowUserFormModal(false)}
+    >
+      <View style={[styles.userModalContainer, { backgroundColor: theme.background }]}>
+        <View style={styles.userModalHeader}>
+          <TouchableOpacity
+            onPress={() => !userFormSaving && setShowUserFormModal(false)}
+            style={styles.userModalCloseBtn}
+          >
+            <Text style={styles.userModalCloseText}>✕</Text>
+          </TouchableOpacity>
+          <Text style={[styles.userModalTitle, { color: theme.text }]}>
+            {editingUserId ? '✏️ Edit User' : '➕ Create User'}
+          </Text>
+          <View style={{ width: 36 }} />
+        </View>
+
+        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }} keyboardShouldPersistTaps="handled">
+          {/* Name */}
+          <Text style={[styles.label, { color: theme.lightText }]}>Full Name *</Text>
+          <TextInput style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+            value={uName} onChangeText={setUName} placeholder="e.g. Jane Doe" placeholderTextColor="#9CA3AF" />
+
+          {/* Email */}
+          <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>Email Address *</Text>
+          <TextInput style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+            value={uEmail} onChangeText={setUEmail} placeholder="jane@example.com" keyboardType="email-address"
+            autoCapitalize="none" placeholderTextColor="#9CA3AF" />
+
+          {/* Password */}
+          <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>
+            {editingUserId ? 'New Password (leave blank to keep current)' : 'Password *'}
+          </Text>
+          <TextInput style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+            value={uPassword} onChangeText={setUPassword} placeholder="••••••••" secureTextEntry
+            placeholderTextColor="#9CA3AF" />
+
+          {/* Role */}
+          <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>Role *</Text>
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+            {(['CUSTOMER', 'HANDYMAN', 'VENDOR'] as const).map(r => (
+              <TouchableOpacity
+                key={r}
+                onPress={() => setURole(r)}
+                style={[
+                  styles.userRolePill,
+                  uRole === r && { backgroundColor: theme.primary, borderColor: theme.primary },
+                ]}
+              >
+                <Text style={[styles.userRolePillText, uRole === r && { color: '#fff' }]}>
+                  {r === 'CUSTOMER' ? '👤 Customer' : r === 'HANDYMAN' ? '🛠️ Handyman' : '🏪 Vendor'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Verification Status */}
+          <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>Verification Status</Text>
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+            {(['UNVERIFIED', 'PENDING_REVIEW', 'VERIFIED', 'REJECTED'] as const).map(s => (
+              <TouchableOpacity
+                key={s}
+                onPress={() => setUVerificationStatus(s)}
+                style={[
+                  styles.userRolePill,
+                  uVerificationStatus === s && { backgroundColor: s === 'VERIFIED' ? '#34C759' : s === 'REJECTED' ? '#FF3B30' : theme.primary, borderColor: 'transparent' },
+                ]}
+              >
+                <Text style={[styles.userRolePillText, uVerificationStatus === s && { color: '#fff' }]}>{s}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Phone */}
+          <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>Phone Number</Text>
+          <TextInput style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+            value={uPhone} onChangeText={setUPhone} placeholder="+234.." keyboardType="phone-pad"
+            placeholderTextColor="#9CA3AF" />
+
+          {/* OPay Phone */}
+          <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>OPay Phone Number</Text>
+          <TextInput style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+            value={uOpayPhone} onChangeText={setUOpayPhone} placeholder="+234.." keyboardType="phone-pad"
+            placeholderTextColor="#9CA3AF" />
+
+          {/* Specialty (Handyman only) */}
+          {uRole === 'HANDYMAN' && (
+            <>
+              <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>Specialty</Text>
+              <TextInput style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+                value={uSpecialty} onChangeText={setUSpecialty} placeholder="e.g. Plumbing, Electrical"
+                placeholderTextColor="#9CA3AF" />
+            </>
+          )}
+
+          {/* Address */}
+          <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>Address</Text>
+          <TextInput style={[styles.input, styles.textArea, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+            value={uAddress} onChangeText={setUAddress} placeholder="Street, City, State"
+            multiline numberOfLines={2} placeholderTextColor="#9CA3AF" />
+        </ScrollView>
+
+        {/* Save Button */}
+        <View style={[styles.userModalFooter, { backgroundColor: theme.background, borderTopColor: theme.border }]}>
+          <TouchableOpacity
+            style={[styles.userModalSaveBtn, { backgroundColor: theme.primary }, userFormSaving && { opacity: 0.7 }]}
+            onPress={handleSaveUser}
+            disabled={userFormSaving}
+          >
+            {userFormSaving
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.userModalSaveBtnText}>
+                  {editingUserId ? 'Save Changes' : 'Create User'}
+                </Text>
+            }
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  // ─── User Details Modal ──────────────────────────────────────────────────
+  const renderUserDetailsModal = () => {
+    const u = selectedUserDetails;
+    if (!u) return null;
+    const hasLocation = u.latitude != null && u.longitude != null;
+    return (
+      <Modal
+        visible={showUserDetailsModal}
+        animationType="slide"
+        onRequestClose={() => setShowUserDetailsModal(false)}
+      >
+        <View style={[styles.userModalContainer, { backgroundColor: theme.background }]}>
+          <View style={styles.userModalHeader}>
+            <TouchableOpacity onPress={() => setShowUserDetailsModal(false)} style={styles.userModalCloseBtn}>
+              <Text style={styles.userModalCloseText}>✕</Text>
+            </TouchableOpacity>
+            <Text style={[styles.userModalTitle, { color: theme.text }]}>👤 User Details</Text>
+            <View style={{ width: 36 }} />
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 40 }}>
+            {/* Identity Card */}
+            <View style={[styles.userDetailCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.userDetailCardTitle, { color: theme.text }]}>{u.name}</Text>
+              <View style={[styles.badgeContainer, {
+                backgroundColor: u.role === 'HANDYMAN' ? '#EBF8FF' : u.role === 'VENDOR' ? '#FEFCBF' : '#EDF2F7',
+                alignSelf: 'flex-start', marginBottom: 12,
+              }]}>
+                <Text style={{ fontSize: 11, fontWeight: '800',
+                  color: u.role === 'HANDYMAN' ? '#2B6CB0' : u.role === 'VENDOR' ? '#B7791F' : '#4A5568'
+                }}>{u.role}</Text>
+              </View>
+
+              {[
+                { label: '📧 Email', value: u.email },
+                { label: '📞 Phone', value: u.phone || 'N/A' },
+                { label: '💳 OPay Phone', value: u.opayPhone || 'N/A' },
+                { label: '🏠 Address', value: u.address || 'N/A' },
+                { label: '⚒️ Specialty', value: u.specialty || 'N/A' },
+                { label: '🔐 KYC Status', value: u.verificationStatus || 'UNVERIFIED' },
+                { label: '📦 Booking Count', value: String(u.bookingCount ?? 0) },
+                { label: '📅 Joined', value: u.createdAt ? new Date(u.createdAt).toLocaleDateString() : 'N/A' },
+              ].map(item => (
+                <View key={item.label} style={styles.userDetailRow}>
+                  <Text style={[styles.userDetailLabel, { color: theme.lightText }]}>{item.label}</Text>
+                  <Text style={[styles.userDetailValue, { color: theme.text }]}>{item.value}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Live Location Map */}
+            <Text style={[styles.formTitle, { marginTop: 20, marginBottom: 10 }]}>📍 Last Known Location</Text>
+            {hasLocation ? (
+              <View style={{ height: 280, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: theme.border }}>
+                <MapComponent
+                  latitude={u.latitude}
+                  longitude={u.longitude}
+                  selectable={false}
+                />
+              </View>
+            ) : (
+              <View style={[styles.userNoLocationBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <Text style={{ fontSize: 30, marginBottom: 8 }}>📡</Text>
+                <Text style={[styles.userNoLocationText, { color: theme.lightText }]}>No location data available for this user.</Text>
+              </View>
+            )}
+
+            {/* Quick Actions */}
+            <Text style={[styles.formTitle, { marginTop: 20, marginBottom: 10 }]}>⚡ Quick Actions</Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => { setShowUserDetailsModal(false); handleInitiateCall(u, false); }}
+                style={[styles.userActionBtn, { backgroundColor: '#5856D6' }]}
+              >
+                <Text style={styles.userActionBtnText}>📹 Video Call</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => { setShowUserDetailsModal(false); handleInitiateCall(u, true); }}
+                style={[styles.userActionBtn, { backgroundColor: '#FF9500' }]}
+              >
+                <Text style={styles.userActionBtnText}>🔊 Audio Call</Text>
+              </TouchableOpacity>
+            </View>
+            {u.phone && (
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(`tel:${u.phone}`)}
+                  style={[styles.userActionBtn, { backgroundColor: '#34C759' }]}
+                >
+                  <Text style={styles.userActionBtnText}>📞 Call</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(`sms:${u.phone}`)}
+                  style={[styles.userActionBtn, { backgroundColor: '#007AFF' }]}
+                >
+                  <Text style={styles.userActionBtnText}>💬 SMS</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
+    );
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <View style={[styles.mainContainer, { backgroundColor: theme.background }]}>
       {renderImageModal()}
+      {renderUserFormModal()}
+      {renderUserDetailsModal()}
 
       {/* Tab bar for Admins */}
       {isAdmin && (
@@ -683,6 +1179,7 @@ export default function AdminScreen() {
               onPress={() => {
                 setActiveTab(tab.id as any);
                 if (tab.id === 'kyc') fetchKycReviews();
+                if (tab.id === 'orders') { fetchOrders(); fetchRiders(); }
               }}
             >
               <Text style={[styles.tabText, activeTab === tab.id && { color: theme.primary, fontWeight: '700' }]}>
@@ -743,7 +1240,7 @@ export default function AdminScreen() {
                       )}
                       <TouchableOpacity
                         style={[styles.imageChangeBtn, { borderColor: theme.primary }]}
-                        onPress={handlePickImage}
+                        onPress={() => handlePickImage('product')}
                       >
                         <Text style={[styles.imageChangeBtnText, { color: theme.primary }]}>Change Image</Text>
                       </TouchableOpacity>
@@ -1103,7 +1600,7 @@ export default function AdminScreen() {
               <Text style={styles.emptyText}>No bookings found.</Text>
             ) : (
               bookings.map((b: any) => (
-                <View key={b.id} style={styles.listItem}>
+                <View key={b.id} style={[styles.listItem, { flexDirection: 'row', alignItems: 'flex-start' }]}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.listItemName}>{b.service?.name || 'Service'}</Text>
                     <Text style={styles.listItemMeta}>Customer: {b.customer?.name}</Text>
@@ -1112,26 +1609,36 @@ export default function AdminScreen() {
                     <Text style={styles.listItemMeta}>Price: ₦{b.totalPrice?.toFixed(2)}</Text>
                     <Text style={styles.listItemMeta}>Scheduled: {new Date(b.scheduledAt).toLocaleString()}</Text>
                   </View>
-                  {b.status === 'PENDING' && (
-                    <View style={{ flexDirection: 'column', gap: 6 }}>
+                  <View style={{ flexDirection: 'column', gap: 6, marginLeft: 8 }}>
+                    {(b.status === 'PENDING' || b.status === 'ACCEPTED' || b.status === 'IN_PROGRESS') && (
                       <TouchableOpacity
-                        style={[styles.actionBtn, { backgroundColor: '#34C759', paddingVertical: 8 }]}
-                        onPress={() => handleUpdateBookingStatus(b.id, 'ACCEPTED')}
+                        style={[styles.actionBtn, { backgroundColor: '#007AFF', paddingVertical: 8 }]}
+                        onPress={() => navigation.navigate('LiveTracking', { bookingId: b.id, role: 'ADMIN' })}
+                      >
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>📍 Track</Text>
+                      </TouchableOpacity>
+                    )}
+                    {b.status !== 'COMPLETED' && b.status !== 'CANCELLED' && (
+                      <TouchableOpacity
+                        style={[styles.actionBtn, { backgroundColor: '#FF9500', paddingVertical: 8 }]}
+                        onPress={() => { setReassignBookingId(b.id); setShowReassignModal(true); }}
+                        disabled={updatingBookingId === b.id}
+                      >
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>🔄 Reassign</Text>
+                      </TouchableOpacity>
+                    )}
+                    {b.status !== 'COMPLETED' && b.status !== 'CANCELLED' && (
+                      <TouchableOpacity
+                        style={[styles.actionBtn, { backgroundColor: '#FF3B30', paddingVertical: 8 }]}
+                        onPress={() => handleAdminCancel(b.id)}
                         disabled={updatingBookingId === b.id}
                       >
                         {updatingBookingId === b.id
                           ? <ActivityIndicator size="small" color="#fff" />
-                          : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>Accept</Text>}
+                          : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>❌ Cancel</Text>}
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionBtn, { backgroundColor: '#FF3B30', paddingVertical: 8 }]}
-                        onPress={() => handleUpdateBookingStatus(b.id, 'CANCELLED')}
-                        disabled={updatingBookingId === b.id}
-                      >
-                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>Cancel</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
+                    )}
+                  </View>
                 </View>
               ))
             )}
@@ -1141,21 +1648,129 @@ export default function AdminScreen() {
         {/* ── USERS TAB ── */}
         {activeTab === 'users' && isAdmin && (
           <View>
-            <Text style={styles.formTitle}>👥 All Users</Text>
+            {/* Header row */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={styles.formTitle}>👥 All Users</Text>
+              <TouchableOpacity
+                onPress={openUserCreate}
+                style={[styles.userAddBtn, { backgroundColor: theme.primary }]}
+              >
+                <Text style={styles.userAddBtnText}>➕ Add User</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Filter Pills */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {(['ALL', 'HANDYMAN', 'VENDOR', 'CUSTOMER'] as const).map((roleOpt) => (
+                <TouchableOpacity
+                  key={roleOpt}
+                  onPress={() => setUserRoleFilter(roleOpt)}
+                  style={{
+                    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+                    backgroundColor: userRoleFilter === roleOpt ? theme.primary : '#F2F2F7',
+                    borderWidth: 1,
+                    borderColor: userRoleFilter === roleOpt ? theme.primary : '#E5E5EA',
+                  }}
+                >
+                  <Text style={{ color: userRoleFilter === roleOpt ? '#fff' : '#1C1C1E', fontWeight: '700', fontSize: 12 }}>
+                    {roleOpt === 'ALL' ? 'All' : roleOpt === 'HANDYMAN' ? '🛠️ Handymen' : roleOpt === 'VENDOR' ? '🏪 Vendors' : '👤 Customers'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {usersLoading ? (
               <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 20 }} />
             ) : users.length === 0 ? (
               <Text style={styles.emptyText}>No users found.</Text>
             ) : (
-              users.map((u: any) => (
-                <View key={u.id} style={[styles.listItem, { flexDirection: 'column', alignItems: 'flex-start' }]}>
-                  <Text style={styles.listItemName}>{u.name}</Text>
-                  <Text style={styles.listItemMeta}>Email: {u.email}</Text>
-                  <Text style={styles.listItemMeta}>Role: {u.role}</Text>
-                  <Text style={styles.listItemMeta}>Status: {u.verificationStatus}</Text>
-                  {u.phone && <Text style={styles.listItemMeta}>Phone: {u.phone}</Text>}
-                </View>
-              ))
+              users
+                .filter((u: any) => userRoleFilter === 'ALL' || u.role === userRoleFilter)
+                .map((u: any) => (
+                  <View key={u.id} style={[styles.listItem, { flexDirection: 'column', alignItems: 'stretch' }]}>
+                    {/* Name & Role badge */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <Text style={styles.listItemName}>{u.name}</Text>
+                      <View style={[
+                        styles.badgeContainer,
+                        u.role === 'HANDYMAN' ? { backgroundColor: '#EBF8FF' } :
+                        u.role === 'VENDOR' ? { backgroundColor: '#FEFCBF' } :
+                        { backgroundColor: '#EDF2F7' }
+                      ]}>
+                        <Text style={{
+                          fontSize: 10, fontWeight: '700',
+                          color: u.role === 'HANDYMAN' ? '#2B6CB0' : u.role === 'VENDOR' ? '#B7791F' : '#4A5568'
+                        }}>{u.role}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.listItemMeta}>Email: {u.email}</Text>
+                    <Text style={styles.listItemMeta}>KYC: {u.verificationStatus || 'UNVERIFIED'}  •  Bookings: {u.bookingCount ?? 0}</Text>
+
+                    {/* ── Primary action row ── */}
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                      {/* View Details */}
+                      <TouchableOpacity
+                        onPress={() => openUserDetails(u)}
+                        style={[styles.userCardBtn, { backgroundColor: '#007AFF' }]}
+                      >
+                        <Text style={styles.userCardBtnText}>🔍 Details</Text>
+                      </TouchableOpacity>
+                      {/* Edit */}
+                      <TouchableOpacity
+                        onPress={() => openUserEdit(u)}
+                        style={[styles.userCardBtn, { backgroundColor: '#5856D6' }]}
+                      >
+                        <Text style={styles.userCardBtnText}>✏️ Edit</Text>
+                      </TouchableOpacity>
+                      {/* Video Call */}
+                      <TouchableOpacity
+                        onPress={() => handleInitiateCall(u, false)}
+                        style={[styles.userCardBtn, { backgroundColor: '#34C759' }]}
+                      >
+                        <Text style={styles.userCardBtnText}>📹 Call</Text>
+                      </TouchableOpacity>
+                      {/* Delete */}
+                      <TouchableOpacity
+                        onPress={() => handleDeleteUser(u)}
+                        style={[styles.userCardBtn, { backgroundColor: '#FF3B30' }]}
+                      >
+                        <Text style={styles.userCardBtnText}>🗑️ Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Phone quick-actions */}
+                    {(u.phone || u.opayPhone) && (
+                      <View style={{ marginTop: 8, padding: 8, backgroundColor: '#FAFAFA', borderRadius: 8, borderLeftWidth: 3, borderLeftColor: theme.primary }}>
+                        {u.phone && (
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 2 }}>
+                            <Text style={[styles.listItemMeta, { marginBottom: 0 }]}>📞 {u.phone}</Text>
+                            <View style={{ flexDirection: 'row', gap: 6 }}>
+                              <TouchableOpacity onPress={() => Linking.openURL(`tel:${u.phone}`)} style={{ backgroundColor: '#34C759', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Call</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => Linking.openURL(`sms:${u.phone}`)} style={{ backgroundColor: '#007AFF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>SMS</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
+                        {u.opayPhone && u.opayPhone !== u.phone && (
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 2 }}>
+                            <Text style={[styles.listItemMeta, { marginBottom: 0 }]}>💳 {u.opayPhone}</Text>
+                            <View style={{ flexDirection: 'row', gap: 6 }}>
+                              <TouchableOpacity onPress={() => Linking.openURL(`tel:${u.opayPhone}`)} style={{ backgroundColor: '#34C759', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>Call</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity onPress={() => Linking.openURL(`sms:${u.opayPhone}`)} style={{ backgroundColor: '#007AFF', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>SMS</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                ))
             )}
           </View>
         )}
@@ -1259,6 +1874,277 @@ export default function AdminScreen() {
             )}
           </View>
         )}
+
+        {/* ── ORDERS TAB ── */}
+        {activeTab === 'orders' && isAdmin && (
+          <View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={styles.formTitle}>🚚 Delivery Orders</Text>
+              <TouchableOpacity
+                onPress={() => { fetchOrders(); fetchRiders(); }}
+                style={[styles.userAddBtn, { backgroundColor: theme.primary }]}
+              >
+                <Text style={styles.userAddBtnText}>🔄 Refresh</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Status Filter Pills */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', gap: 8, paddingRight: 16 }}>
+                {['ALL', 'PENDING', 'PAID', 'SHIPPED', 'DELIVERED', 'CANCELLED'].map(s => (
+                  <TouchableOpacity
+                    key={s}
+                    onPress={() => setOrderStatusFilter(s)}
+                    style={{
+                      paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+                      backgroundColor: orderStatusFilter === s ? theme.primary : '#F2F2F7',
+                      borderWidth: 1,
+                      borderColor: orderStatusFilter === s ? theme.primary : '#E5E5EA',
+                    }}
+                  >
+                    <Text style={{ color: orderStatusFilter === s ? '#fff' : '#1C1C1E', fontWeight: '700', fontSize: 12 }}>
+                      {s === 'ALL' ? '📋 All' : s === 'PENDING' ? '⏳ Pending' : s === 'PAID' ? '💳 Paid' :
+                       s === 'SHIPPED' ? '🚚 Shipped' : s === 'DELIVERED' ? '✅ Delivered' : '❌ Cancelled'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
+            {ordersLoading ? (
+              <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 20 }} />
+            ) : orders.filter(o => orderStatusFilter === 'ALL' || o.status === orderStatusFilter).length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <Text style={{ fontSize: 40, marginBottom: 12 }}>📦</Text>
+                <Text style={styles.emptyText}>No {orderStatusFilter !== 'ALL' ? orderStatusFilter.toLowerCase() : ''} orders found.</Text>
+              </View>
+            ) : (
+              orders
+                .filter(o => orderStatusFilter === 'ALL' || o.status === orderStatusFilter)
+                .map((order: any) => {
+                  const statusColors = getOrderStatusColor(order.status);
+                  return (
+                    <View key={order.id} style={[styles.listItem, { flexDirection: 'column', gap: 0 }]}>
+                      {/* Order Header */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={[styles.listItemName, { flex: 1 }]} numberOfLines={1}>
+                          Order #{order.id.substring(0, 8).toUpperCase()}
+                        </Text>
+                        <View style={[styles.badgeContainer, { backgroundColor: statusColors.bg }]}>
+                          <Text style={[styles.badgeText, { color: statusColors.text }]}>{order.status}</Text>
+                        </View>
+                      </View>
+
+                      {/* Customer & Rider Info */}
+                      <View style={{ backgroundColor: '#F8F9FA', borderRadius: 10, padding: 10, marginBottom: 8 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.listItemMeta, { fontWeight: '700', color: '#1C1C1E' }]}>👤 Customer</Text>
+                            <Text style={styles.listItemMeta}>{order.user?.name || 'N/A'}</Text>
+                            <Text style={[styles.listItemMeta, { color: '#8E8E93' }]}>{order.user?.email || ''}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.listItemMeta, { fontWeight: '700', color: '#1C1C1E' }]}>🏍️ Rider</Text>
+                            {order.rider ? (
+                              <>
+                                <Text style={styles.listItemMeta}>{order.rider.name}</Text>
+                                <Text style={[styles.listItemMeta, { color: '#34C759' }]}>✅ Assigned</Text>
+                              </>
+                            ) : (
+                              <Text style={[styles.listItemMeta, { color: '#FF9500' }]}>⚠️ Unassigned</Text>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Order Details */}
+                      <Text style={styles.listItemMeta}>📦 Items: {order.items?.length ?? 0}  •  💰 Total: ₦{order.totalAmount?.toLocaleString() ?? '0'}</Text>
+                      {order.deliveryAddress && (
+                        <Text style={styles.listItemMeta} numberOfLines={1}>📍 {order.deliveryAddress}</Text>
+                      )}
+                      <Text style={[styles.listItemMeta, { color: '#8E8E93' }]}>
+                        🗓️ {order.createdAt ? new Date(order.createdAt).toLocaleString() : 'N/A'}
+                      </Text>
+
+                      {/* Actions */}
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                        {/* Assign / Reassign Rider */}
+                        {order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && (
+                          <TouchableOpacity
+                            style={[styles.userCardBtn, { backgroundColor: order.rider ? '#FF9500' : theme.primary }]}
+                            onPress={() => {
+                              setAssigningOrderId(order.id);
+                              setShowAssignRiderModal(true);
+                            }}
+                          >
+                            <Text style={styles.userCardBtnText}>
+                              {order.rider ? '🔄 Reassign' : '🏍️ Assign Rider'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {/* Track live delivery */}
+                        {(order.status === 'SHIPPED') && (
+                          <TouchableOpacity
+                            style={[styles.userCardBtn, { backgroundColor: '#5856D6' }]}
+                            onPress={() => navigation.navigate('LiveTracking', { orderId: order.id, role: 'ADMIN' })}
+                          >
+                            <Text style={styles.userCardBtnText}>📡 Track</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {/* Mark as Shipped */}
+                        {order.status === 'PAID' && order.rider && (
+                          <TouchableOpacity
+                            style={[styles.userCardBtn, { backgroundColor: '#007AFF' }]}
+                            onPress={() => handleUpdateOrderStatus(order.id, 'SHIPPED')}
+                          >
+                            <Text style={styles.userCardBtnText}>🚀 Mark Shipped</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {/* Mark as Delivered */}
+                        {order.status === 'SHIPPED' && (
+                          <TouchableOpacity
+                            style={[styles.userCardBtn, { backgroundColor: '#34C759' }]}
+                            onPress={() => handleUpdateOrderStatus(order.id, 'DELIVERED')}
+                          >
+                            <Text style={styles.userCardBtnText}>✅ Delivered</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {/* Cancel order */}
+                        {order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && (
+                          <TouchableOpacity
+                            style={[styles.userCardBtn, { backgroundColor: '#FF3B30' }]}
+                            onPress={() =>
+                              Alert.alert(
+                                '❌ Cancel Order',
+                                'Are you sure you want to cancel this order?',
+                                [
+                                  { text: 'No', style: 'cancel' },
+                                  { text: 'Yes', style: 'destructive', onPress: () => handleUpdateOrderStatus(order.id, 'CANCELLED') },
+                                ]
+                              )
+                            }
+                          >
+                            <Text style={styles.userCardBtnText}>❌ Cancel</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
+            )}
+          </View>
+        )}
+
+        {/* ── REASSIGN MODAL ── */}
+        <Modal
+          visible={showReassignModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowReassignModal(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 }}>
+            <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 20, maxHeight: '80%' }}>
+              <Text style={styles.formTitle}>Reassign Handyman</Text>
+              <ScrollView>
+                {users.filter(u => u.role === 'HANDYMAN' && u.verificationStatus === 'VERIFIED').map(u => (
+                  <TouchableOpacity
+                    key={u.id}
+                    style={[styles.listItem, { borderColor: theme.primary }]}
+                    onPress={() => handleAdminReassign(u.id)}
+                  >
+                    <Text style={styles.listItemName}>{u.name}</Text>
+                    <Text style={styles.listItemMeta}>{u.specialty || 'General'} | {u.email}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <TouchableOpacity
+                style={[styles.cancelBtn, { marginTop: 16 }]}
+                onPress={() => {
+                  setShowReassignModal(false);
+                  setReassignBookingId(null);
+                }}
+              >
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* ── ASSIGN RIDER MODAL ── */}
+        <Modal
+          visible={showAssignRiderModal}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => { setShowAssignRiderModal(false); setAssigningOrderId(null); }}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'flex-end' }}>
+            <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '75%' }}>
+              {/* Handle bar */}
+              <View style={{ width: 40, height: 4, backgroundColor: '#E5E5EA', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
+
+              <Text style={[styles.formTitle, { marginBottom: 4 }]}>🏍️ Assign a Rider</Text>
+              <Text style={[styles.listItemMeta, { marginBottom: 16 }]}>Select a verified rider for this delivery.</Text>
+
+              {ridersLoading ? (
+                <ActivityIndicator size="large" color={theme.primary} />
+              ) : riders.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: 30 }}>
+                  <Text style={{ fontSize: 36, marginBottom: 8 }}>🏍️</Text>
+                  <Text style={[styles.emptyText, { textAlign: 'center' }]}>No verified riders available yet.{`\n`}Ask riders to register and complete KYC.</Text>
+                </View>
+              ) : (
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {riders.map((rider: any) => (
+                    <TouchableOpacity
+                      key={rider.id}
+                      style={[
+                        styles.listItem,
+                        { flexDirection: 'row', alignItems: 'center', borderColor: theme.primary, marginBottom: 10 },
+                        assigningRiderId === rider.id && { opacity: 0.6 },
+                      ]}
+                      onPress={() => assigningOrderId && handleAssignRider(assigningOrderId, rider.id)}
+                      disabled={assigningRiderId === rider.id}
+                    >
+                      {assigningRiderId === rider.id ? (
+                        <ActivityIndicator size="small" color={theme.primary} style={{ marginRight: 12 }} />
+                      ) : (
+                        <View style={{
+                          width: 44, height: 44, borderRadius: 22,
+                          backgroundColor: theme.primary + '20',
+                          alignItems: 'center', justifyContent: 'center',
+                          marginRight: 12,
+                        }}>
+                          <Text style={{ fontSize: 22 }}>🏍️</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.listItemName, { marginBottom: 2 }]}>{rider.name}</Text>
+                        <Text style={styles.listItemMeta}>
+                          {rider.vehicleType || 'Motorcycle'}  •  {rider.licensePlate || 'N/A'}
+                        </Text>
+                        <Text style={[styles.listItemMeta, { color: '#34C759' }]}>✅ Verified Rider</Text>
+                      </View>
+                      <View style={[styles.badgeContainer, { backgroundColor: theme.primary + '15' }]}>
+                        <Text style={{ color: theme.primary, fontSize: 12, fontWeight: '700' }}>Select →</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+
+              <TouchableOpacity
+                style={[styles.cancelBtn, { marginTop: 16 }]}
+                onPress={() => { setShowAssignRiderModal(false); setAssigningOrderId(null); }}
+              >
+                <Text style={styles.cancelBtnText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -1602,4 +2488,119 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   uploadApplyBtnText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
+
+  // ── User Management Styles ─────────────────────────────────────────────────
+  userAddBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  userAddBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  userCardBtn: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  userCardBtnText: { color: '#fff', fontWeight: '700', fontSize: 11 },
+  userModalContainer: {
+    flex: 1,
+  },
+  userModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 56,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  userModalCloseBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#F2F2F7',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  userModalCloseText: { fontSize: 14, fontWeight: '700', color: '#1C1C1E' },
+  userModalTitle: { fontSize: 17, fontWeight: '800' },
+  userModalFooter: {
+    padding: 20,
+    paddingBottom: 36,
+    borderTopWidth: 1,
+  },
+  userModalSaveBtn: {
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userModalSaveBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  userRolePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#E5E5EA',
+    backgroundColor: '#F2F2F7',
+  },
+  userRolePillText: { fontSize: 12, fontWeight: '700', color: '#1C1C1E' },
+  userDetailCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 18,
+  },
+  userDetailCardTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  userDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2F2F7',
+  },
+  userDetailLabel: { fontSize: 12, fontWeight: '600', flex: 1 },
+  userDetailValue: { fontSize: 13, fontWeight: '700', flex: 1.5, textAlign: 'right' },
+  userNoLocationBox: {
+    height: 140,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userNoLocationText: { fontSize: 13, fontWeight: '500', textAlign: 'center' },
+  userActionBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  userActionBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+
+  // ── removeBg toggle card styles (used in AI Image Enhancer modal) ──────────
+  removeBgCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1.5,
+    borderColor: '#3A3A3C',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  removeBgLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 },
+  removeBgIcon: { fontSize: 24 },
+  removeBgTitle: { fontSize: 14, fontWeight: '700', color: '#1C1C1E', marginBottom: 2 },
+  removeBgSubtitle: { fontSize: 12, color: '#8E8E93' },
+  removeBgToggle: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 44,
+  },
+  removeBgToggleText: { color: '#fff', fontSize: 11, fontWeight: '800' },
 });

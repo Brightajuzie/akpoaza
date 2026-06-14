@@ -9,7 +9,10 @@ export default function HistoryScreen({ route, navigation }: any) {
   const { type, role } = route.params || { type: 'orders', role: 'CUSTOMER' };
   const { userInfo, userToken } = useContext(AuthContext);
   const { theme } = useContext(SettingsContext);
+  const [activeTab, setActiveTab] = useState<'main' | 'parcels'>(route.params?.tab === 'parcels' ? 'parcels' : 'main');
   const [data, setData] = useState<any[]>([]);
+  const [parcels, setParcels] = useState<any[]>([]);
+  const [parcelsLoading, setParcelsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Live tracking (customer)
@@ -34,7 +37,7 @@ export default function HistoryScreen({ route, navigation }: any) {
     setLoading(true);
     try {
       const endpoint = type === 'orders' 
-        ? (role === 'VENDOR' ? '/orders/vendor' : '/orders') 
+        ? (role === 'VENDOR' ? '/orders/vendor' : role === 'RIDER' ? '/orders/rider/available' : '/orders') 
         : '/bookings';
       const response = await apiClient.get(endpoint);
       setData(response.data);
@@ -48,10 +51,25 @@ export default function HistoryScreen({ route, navigation }: any) {
   useEffect(() => {
     if (userToken) {
       fetchData();
+      fetchParcels();
     } else {
       setLoading(false);
     }
   }, [type, userToken]);
+
+  const fetchParcels = async () => {
+    setParcelsLoading(true);
+    try {
+      const isRider = userInfo?.role === 'RIDER';
+      const endpoint = isRider ? '/parcels/rider/available' : '/parcels';
+      const res = await apiClient.get(endpoint);
+      setParcels(res.data || []);
+    } catch (e) {
+      console.error('Failed to fetch parcels', e);
+    } finally {
+      setParcelsLoading(false);
+    }
+  };
 
   // Pulse animation loop
   useEffect(() => {
@@ -88,12 +106,17 @@ export default function HistoryScreen({ route, navigation }: any) {
     return () => { if (interval) clearInterval(interval); };
   }, [activeTrackingId]);
 
-  // Handyman: broadcast own location every 5 s when they have an active job
+  // Handyman/Rider: broadcast own location every 5 s when they have an active job/delivery
   useEffect(() => {
-    if (userInfo?.role !== 'HANDYMAN') return;
+    const isHandyman = userInfo?.role === 'HANDYMAN';
+    const isRider = userInfo?.role === 'RIDER';
+    if (!isHandyman && !isRider) return;
 
-    const activeJob = data.find((b) => b.status === 'ACCEPTED');
-    if (!activeJob) {
+    const activeItem = isHandyman
+      ? data.find((b) => b.status === 'ACCEPTED')
+      : data.find((o) => (o.status === 'PAID' || o.status === 'SHIPPED') && o.riderId === userInfo?.id);
+
+    if (!activeItem) {
       if (locationBroadcastRef.current) {
         clearInterval(locationBroadcastRef.current);
         locationBroadcastRef.current = null;
@@ -217,7 +240,133 @@ export default function HistoryScreen({ route, navigation }: any) {
       setReviewSubmitting(false);
     }
   };
+  const handleRiderAcceptDelivery = async (id: string) => {
+    try {
+      await apiClient.patch(`/orders/${id}/accept-delivery`);
+      Alert.alert('Accepted', 'Delivery accepted successfully. Live location sharing started.');
+      fetchData();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to accept delivery.');
+    }
+  };
 
+  const handleUpdateDeliveryStatus = async (id: string, nextStatus: 'SHIPPED' | 'DELIVERED') => {
+    try {
+      await apiClient.patch(`/orders/${id}/status`, { status: nextStatus });
+      Alert.alert('Success', `Delivery status updated to ${nextStatus}.`);
+      fetchData();
+    } catch (e) {
+      Alert.alert('Error', 'Failed to update delivery status.');
+    }
+  };
+
+  const renderRiderDeliveryItem = ({ item }: any) => {
+    const isAssignedToMe = item.riderId === userInfo?.id;
+    const canAccept = !item.riderId;
+    
+    return (
+      <View style={[styles.card, { borderColor: theme.border }]}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.idText}>Delivery #{item.id.substring(0, 8)}</Text>
+          <View style={[
+            styles.badge, 
+            item.status === 'PAID' || item.status === 'DELIVERED'
+              ? { backgroundColor: theme.primary + '15' } 
+              : { backgroundColor: '#FFF9DB' }
+          ]}>
+            <Text style={[
+              styles.badgeText, 
+              item.status === 'PAID' || item.status === 'DELIVERED'
+                ? { color: theme.primary } 
+                : { color: '#F08C00' }
+            ]}>
+              {item.status}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.date}>
+          Ordered: {new Date(item.createdAt).toLocaleDateString()}
+        </Text>
+
+        <View style={styles.handymanRow}>
+          <Text style={styles.handymanAvatar}>👤</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.handymanName}>{item.user?.name || 'Customer'}</Text>
+            <Text style={styles.handymanSpecialty}>Customer Address: {item.user?.address || 'N/A'}</Text>
+          </View>
+          {item.user?.phone && (
+            <TouchableOpacity 
+              onPress={() => Linking.openURL(`tel:${item.user.phone}`)} 
+              style={styles.commsBtn}
+            >
+              <Text style={styles.commsText}>📞</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={{ marginTop: 12 }}>
+          <Text style={styles.boldLabel}>Items:</Text>
+          {item.items?.map((orderItem: any, idx: number) => (
+            <Text key={idx} style={{ fontSize: 13, color: '#3A3A3C', marginTop: 2 }}>
+              • {orderItem.quantity}x {orderItem.product?.name}
+            </Text>
+          ))}
+        </View>
+
+        <View style={[styles.bookingFooter, { borderTopColor: theme.border, marginTop: 16 }]}>
+          <Text style={[styles.amount, { color: theme.text }]}>Total Val: ${item.totalAmount.toFixed(2)}</Text>
+          
+          <View style={styles.actionsRow}>
+            {canAccept && (
+              <TouchableOpacity
+                style={[styles.completeBtn, { backgroundColor: theme.primary }]}
+                onPress={() => handleRiderAcceptDelivery(item.id)}
+              >
+                <Text style={styles.completeBtnText}>Accept Delivery</Text>
+              </TouchableOpacity>
+            )}
+
+            {isAssignedToMe && item.status === 'PAID' && (
+              <TouchableOpacity
+                style={[styles.completeBtn, { backgroundColor: theme.secondary || '#FF9500' }]}
+                onPress={() => handleUpdateDeliveryStatus(item.id, 'SHIPPED')}
+              >
+                <Text style={styles.completeBtnText}>📦 Mark Picked Up</Text>
+              </TouchableOpacity>
+            )}
+
+            {isAssignedToMe && item.status === 'SHIPPED' && (
+              <>
+                <TouchableOpacity
+                  style={[
+                    styles.trackBtn,
+                    { borderColor: theme.primary, backgroundColor: theme.primary + '10', marginRight: 8 }
+                  ]}
+                  onPress={() => navigation.navigate('LiveTracking', { orderId: item.id, role: 'RIDER' })}
+                >
+                  <Text style={[styles.trackBtnText, { color: theme.primary }]}>📍 Navigate</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.completeBtn, { backgroundColor: '#34C759' }]}
+                  onPress={() => handleUpdateDeliveryStatus(item.id, 'DELIVERED')}
+                >
+                  <Text style={styles.completeBtnText}>✓ Delivered</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {item.status === 'DELIVERED' && isAssignedToMe && (
+              <View style={styles.reviewedBadge}>
+                <Text style={styles.reviewedText}>✓ Completed</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </View>
+    );
+  };
   const renderOrderItem = ({ item }: any) => {
     const isReviewed = reviewedIds.has(item.id);
     const isEscrowHeld = item.escrows && item.escrows.some((e: any) => e.status === 'HELD');
@@ -256,6 +405,18 @@ export default function HistoryScreen({ route, navigation }: any) {
           <Text style={[styles.amount, { color: theme.text }]}>Total: ${item.totalAmount.toFixed(2)}</Text>
           
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            {(item.status === 'SHIPPED' || (item.status === 'PAID' && item.riderId)) && (
+              <TouchableOpacity
+                style={[
+                  styles.trackBtn,
+                  { borderColor: theme.primary, backgroundColor: theme.primary + '10', marginRight: 8 }
+                ]}
+                onPress={() => navigation.navigate('LiveTracking', { orderId: item.id, role: 'CUSTOMER' })}
+              >
+                <Text style={[styles.trackBtnText, { color: theme.primary }]}>🗺 Track Delivery</Text>
+              </TouchableOpacity>
+            )}
+
             {item.status === 'DELIVERED' && isEscrowHeld && (
               item.isSplitPayment && item.amountPaid < item.totalAmount ? (
                 <TouchableOpacity
@@ -558,18 +719,195 @@ export default function HistoryScreen({ route, navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <FlatList
-        data={data}
-        keyExtractor={(item) => item.id}
-        renderItem={type === 'orders' ? (role === 'VENDOR' ? renderVendorSaleItem : renderOrderItem) : renderBookingItem}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>You have no history records yet.</Text>
-          </View>
-        }
-      />
+
+      {/* ── Tab Switcher ── */}
+      <View style={styles.tabSwitcherRow}>
+        <TouchableOpacity
+          style={[styles.tabSwitchBtn, activeTab === 'main' && { backgroundColor: theme.primary }]}
+          onPress={() => setActiveTab('main')}
+        >
+          <Text style={[styles.tabSwitchText, activeTab === 'main' && { color: '#fff' }]}>
+            {type === 'orders' ? (userInfo?.role === 'RIDER' ? '🚚 Deliveries' : '🛒 Orders') : '📋 Bookings'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tabSwitchBtn, activeTab === 'parcels' && { backgroundColor: '#5856D6' }]}
+          onPress={() => { setActiveTab('parcels'); fetchParcels(); }}
+        >
+          <Text style={[styles.tabSwitchText, activeTab === 'parcels' && { color: '#fff' }]}>📦 Parcels</Text>
+        </TouchableOpacity>
+      </View>
+
+      {activeTab === 'main' ? (
+        <FlatList
+          data={data}
+          keyExtractor={(item) => item.id}
+          renderItem={type === 'orders' ? (userInfo?.role === 'VENDOR' ? renderVendorSaleItem : userInfo?.role === 'RIDER' ? renderRiderDeliveryItem : renderOrderItem) : renderBookingItem}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>You have no history records yet.</Text>
+            </View>
+          }
+        />
+      ) : (
+        // ── PARCELS TAB ──
+        parcelsLoading ? (
+          <ActivityIndicator size="large" color="#5856D6" style={{ marginTop: 60 }} />
+        ) : (
+          <FlatList
+            data={parcels}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={{ fontSize: 48, marginBottom: 12 }}>📦</Text>
+                <Text style={styles.emptyText}>
+                  {userInfo?.role === 'RIDER' ? 'No available parcel deliveries yet.' : 'You have no parcel deliveries yet.'}
+                </Text>
+                {userInfo?.role !== 'RIDER' && (
+                  <TouchableOpacity
+                    style={{ marginTop: 16, backgroundColor: '#5856D6', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 }}
+                    onPress={() => navigation.navigate('BookParcel')}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: '800' }}>🚚 Book a Rider</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            }
+            renderItem={({ item: parcel }) => (
+              <View style={[styles.orderCard, { borderColor: theme.border }]}>
+                {/* Status badge */}
+                <View style={[styles.statusBadge, {
+                  backgroundColor:
+                    parcel.status === 'DELIVERED' ? '#34C75920' :
+                    parcel.status === 'SHIPPED' ? '#007AFF20' :
+                    parcel.status === 'CANCELLED' ? '#FF3B3020' : '#FF950020'
+                }]}>
+                  <Text style={[styles.statusText, {
+                    color:
+                      parcel.status === 'DELIVERED' ? '#34C759' :
+                      parcel.status === 'SHIPPED' ? '#007AFF' :
+                      parcel.status === 'CANCELLED' ? '#FF3B30' : '#FF9500'
+                  }]}>
+                    {parcel.status === 'DELIVERED' ? '✅ Delivered' :
+                     parcel.status === 'SHIPPED' ? '🚚 In Transit' :
+                     parcel.status === 'CANCELLED' ? '❌ Cancelled' : '⏳ Pending'}
+                  </Text>
+                </View>
+
+                <Text style={[styles.orderTitle, { color: theme.text }]}>📦 Parcel Delivery</Text>
+                <Text style={styles.orderMeta}>📍 From: {parcel.pickupAddress}</Text>
+                <Text style={styles.orderMeta}>🏁 To: {parcel.dropoffAddress}</Text>
+                {parcel.parcelDescription && (
+                  <Text style={styles.orderMeta}>📝 {parcel.parcelDescription}</Text>
+                )}
+                <Text style={styles.orderMeta}>💰 ₦{parcel.totalAmount?.toLocaleString()}</Text>
+                {parcel.rider && (
+                  <Text style={[styles.orderMeta, { color: '#34C759' }]}>
+                    🏍️ Rider: {parcel.rider.name} · {parcel.rider.vehicleType}
+                  </Text>
+                )}
+                <Text style={[styles.orderMeta, { color: '#8E8E93' }]}>
+                  🗓️ {parcel.createdAt ? new Date(parcel.createdAt).toLocaleString() : 'N/A'}
+                </Text>
+
+                {/* Action Buttons */}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                  {/* Rider: Accept delivery */}
+                  {userInfo?.role === 'RIDER' && !parcel.riderId && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#34C759' }]}
+                      onPress={async () => {
+                        try {
+                          await apiClient.patch(`/parcels/${parcel.id}/accept-delivery`);
+                          Alert.alert('✅ Accepted!', 'You have accepted this parcel delivery.');
+                          fetchParcels();
+                        } catch (e: any) {
+                          Alert.alert('Error', e?.response?.data?.error || 'Failed to accept delivery.');
+                        }
+                      }}
+                    >
+                      <Text style={styles.actionBtnText}>✅ Accept</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Rider: Mark Delivered */}
+                  {userInfo?.role === 'RIDER' && parcel.riderId === userInfo.id && parcel.status === 'SHIPPED' && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#007AFF' }]}
+                      onPress={async () => {
+                        try {
+                          await apiClient.patch(`/parcels/${parcel.id}/status`, { status: 'DELIVERED' });
+                          Alert.alert('✅ Done!', 'Parcel marked as delivered.');
+                          fetchParcels();
+                        } catch (e: any) {
+                          Alert.alert('Error', e?.response?.data?.error || 'Failed to update.');
+                        }
+                      }}
+                    >
+                      <Text style={styles.actionBtnText}>📬 Mark Delivered</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Live Track */}
+                  {parcel.status === 'SHIPPED' && parcel.riderId && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#5856D6' }]}
+                      onPress={() => navigation.navigate('LiveTracking', { orderId: parcel.id, role: userInfo?.role || 'CUSTOMER' })}
+                    >
+                      <Text style={styles.actionBtnText}>📡 Track Live</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Customer: Confirm Receipt */}
+                  {userInfo?.role !== 'RIDER' && parcel.status === 'DELIVERED' && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#34C759' }]}
+                      onPress={async () => {
+                        try {
+                          await apiClient.post(`/parcels/${parcel.id}/confirm-receipt`);
+                          Alert.alert('✅ Confirmed!', 'Receipt confirmed and payment released to rider.');
+                          fetchParcels();
+                        } catch (e: any) {
+                          Alert.alert('Error', e?.response?.data?.error || 'Failed to confirm receipt.');
+                        }
+                      }}
+                    >
+                      <Text style={styles.actionBtnText}>✅ Confirm Receipt</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Customer: Cancel */}
+                  {userInfo?.role !== 'RIDER' && parcel.status === 'PENDING' && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#FF3B30' }]}
+                      onPress={() => Alert.alert(
+                        'Cancel Parcel?', 'Are you sure you want to cancel this delivery?',
+                        [
+                          { text: 'No', style: 'cancel' },
+                          { text: 'Yes', style: 'destructive', onPress: async () => {
+                            try {
+                              await apiClient.patch(`/parcels/${parcel.id}/status`, { status: 'CANCELLED' });
+                              fetchParcels();
+                            } catch (e: any) {
+                              Alert.alert('Error', e?.response?.data?.error || 'Failed to cancel.');
+                            }
+                          }}
+                        ]
+                      )}
+                    >
+                      <Text style={styles.actionBtnText}>❌ Cancel</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
+          />
+        )
+      )}
 
       {/* Review Submission Modal */}
       <Modal
@@ -1096,5 +1434,74 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 15,
+  },
+
+  // ── Parcel tab styles ────────────────────────────────────────────────
+  tabSwitcherRow: {
+    flexDirection: 'row',
+    margin: 16,
+    marginBottom: 8,
+    borderRadius: 14,
+    backgroundColor: '#F2F2F7',
+    padding: 4,
+    gap: 4,
+  },
+  tabSwitchBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  tabSwitchText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#3A3A3C',
+  },
+  actionBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+
+  // ── Parcel card styles ───────────────────────────────────────────────
+  orderCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginBottom: 10,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  orderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  orderMeta: {
+    fontSize: 13,
+    color: '#3A3A3C',
+    marginBottom: 3,
   },
 });

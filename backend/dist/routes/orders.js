@@ -26,7 +26,7 @@ router.get('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, 
     try {
         const orders = yield prisma_1.default.order.findMany({
             where: { userId },
-            include: { items: { include: { product: true } } },
+            include: { items: { include: { product: true } }, escrows: true },
             orderBy: { createdAt: 'desc' },
         });
         res.json(orders);
@@ -57,6 +57,7 @@ router.get('/vendor', auth_1.authenticateToken, (req, res, next) => __awaiter(vo
                                 email: true,
                             },
                         },
+                        escrows: true,
                     },
                 },
             },
@@ -216,7 +217,7 @@ router.patch('/:id/status', auth_1.authenticateToken, (req, res, next) => __awai
         if (status === 'DELIVERED') {
             yield prisma_1.default.escrow.updateMany({
                 where: { orderId: id, status: 'HELD' },
-                data: { autoReleaseAt: new Date(Date.now() + 48 * 60 * 60 * 1000) },
+                data: { autoReleaseAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
             });
         }
         res.json({ message: `Order status updated to ${status}`, order: updatedOrder });
@@ -241,6 +242,9 @@ router.post('/:id/confirm-receipt', auth_1.authenticateToken, (req, res, next) =
         }
         if (order.userId !== userId) {
             return res.status(403).json({ error: 'Forbidden. You are not the buyer of this order.' });
+        }
+        if (order.isSplitPayment && order.amountPaid < order.totalAmount) {
+            return res.status(400).json({ error: 'Remaining split payment of 50% is required to confirm receipt.' });
         }
         const escrows = yield prisma_1.default.escrow.findMany({
             where: { orderId: id, status: 'HELD' },

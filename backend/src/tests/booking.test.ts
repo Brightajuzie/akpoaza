@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../index';
 import { PrismaClient } from '@prisma/client';
+import jwt from 'jsonwebtoken';
 
 const prisma = new PrismaClient();
 
@@ -11,6 +12,7 @@ describe('Booking & Matchmaking Integration Tests', () => {
   let customerId = '';
   let handymanToken = '';
   let handymanId = '';
+  let handymanFarId = '';
   let serviceId = '';
 
   const testEmailCustomer = `customer_${Date.now()}@domain.com`;
@@ -100,7 +102,7 @@ describe('Booking & Matchmaking Integration Tests', () => {
         name: 'Dave Far Plumber',
         role: 'HANDYMAN',
       });
-    const farId = handymanFarRes.body.user.id;
+    handymanFarId = handymanFarRes.body.user.id;
 
     await request(app)
       .patch('/api/auth/location')
@@ -111,7 +113,7 @@ describe('Booking & Matchmaking Integration Tests', () => {
         specialty: 'Plumbing',
       });
     await prisma.user.update({
-      where: { id: farId },
+      where: { id: handymanFarId },
       data: { specialty: 'Plumbing', verificationStatus: 'VERIFIED' },
     });
   }, 120000);
@@ -186,6 +188,51 @@ describe('Booking & Matchmaking Integration Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.providerLocation.lat).toBeCloseTo(40.7575, 4);
       expect(res.body.providerLocation.lng).toBeCloseTo(-73.9870, 4);
+    });
+
+    it('should deny reassignment and cancellation to non-admin users', async () => {
+      // Reassign attempt by customer
+      const reassignRes = await request(app)
+        .patch(`/api/bookings/${bookingId}/admin-reassign`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ newHandymanId: handymanFarId });
+      expect(reassignRes.status).toBe(403);
+
+      // Cancel attempt by customer
+      const cancelRes = await request(app)
+        .patch(`/api/bookings/${bookingId}/admin-cancel`)
+        .set('Authorization', `Bearer ${customerToken}`);
+      expect(cancelRes.status).toBe(403);
+    });
+
+    it('should allow admin to reassign booking to a new handyman', async () => {
+      const adminToken = jwt.sign(
+        { userId: 'admin-id', role: 'ADMIN' },
+        process.env.JWT_SECRET || 'super-secret-dummy-key'
+      );
+
+      const res = await request(app)
+        .patch(`/api/bookings/${bookingId}/admin-reassign`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ newHandymanId: handymanFarId });
+
+      expect(res.status).toBe(200);
+      expect(res.body.handymanId).toBe(handymanFarId);
+      expect(res.body.status).toBe('ACCEPTED');
+    });
+
+    it('should allow admin to cancel booking forcefully', async () => {
+      const adminToken = jwt.sign(
+        { userId: 'admin-id', role: 'ADMIN' },
+        process.env.JWT_SECRET || 'super-secret-dummy-key'
+      );
+
+      const res = await request(app)
+        .patch(`/api/bookings/${bookingId}/admin-cancel`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('CANCELLED');
     });
   });
 });
