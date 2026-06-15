@@ -13,6 +13,7 @@ enum Role {
   HANDYMAN
   VENDOR
   ADMIN
+  RIDER
 }
 
 enum AuthProvider {
@@ -70,6 +71,7 @@ model User {
   updatedAt          DateTime           @updatedAt
 
   orders             Order[]
+  deliveries         Order[]            @relation("RiderDeliveries")
   bookings           Booking[]          @relation("CustomerBookings")
   jobs               Booking[]          @relation("HandymanJobs")
   reviewsGiven       Review[]           @relation("ReviewAuthor")
@@ -77,6 +79,11 @@ model User {
   products           Product[]          @relation("VendorProducts")
   wallet             Wallet?
   escrows            Escrow[]           @relation("ProviderEscrows")
+  vehicleType        String?
+  licensePlate       String?
+  riderStatus        String?            @default("OFFLINE")
+  customerParcels    ParcelDelivery[]   @relation("CustomerParcels")
+  riderParcels       ParcelDelivery[]   @relation("RiderParcels")
 }
 
 model Product {
@@ -108,6 +115,9 @@ model Order {
   status          OrderStatus     @default(PENDING)
   paymentProvider PaymentProvider @default(NONE)
   paymentRef      String?         // Reference ID from Stripe/Paystack/Flutterwave
+  riderId         String?
+  rider           User?           @relation("RiderDeliveries", fields: [riderId], references: [id])
+  deliveryAddress String?         // Delivery destination address text
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
@@ -221,12 +231,23 @@ model Transaction {
   createdAt   DateTime @default(now())
 }
 
+model PromoSlide {
+  id          String   @id @default(uuid())
+  imageUrl    String
+  caption     String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model Escrow {
   id               String    @id @default(uuid())
   bookingId        String?
   booking          Booking?  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   orderId          String?
   order            Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  parcelDeliveryId String?
+  parcelDelivery   ParcelDelivery? @relation(fields: [parcelDeliveryId], references: [id], onDelete: Cascade)
   providerId       String
   provider         User      @relation("ProviderEscrows", fields: [providerId], references: [id], onDelete: Cascade)
   amount           Float
@@ -254,4 +275,27 @@ model Withdrawal {
   instant       Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model ParcelDelivery {
+  id                String          @id @default(uuid())
+  userId            String
+  user              User            @relation("CustomerParcels", fields: [userId], references: [id])
+  riderId           String?
+  rider             User?           @relation("RiderParcels", fields: [riderId], references: [id])
+  pickupAddress     String
+  dropoffAddress    String
+  pickupLat         Float
+  pickupLng         Float
+  dropoffLat        Float
+  dropoffLng        Float
+  parcelDescription String?
+  totalAmount       Float
+  status            OrderStatus     @default(PENDING)
+  paymentProvider   PaymentProvider @default(NONE)
+  paymentRef        String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  escrows           Escrow[]
 }

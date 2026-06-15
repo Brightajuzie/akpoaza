@@ -1,6 +1,14 @@
 import React from 'react';
-import { StyleSheet, ActivityIndicator, View } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { StyleSheet, ActivityIndicator, View, Platform, Text } from 'react-native';
+
+let WebView: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    WebView = require('react-native-webview').WebView;
+  } catch (e) {
+    console.warn('WebView could not be loaded on this platform.', e);
+  }
+}
 
 interface PaymentWebViewProps {
   url: string;
@@ -18,6 +26,29 @@ export default function PaymentWebView({ url, onPaymentSuccess, onPaymentCancel 
       onPaymentCancel();
     }
   };
+
+  if (Platform.OS === 'web') {
+    React.useEffect(() => {
+      // For web, redirect the window to the payment gateway URL directly,
+      // as payment gateways generally block iframe rendering (X-Frame-Options).
+      window.location.href = url;
+    }, [url]);
+
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator color="#007AFF" size="large" />
+        <Text style={{ marginTop: 15, color: '#6C757D' }}>Redirecting to payment gateway...</Text>
+      </View>
+    );
+  }
+
+  if (!WebView) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator color="#007AFF" size="large" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

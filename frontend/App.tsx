@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
-import React, { useCallback } from 'react';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect } from 'react';
+import { ActivityIndicator, View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import AppNavigator from './src/navigation/AppNavigator';
@@ -30,6 +30,32 @@ export default function App() {
     loadFonts();
   }, []);
 
+  // Inject viewport meta tag and body styles for web
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      // Set viewport meta tag
+      let meta = document.querySelector('meta[name="viewport"]');
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'viewport');
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes');
+
+      // Style body/html to center the app
+      document.documentElement.style.height = '100%';
+      document.documentElement.style.width = '100%';
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.height = '100%';
+      document.body.style.width = '100%';
+      document.body.style.overflow = 'hidden';
+      document.body.style.margin = '0';
+      document.body.style.display = 'flex';
+      document.body.style.flexDirection = 'column';
+      document.body.style.backgroundColor = '#f8f9fa';
+    }
+  }, []);
+
   if (!fontsLoaded) {
     return (
       <View style={styles.loadingContainer}>
@@ -39,7 +65,7 @@ export default function App() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1, width: '100%' }}>
       <LinearGradient colors={['#0f2027', '#203a43', '#2c5364']} style={styles.gradient}>
         <StripeProvider publishableKey={stripeKey}>
           <AuthProvider>
@@ -69,5 +95,6 @@ const styles = StyleSheet.create({
   },
   gradient: {
     flex: 1,
+    width: '100%',
   },
 });

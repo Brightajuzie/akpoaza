@@ -2,8 +2,16 @@
   "background_color": "#ffffff",
   "display": "standalone",
   "lang": "en",
-  "name": "Handyman & E-commerce",
-  "short_name": "Handyman & E-commerce",
+  "name": "FixMart",
+  "short_name": "FixMart",
   "start_url": "/?utm_source=web_app_manifest",
-  "orientation": "portrait"
+  "orientation": "portrait",
+  "related_applications": [
+    {
+      "platform": "play",
+      "url": "http://play.google.com/store/apps/details?id=com.akpoaza.kachlinks",
+      "id": "com.akpoaza.kachlinks"
+    }
+  ],
+  "prefer_related_applications": true
 }

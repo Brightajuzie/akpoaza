@@ -1,8 +1,9 @@
 {
   "expo": {
-    "name": "Handyman & E-commerce",
+    "name": "FixMart",
     "slug": "handyman-ecommerce",
-    "version": "1.0.0",
+    "scheme": "handymanecommerce",
+    "version": "2.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {
@@ -14,6 +15,7 @@
     ],
     "ios": {
       "supportsTablet": true,
+      "jsEngine": "hermes",
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
@@ -21,12 +23,20 @@
       }
     },
     "android": {
+      "jsEngine": "hermes",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
-      "usesCleartextTraffic": true
+      "usesCleartextTraffic": true,
+      "package": "com.akpoaza.kachlinks",
+      "versionCode": 2
     },
-    "web": {
-    }
+    "web": {},
+    "extra": {
+      "eas": {
+        "projectId": "8d4405de-245d-4c45-b0c0-5331aeb2e9fe"
+      }
+    },
+    "owner": "brightajuzie"
   }
 }

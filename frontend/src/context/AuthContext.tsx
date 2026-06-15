@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from '../utils/storage';
 import apiClient, { setUnauthorizedHandler } from '../api/client';
 
 export const AuthContext = createContext<any>(null);

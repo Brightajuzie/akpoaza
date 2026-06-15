@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, TouchableOpacity, Alert, TextInput } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, TouchableOpacity, Alert, TextInput, useWindowDimensions } from 'react-native';
 import apiClient from '../api/client';
 import { CartContext } from '../context/CartContext';
 import { SettingsContext } from '../context/SettingsContext';
@@ -11,6 +11,8 @@ export default function ProductsScreen({ navigation }: any) {
   const [locationQuery, setLocationQuery] = useState('');
   const { addToCart } = useContext(CartContext);
   const { theme } = useContext(SettingsContext);
+  const { width } = useWindowDimensions();
+  const numColumns = width > 1024 ? 4 : width > 600 ? 3 : 2;
 
   const fetchProducts = async () => {
     try {
@@ -92,9 +94,11 @@ export default function ProductsScreen({ navigation }: any) {
         </View>
       ) : (
         <FlatList
+          key={`grid-${numColumns}`}
           data={filteredProducts}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContainer}
+          numColumns={numColumns}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => {
             const isFeatured = item.featured;
@@ -113,7 +117,7 @@ export default function ProductsScreen({ navigation }: any) {
                 onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
               >
                 {item.imageUrl ? (
-                  <Image source={{ uri: item.imageUrl }} style={styles.image} />
+                  <Image source={{ uri: item.imageUrl }} style={styles.image} resizeMode="cover" />
                 ) : (
                   <View style={styles.placeholderImage}>
                     <Text style={styles.placeholderText}>📦 Product</Text>
@@ -221,9 +225,10 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   card: {
+    flex: 1,
+    margin: 8,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    marginBottom: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -237,7 +242,6 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: 180,
-    resizeMode: 'cover',
   },
   placeholderImage: {
     width: '100%',

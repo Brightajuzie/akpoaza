@@ -585,7 +585,7 @@ router.get('/opay/mock-pay', (req, res) => {
         <div class="card">
           <div class="logo"><span>O</span>Pay</div>
           <div class="merchant-badge">Secured Sandboxed Gateway</div>
-          <div>Handyman E-Commerce Checkout</div>
+          <div>FixMart Checkout</div>
           <div class="amount">₦${amt.toFixed(2)}</div>
           <div class="ref">REF: ${reference}</div>
           

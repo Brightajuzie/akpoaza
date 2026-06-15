@@ -30,7 +30,7 @@ router.get('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, 
             : { customerId: userId };
         const bookings = yield prisma_1.default.booking.findMany({
             where: whereClause,
-            include: { service: true, handyman: true },
+            include: { service: true, handyman: true, escrows: true },
         });
         res.json(bookings);
     }
@@ -77,7 +77,7 @@ router.get('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 
     try {
         const booking = yield prisma_1.default.booking.findUnique({
             where: { id },
-            include: { service: true, handyman: true, customer: true },
+            include: { service: true, handyman: true, customer: true, escrows: true },
         });
         if (!booking)
             return res.status(404).json({ error: 'Booking not found' });
@@ -111,9 +111,10 @@ router.post('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0,
         const MAX_RADIUS_KM = 50; // primary search radius
         const FALLBACK_RADIUS_KM = 100; // wider fallback radius
         if (autoAssign && customerLat !== null && customerLng !== null) {
-            // Find handymen already on an ACCEPTED job (busy)
+            // Find handymen actively IN_PROGRESS (on-site at a job) — ACCEPTED just means paid/confirmed
+            // but does not mean the handyman is currently occupied.
             const busyHandymanRecords = yield prisma_1.default.booking.findMany({
-                where: { status: 'ACCEPTED' },
+                where: { status: 'IN_PROGRESS' },
                 select: { handymanId: true },
             });
             const busyIds = new Set(busyHandymanRecords.map((b) => b.handymanId).filter(Boolean));
@@ -291,7 +292,7 @@ router.patch('/:id/status', auth_1.authenticateToken, (req, res, next) => __awai
         else if (status === 'COMPLETED' && updatedBooking.customerId) {
             yield prisma_1.default.escrow.updateMany({
                 where: { bookingId: id, status: 'HELD' },
-                data: { autoReleaseAt: new Date(Date.now() + 48 * 60 * 60 * 1000) },
+                data: { autoReleaseAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
             });
             yield (0, notifications_1.createNotification)(prisma_1.default, updatedBooking.customerId, '🎉 Job Completed', `Your booking${updatedBooking.service ? ` for "${updatedBooking.service.name}"` : ''} has been marked complete. Please confirm to release funds!`, 'BOOKING', id).catch(() => { });
         }
@@ -305,6 +306,64 @@ router.patch('/:id/status', auth_1.authenticateToken, (req, res, next) => __awai
     }
 }));
 // (Admin: Get ALL bookings is now declared near the top of this file, before dynamic /:id routes.)
+// Admin forcefully cancels a booking
+router.patch('/:id/admin-cancel', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c;
+    const { id } = req.params;
+    const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
+    if (role !== 'ADMIN')
+        return res.status(403).json({ error: 'Forbidden' });
+    try {
+        const updatedBooking = yield prisma_1.default.booking.update({
+            where: { id },
+            data: { status: 'CANCELLED' },
+            include: { customer: true, handyman: true, service: true },
+        });
+        if (updatedBooking.customerId) {
+            yield (0, notifications_1.createNotification)(prisma_1.default, updatedBooking.customerId, '❌ Booking Cancelled by Admin', `Your booking for "${(_b = updatedBooking.service) === null || _b === void 0 ? void 0 : _b.name}" was cancelled by the administrator.`, 'BOOKING', id).catch(() => { });
+        }
+        if (updatedBooking.handymanId) {
+            yield (0, notifications_1.createNotification)(prisma_1.default, updatedBooking.handymanId, '❌ Job Cancelled by Admin', `The job for "${(_c = updatedBooking.service) === null || _c === void 0 ? void 0 : _c.name}" was cancelled by the administrator.`, 'JOB', id).catch(() => { });
+        }
+        res.json(updatedBooking);
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+// Admin forcefully reassigns a booking
+router.patch('/:id/admin-reassign', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d;
+    const { id } = req.params;
+    const { newHandymanId } = req.body;
+    const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
+    if (role !== 'ADMIN')
+        return res.status(403).json({ error: 'Forbidden' });
+    if (!newHandymanId)
+        return res.status(400).json({ error: 'newHandymanId is required' });
+    try {
+        const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
+        if (!booking)
+            return res.status(404).json({ error: 'Booking not found' });
+        const oldHandymanId = booking.handymanId;
+        const updatedBooking = yield prisma_1.default.booking.update({
+            where: { id },
+            data: { handymanId: newHandymanId, status: 'ACCEPTED' },
+            include: { customer: true, handyman: true, service: true },
+        });
+        if (updatedBooking.customerId) {
+            yield (0, notifications_1.createNotification)(prisma_1.default, updatedBooking.customerId, '🔄 Handyman Reassigned', `Your booking for "${(_b = updatedBooking.service) === null || _b === void 0 ? void 0 : _b.name}" has been assigned to a new professional.`, 'BOOKING', id).catch(() => { });
+        }
+        if (oldHandymanId) {
+            yield (0, notifications_1.createNotification)(prisma_1.default, oldHandymanId, '🔄 Job Reassigned', `You have been unassigned from the job "${(_c = updatedBooking.service) === null || _c === void 0 ? void 0 : _c.name}" by an administrator.`, 'JOB', id).catch(() => { });
+        }
+        yield (0, notifications_1.createNotification)(prisma_1.default, newHandymanId, '💼 New Job Assigned (Admin)', `An admin assigned you to a new job: "${(_d = updatedBooking.service) === null || _d === void 0 ? void 0 : _d.name}".`, 'JOB', id).catch(() => { });
+        res.json(updatedBooking);
+    }
+    catch (error) {
+        next(error);
+    }
+}));
 // Customer confirms job completed (releases escrow)
 router.post('/:id/confirm-completion', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
@@ -321,6 +380,9 @@ router.post('/:id/confirm-completion', auth_1.authenticateToken, (req, res, next
         }
         if (booking.customerId !== customerId) {
             return res.status(403).json({ error: 'Forbidden. You are not the customer for this booking.' });
+        }
+        if (booking.isSplitPayment && booking.amountPaid < booking.totalPrice) {
+            return res.status(400).json({ error: 'Remaining split payment of 50% is required to confirm completion.' });
         }
         const escrow = yield prisma_1.default.escrow.findFirst({
             where: { bookingId: id, status: 'HELD' },

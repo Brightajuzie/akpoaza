@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
-import { createNotification } from './notifications';
+import { sendNotification, notifyMany } from '../lib/notify';
 import prisma from '../lib/prisma';
 
 const router = Router();
@@ -177,30 +177,44 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
       include: { handyman: true, service: true }
     });
 
-    // Notify customer about booking confirmation
-    await createNotification(
-      prisma,
-      customerId,
-      '📅 Booking Confirmed',
-      `Your booking for "${service.name}" has been placed. Status: ${status}.`,
-      'BOOKING',
-      newBooking.id
-    ).catch(() => {});
+    // ── Multi-channel notifications ──────────────────────────────────────
+    const scheduledStr = new Date(scheduledAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
+    const assignedText = handymanId ? 'A professional has been assigned to your job.' : 'We will assign a professional shortly.';
 
-    // Notify assigned handyman if auto-assigned
+    // 1. Customer confirmation
+    sendNotification({
+      userId: customerId,
+      title: '📅 Booking Confirmed',
+      body: `Your booking for "${service.name}" on ${scheduledStr} at ${address} is confirmed. ${assignedText}`,
+      type: 'BOOKING',
+      referenceId: newBooking.id,
+      emailSubject: '✅ Booking Confirmed — Akpoaza',
+      emailHtml: `<p>Hi there,</p>
+        <p>Your service booking has been placed successfully!</p>
+        <p><strong>Service:</strong> ${service.name}</p>
+        <p><strong>Scheduled:</strong> ${scheduledStr}</p>
+        <p><strong>Address:</strong> ${address}</p>
+        <p>${assignedText}</p>
+        <p>Open the app to track your booking in real time.</p>`,
+    }).catch(() => {});
+
+    // 2. Assigned handyman
     if (handymanId && status === 'ACCEPTED') {
       const distText = matchDistance !== null ? ` You are ${matchDistance} km away.` : '';
-      const livePinText = (customerLat !== null && customerLng !== null)
-        ? ` (Pinned coords: ${customerLat.toFixed(5)}, ${customerLng.toFixed(5)})`
-        : '';
-      await createNotification(
-        prisma,
-        handymanId,
-        '💼 New Job Assigned',
-        `Job: ${service.name}. Address: ${address}${livePinText}.${distText} Live tracking is active — customer can see your location.`,
-        'JOB',
-        newBooking.id
-      ).catch(() => {});
+      sendNotification({
+        userId: handymanId,
+        title: '💼 New Job Assigned',
+        body: `New job: ${service.name}. Address: ${address}.${distText} Scheduled: ${scheduledStr}.`,
+        type: 'BOOKING',
+        referenceId: newBooking.id,
+        emailSubject: '🛠️ New Job Waiting for You — Akpoaza',
+        emailHtml: `<p>You have been assigned a new job!</p>
+          <p><strong>Service:</strong> ${service.name}</p>
+          <p><strong>Address:</strong> ${address}</p>
+          <p><strong>Scheduled:</strong> ${scheduledStr}</p>
+          ${distText ? `<p><strong>Distance from you:</strong> ${matchDistance} km</p>` : ''}
+          <p>Open the app to accept and begin live tracking.</p>`,
+      }).catch(() => {});
     }
 
     res.status(201).json({ ...newBooking, matchDistance });
@@ -309,53 +323,59 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
       include: { service: true, customer: true },
     });
 
-    // Auto-create notifications based on status change
-    if (status === 'ACCEPTED' && updatedBooking.customerId) {
-      await createNotification(
-        prisma,
-        updatedBooking.customerId,
-        '✅ Booking Accepted',
-        `A handyman has accepted your booking${updatedBooking.service ? ` for "${updatedBooking.service.name}"` : ''}.`,
-        'BOOKING',
-        id
-      ).catch(() => {});
+    // ── Multi-channel notifications on status change ──────────────────────
+    const svcName = updatedBooking.service?.name || 'your service';
+    const custName = updatedBooking.customer?.name || 'Customer';
 
-      // Notify the handyman themselves as confirmation
+    if (status === 'ACCEPTED' && updatedBooking.customerId) {
+      // Notify customer
+      sendNotification({
+        userId: updatedBooking.customerId,
+        title: '✅ Booking Accepted',
+        body: `A professional has accepted your booking for "${svcName}". They are on their way!`,
+        type: 'BOOKING',
+        referenceId: id,
+        emailSubject: '✅ Your Booking Was Accepted — Akpoaza',
+        emailHtml: `<p>Good news, ${custName}!</p>
+          <p>A professional has accepted your booking for <strong>${svcName}</strong> and will be heading to your location.</p>
+          <p>Track them live in the app.</p>`,
+      }).catch(() => {});
+
+      // Confirm to handyman
       if (updatedBooking.handymanId) {
-        const hmPinText = (updatedBooking.latitude !== null && updatedBooking.longitude !== null)
-          ? ` (Pinned coords: ${updatedBooking.latitude.toFixed(5)}, ${updatedBooking.longitude.toFixed(5)})`
-          : '';
-        await createNotification(
-          prisma,
-          updatedBooking.handymanId,
-          '💼 Job Confirmed',
-          `You have accepted the job for "${updatedBooking.service?.name || 'Service'}". Address: ${updatedBooking.address}${hmPinText}.`,
-          'JOB',
-          id
-        ).catch(() => {});
+        sendNotification({
+          userId: updatedBooking.handymanId,
+          title: '💼 Job Confirmed',
+          body: `You accepted the job for "${svcName}". Address: ${updatedBooking.address}.`,
+          type: 'BOOKING',
+          referenceId: id,
+        }).catch(() => {});
       }
     } else if (status === 'COMPLETED' && updatedBooking.customerId) {
       await prisma.escrow.updateMany({
         where: { bookingId: id, status: 'HELD' },
         data: { autoReleaseAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
       });
-      await createNotification(
-        prisma,
-        updatedBooking.customerId,
-        '🎉 Job Completed',
-        `Your booking${updatedBooking.service ? ` for "${updatedBooking.service.name}"` : ''} has been marked complete. Please confirm to release funds!`,
-        'BOOKING',
-        id
-      ).catch(() => {});
+      sendNotification({
+        userId: updatedBooking.customerId,
+        title: '🎉 Job Completed',
+        body: `Your booking for "${svcName}" is marked complete. Please confirm in the app to release payment to the professional.`,
+        type: 'BOOKING',
+        referenceId: id,
+        emailSubject: '🎉 Job Completed — Action Required',
+        emailHtml: `<p>Hi ${custName},</p>
+          <p>Your booking for <strong>${svcName}</strong> has been marked as completed by the professional.</p>
+          <p>Please open the app and confirm receipt to release their payment from escrow. Payment is automatically released after 24 hours if no action is taken.</p>`,
+      }).catch(() => {});
     } else if (status === 'CANCELLED' && updatedBooking.customerId) {
-      await createNotification(
-        prisma,
-        updatedBooking.customerId,
-        '❌ Booking Cancelled',
-        `Your booking${updatedBooking.service ? ` for "${updatedBooking.service.name}"` : ''} has been cancelled.`,
-        'BOOKING',
-        id
-      ).catch(() => {});
+      sendNotification({
+        userId: updatedBooking.customerId,
+        title: '❌ Booking Cancelled',
+        body: `Your booking for "${svcName}" has been cancelled. Contact support if this is unexpected.`,
+        type: 'BOOKING',
+        referenceId: id,
+        emailSubject: '❌ Booking Cancelled — Akpoaza',
+      }).catch(() => {});
     }
 
     res.json(updatedBooking);
@@ -365,6 +385,99 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
 });
 
 // (Admin: Get ALL bookings is now declared near the top of this file, before dynamic /:id routes.)
+
+// Admin forcefully cancels a booking
+router.patch('/:id/admin-cancel', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const role = req.user?.role;
+  if (role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
+
+  try {
+    const updatedBooking = await prisma.booking.update({
+      where: { id },
+      data: { status: 'CANCELLED' },
+      include: { customer: true, handyman: true, service: true },
+    });
+
+    if (updatedBooking.customerId) {
+      sendNotification({
+        userId: updatedBooking.customerId,
+        title: '❌ Booking Cancelled by Admin',
+        body: `Your booking for "${updatedBooking.service?.name}" was cancelled by an administrator. Please contact support for assistance.`,
+        type: 'BOOKING',
+        referenceId: id,
+        emailSubject: '❌ Booking Cancelled — Akpoaza',
+      }).catch(() => {});
+    }
+    if (updatedBooking.handymanId) {
+      sendNotification({
+        userId: updatedBooking.handymanId,
+        title: '❌ Job Cancelled by Admin',
+        body: `The job for "${updatedBooking.service?.name}" was cancelled by an administrator.`,
+        type: 'BOOKING',
+        referenceId: id,
+      }).catch(() => {});
+    }
+
+    res.json(updatedBooking);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Admin forcefully reassigns a booking
+router.patch('/:id/admin-reassign', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  const { newHandymanId } = req.body;
+  const role = req.user?.role;
+
+  if (role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden' });
+  if (!newHandymanId) return res.status(400).json({ error: 'newHandymanId is required' });
+
+  try {
+    const booking = await prisma.booking.findUnique({ where: { id } });
+    if (!booking) return res.status(404).json({ error: 'Booking not found' });
+    const oldHandymanId = booking.handymanId;
+
+    const updatedBooking = await prisma.booking.update({
+      where: { id },
+      data: { handymanId: newHandymanId, status: 'ACCEPTED' },
+      include: { customer: true, handyman: true, service: true },
+    });
+
+    if (updatedBooking.customerId) {
+      sendNotification({
+        userId: updatedBooking.customerId,
+        title: '🔄 Professional Reassigned',
+        body: `Your booking for "${updatedBooking.service?.name}" has been reassigned to a new professional by an administrator.`,
+        type: 'BOOKING',
+        referenceId: id,
+        emailSubject: '🔄 Booking Reassigned — Akpoaza',
+      }).catch(() => {});
+    }
+    if (oldHandymanId) {
+      sendNotification({
+        userId: oldHandymanId,
+        title: '🔄 Job Reassigned',
+        body: `You have been unassigned from the job "${updatedBooking.service?.name}" by an administrator.`,
+        type: 'BOOKING',
+        referenceId: id,
+      }).catch(() => {});
+    }
+    sendNotification({
+      userId: newHandymanId,
+      title: '💼 New Job Assigned by Admin',
+      body: `An administrator assigned you to: "${updatedBooking.service?.name}". Address: ${updatedBooking.address}.`,
+      type: 'BOOKING',
+      referenceId: id,
+      emailSubject: '🛠️ New Job Assigned — Akpoaza',
+    }).catch(() => {});
+
+    res.json(updatedBooking);
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Customer confirms job completed (releases escrow)
 router.post('/:id/confirm-completion', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {

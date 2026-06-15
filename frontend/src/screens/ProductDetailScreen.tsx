@@ -127,7 +127,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
 
   const handleWhatsAppSimulate = () => {
     if (!product || !product.vendor) return;
-    const msg = `Hi ${product.vendor.name}, I am interested in buying your product "${product.name}" listed for $${product.price} on Handyman E-Commerce. Is it still available?`;
+    const msg = `Hi ${product.vendor.name}, I am interested in buying your product "${product.name}" listed for $${product.price} on FixMart. Is it still available?`;
     Alert.alert(
       '💬 WhatsApp Redirection Simulator',
       `Opening WhatsApp thread...\n\nRecipient: ${product.vendor.name}\n\nPre-filled text:\n"${msg}"`,
@@ -205,7 +205,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
       >
         <View style={styles.productHeader}>
           {product.imageUrl ? (
-            <Image source={{ uri: product.imageUrl }} style={styles.image} />
+            <Image source={{ uri: product.imageUrl }} style={styles.image} resizeMode="cover" />
           ) : (
             <View style={styles.placeholderImage}>
               <Text style={styles.placeholderText}>No Image Available</Text>
@@ -474,7 +474,6 @@ const styles = StyleSheet.create({
     height: 250,
     borderRadius: 12,
     marginBottom: 16,
-    resizeMode: 'cover',
   },
   placeholderImage: {
     width: '100%',

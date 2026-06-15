@@ -3,7 +3,7 @@ import { VerificationStatus } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import axios from 'axios';
 import crypto from 'crypto';
-import { createNotification } from './notifications';
+import { sendNotification } from '../lib/notify';
 import prisma from '../lib/prisma';
 
 const router = Router();
@@ -324,14 +324,14 @@ router.post('/submit', authenticateToken, async (req: AuthRequest, res: Response
     });
 
     for (const admin of admins) {
-      await createNotification(
-        prisma,
-        admin.id,
-        '🔍 New KYC Submission Pending',
-        `User ${updatedUser.name} (${updatedUser.role}) submitted verification details.`,
-        'SYSTEM',
-        updatedUser.id
-      );
+      sendNotification({
+        userId: admin.id,
+        title: '🔍 New KYC Submission Pending',
+        body: `User ${updatedUser.name} (${updatedUser.role}) submitted verification details.`,
+        type: 'KYC',
+        referenceId: updatedUser.id,
+        emailSubject: '🔍 New KYC Submission Pending — Akpoaza',
+      }).catch(() => {});
     }
 
     res.json({
@@ -364,7 +364,7 @@ router.get('/admin/reviews', authenticateToken, async (req: AuthRequest, res: Re
 
     const reviews = await prisma.user.findMany({
       where: {
-        role: { in: ['VENDOR', 'HANDYMAN'] },
+        role: { in: ['VENDOR', 'HANDYMAN', 'RIDER'] },
         verificationStatus: { not: 'UNVERIFIED' },
       },
       select: {
@@ -428,14 +428,14 @@ router.patch('/:userId/review', authenticateToken, async (req: AuthRequest, res:
       ? 'Congratulations, your identity has been verified! You can now accept jobs and list products.'
       : `Your verification request was rejected. Reason: ${reason || 'Invalid documents.'} Please update and re-submit.`;
 
-    await createNotification(
-      prisma,
-      targetUserId,
+    sendNotification({
+      userId: targetUserId,
       title,
       body,
-      'SYSTEM',
-      adminId
-    );
+      type: 'KYC',
+      referenceId: adminId,
+      emailSubject: title,
+    }).catch(() => {});
 
     res.json({
       success: true,

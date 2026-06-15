@@ -72,7 +72,7 @@ export default function ProfileScreen({ navigation }: any) {
     if (profile?.role === 'HANDYMAN') {
       fetchAnalytics();
     }
-    if (profile?.role === 'HANDYMAN' || profile?.role === 'VENDOR') {
+    if (profile?.role === 'HANDYMAN' || profile?.role === 'VENDOR' || profile?.role === 'RIDER') {
       fetchWalletPreview();
     }
   }, [profile]);
@@ -192,7 +192,7 @@ export default function ProfileScreen({ navigation }: any) {
   const hasCoordinates = profile.latitude && profile.longitude;
 
   const renderVerificationBadge = () => {
-    if (profile.role !== 'VENDOR' && profile.role !== 'HANDYMAN') return null;
+    if (profile.role !== 'VENDOR' && profile.role !== 'HANDYMAN' && profile.role !== 'RIDER') return null;
 
     const status = profile.verificationStatus || 'UNVERIFIED';
     let badgeColor = theme.lightText;
@@ -225,7 +225,7 @@ export default function ProfileScreen({ navigation }: any) {
   };
 
   const renderVerificationBanner = () => {
-    if (profile.role !== 'VENDOR' && profile.role !== 'HANDYMAN') return null;
+    if (profile.role !== 'VENDOR' && profile.role !== 'HANDYMAN' && profile.role !== 'RIDER') return null;
 
     const status = profile.verificationStatus || 'UNVERIFIED';
     if (status === 'VERIFIED') return null;
@@ -283,8 +283,8 @@ export default function ProfileScreen({ navigation }: any) {
         </View>
       </View>
 
-      {/* Live Location Sharing Panel for Handymen and Vendors */}
-      {(profile.role === 'HANDYMAN' || profile.role === 'VENDOR') && (
+      {/* Live Location Sharing Panel for Handymen, Vendors, and Riders */}
+      {(profile.role === 'HANDYMAN' || profile.role === 'VENDOR' || profile.role === 'RIDER') && (
         <View style={[styles.trackingCard, { borderColor: theme.border }]}>
           <View style={styles.trackingHeader}>
             <Text style={styles.trackingTitle}>Live Location Sharing</Text>
@@ -304,7 +304,7 @@ export default function ProfileScreen({ navigation }: any) {
       )}
 
       {/* Wallet Preview Card */}
-      {(profile.role === 'HANDYMAN' || profile.role === 'VENDOR') && (
+      {(profile.role === 'HANDYMAN' || profile.role === 'VENDOR' || profile.role === 'RIDER') && (
         <TouchableOpacity 
           style={[styles.walletPreviewCard, { borderColor: theme.border, backgroundColor: theme.primary + '0B' }]}
           onPress={() => navigation.navigate('Wallet')}
@@ -420,6 +420,16 @@ export default function ProfileScreen({ navigation }: any) {
         </View>
       )}
 
+      {profile.role === 'RIDER' && (
+        <View style={[styles.card, { borderColor: theme.border }]}>
+          <Text style={styles.cardTitle}>Vehicle Registration</Text>
+          <Text style={styles.label}>Vehicle Type:</Text>
+          <Text style={styles.valueText}>{profile.vehicleType || 'Not Registered'}</Text>
+          <Text style={styles.label}>License Plate:</Text>
+          <Text style={styles.valueText}>{profile.licensePlate || 'Not Registered'}</Text>
+        </View>
+      )}
+
       {/* Location / GPS Settings Card */}
       <View style={[styles.card, { borderColor: theme.border }]}>
         <Text style={styles.cardTitle}>GPS Location Details</Text>
@@ -449,6 +459,13 @@ export default function ProfileScreen({ navigation }: any) {
           >
             <Text style={styles.menuItemText}>Product Sales Activity</Text>
           </TouchableOpacity>
+        ) : profile.role === 'RIDER' ? (
+          <TouchableOpacity 
+            style={[styles.menuItem, { borderBottomColor: theme.border }]} 
+            onPress={() => navigation.navigate('History', { type: 'orders', role: profile.role })}
+          >
+            <Text style={styles.menuItemText}>Deliveries / Dispatches</Text>
+          </TouchableOpacity>
         ) : (
           <TouchableOpacity 
             style={[styles.menuItem, { borderBottomColor: theme.border }]} 
@@ -458,7 +475,7 @@ export default function ProfileScreen({ navigation }: any) {
           </TouchableOpacity>
         )}
 
-        {profile.role !== 'VENDOR' && (
+        {profile.role !== 'VENDOR' && profile.role !== 'RIDER' && (
           <TouchableOpacity 
             style={[styles.menuItem, { borderBottomColor: theme.border }]} 
             onPress={() => navigation.navigate('History', { type: 'bookings', role: profile.role })}
@@ -469,7 +486,7 @@ export default function ProfileScreen({ navigation }: any) {
           </TouchableOpacity>
         )}
 
-        {(profile.role === 'VENDOR' || profile.role === 'HANDYMAN') && (
+        {(profile.role === 'VENDOR' || profile.role === 'HANDYMAN' || profile.role === 'RIDER') && (
           <TouchableOpacity 
             style={[styles.menuItem, { borderBottomColor: theme.border }]} 
             onPress={() => navigation.navigate('Wallet')}
@@ -478,7 +495,7 @@ export default function ProfileScreen({ navigation }: any) {
           </TouchableOpacity>
         )}
 
-        {(profile.role === 'VENDOR' || profile.role === 'HANDYMAN') && (
+        {(profile.role === 'VENDOR' || profile.role === 'HANDYMAN' || profile.role === 'RIDER') && (
           <TouchableOpacity 
             style={[styles.menuItem, { borderBottomColor: theme.border }]} 
             onPress={() => navigation.navigate('KYCStatus')}

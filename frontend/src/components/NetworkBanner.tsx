@@ -116,7 +116,6 @@ export default function NetworkBanner() {
           shadowColor: bgColor,
         },
       ]}
-      pointerEvents="none"   // never block touches on the content below
     >
       {/* Subtle glow strip at the top edge */}
       <View style={[styles.glowStrip, { backgroundColor: isOnlineBanner ? '#4ADE80' : '#F87171' }]} />
@@ -153,6 +152,7 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     elevation: 20,          // Android: float above everything
     justifyContent: 'flex-end',
+    pointerEvents: 'none' as any,  // never block touches on the content below
     ...Platform.select({
       ios: {
         shadowOffset: { width: 0, height: 6 },

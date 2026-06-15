@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import multer from 'multer';
 import Jimp from 'jimp';
 import path from 'path';
@@ -13,123 +13,118 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Multer memory storage configuration (we process in-memory buffers directly)
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024, // max 10MB input file
-  },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const filetypes = /jpeg|jpg|png|gif|webp/;
     const mimetype = filetypes.test(file.mimetype);
-    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-    if (mimetype && extname) {
-      return cb(null, true);
-    }
+    const extname  = filetypes.test(path.extname(file.originalname).toLowerCase());
+    if (mimetype && extname) return cb(null, true);
     cb(new Error('Only images (jpg, jpeg, png, gif, webp) are allowed!'));
   },
 });
+
+/**
+ * Remove near-white background pixels by scanning every pixel.
+ * Pixels where R, G, B are all above `threshold` become fully transparent.
+ */
+function removeBackground(image: Jimp, threshold = 220): Jimp {
+  image.scan(0, 0, image.getWidth(), image.getHeight(), function (this: any, x: number, y: number, idx: number) {
+    const r = this.bitmap.data[idx + 0];
+    const g = this.bitmap.data[idx + 1];
+    const b = this.bitmap.data[idx + 2];
+    if (r > threshold && g > threshold && b > threshold) {
+      this.bitmap.data[idx + 3] = 0; // make transparent
+    }
+  });
+  return image;
+}
 
 router.post('/', authenticateToken, upload.single('image') as any, async (req: AuthRequest, res, next) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No image file uploaded' });
   }
 
-  const filter = (req.body.filter || 'none').toLowerCase();
+  const filter   = (req.body.filter || 'none').toLowerCase();
+  const removeBg = req.body.removeBg === 'true' || req.body.removeBg === true;
 
   try {
-    // 1. Load image into Jimp
     let image = await Jimp.read(req.file.buffer);
 
-    // 2. Apply chosen AI Visual Filter
+    // Step 1: Background removal (before filters for clean edges)
+    if (removeBg) {
+      console.log('[UploadService] Removing background...');
+      image = removeBackground(image, 220);
+    }
+
+    // Step 2: Apply chosen AI Visual Filter
     console.log(`[UploadService] Applying filter: ${filter}`);
     switch (filter) {
-      case 'auto': // AI Auto-Enhance
-        image.normalize();
-        image.contrast(0.08);
-        image.brightness(0.02);
+      case 'auto':
+        image.normalize().contrast(0.08).brightness(0.02);
         break;
-
-      case 'cyberpunk': // Cyberpunk Neon (Cool Blue & Pink hues)
+      case 'cyberpunk':
         image.color([
-          { apply: 'blue', params: [25] },
-          { apply: 'red', params: [10] },
-          { apply: 'green', params: [-10] }
-        ]);
-        image.contrast(0.12);
+          { apply: 'blue',  params: [25]  },
+          { apply: 'red',   params: [10]  },
+          { apply: 'green', params: [-10] },
+        ]).contrast(0.12);
         break;
-
-      case 'vintage': // Vintage Noir (Black & White high contrast)
-        image.greyscale();
-        image.contrast(0.20);
+      case 'vintage':
+        image.greyscale().contrast(0.20);
         break;
-
-      case 'golden': // Golden Hour (Warm amber tones)
+      case 'golden':
         image.color([
-          { apply: 'red', params: [20] },
-          { apply: 'green', params: [8] },
-          { apply: 'blue', params: [-15] }
-        ]);
-        image.contrast(0.05);
+          { apply: 'red',   params: [20]  },
+          { apply: 'green', params: [8]   },
+          { apply: 'blue',  params: [-15] },
+        ]).contrast(0.05);
         break;
-
-      case 'vivid': // Vivid HDR (High saturation, strong colors)
-        image.color([
-          { apply: 'saturate', params: [35] }
-        ]);
-        image.contrast(0.10);
+      case 'vivid':
+        image.color([{ apply: 'saturate', params: [35] }]).contrast(0.10);
         break;
-
       default:
-        // 'none' or unknown filter: keep original colors
         break;
     }
 
-    // 3. Compression Loop - Resize and compress recursively until size < 50KB
-    const SIZE_LIMIT = 50 * 1024; // 50KB
-    let currentWidth = 800; // Start width
-    let currentQuality = 80; // Start quality percentage
+    // Step 3: Output format — PNG preserves transparency, JPEG does not
+    const outputMime = removeBg ? Jimp.MIME_PNG : Jimp.MIME_JPEG;
+    const outputExt  = removeBg ? 'png' : 'jpg';
+    const SIZE_LIMIT = 50 * 1024;
+    let currentWidth   = 800;
+    let currentQuality = 80;
     let finalBuffer: Buffer;
     let iterations = 0;
 
-    // Set starting dimensions if the image is wider than 800px
     if (image.getWidth() > currentWidth) {
       image.resize(currentWidth, Jimp.AUTO);
     }
 
     do {
       iterations++;
-      // Apply current quality settings
-      finalBuffer = await image.quality(currentQuality).getBufferAsync(Jimp.MIME_JPEG);
-      
-      console.log(`[UploadCompressor] Iteration ${iterations}: size=${(finalBuffer.length / 1024).toFixed(2)}KB, width=${image.getWidth()}px, quality=${currentQuality}`);
-
-      // If buffer is still too large, shrink dimensions and quality
+      finalBuffer = await image.quality(currentQuality).getBufferAsync(outputMime);
+      console.log(`[UploadCompressor] Iteration ${iterations}: ${(finalBuffer.length / 1024).toFixed(1)}KB, w=${image.getWidth()}, q=${currentQuality}`);
       if (finalBuffer.length > SIZE_LIMIT) {
         currentQuality -= 15;
-        currentWidth = Math.round(currentWidth * 0.8);
-        if (currentWidth < 250) currentWidth = 250; // clamp minimum width
-
+        currentWidth    = Math.max(250, Math.round(currentWidth * 0.8));
         image.resize(currentWidth, Jimp.AUTO);
       }
     } while (finalBuffer.length > SIZE_LIMIT && currentQuality > 10 && iterations < 10);
 
-    // 4. Save the finalized buffer to disk
-    const filename = `img_${Date.now()}_${Math.floor(Math.random() * 10000)}.jpg`;
+    const filename = `img_${Date.now()}_${Math.floor(Math.random() * 10000)}.${outputExt}`;
     const destPath = path.join(uploadsDir, filename);
     await fs.promises.writeFile(destPath, finalBuffer);
 
-    console.log(`[UploadService] Successfully processed and saved ${filename} (${(finalBuffer.length / 1024).toFixed(2)}KB)`);
-
-    // 5. Construct URL
-    const host = req.get('host') || 'localhost:5000';
+    const host     = req.get('host') || 'localhost:5000';
     const imageUrl = `http://${host}/uploads/${filename}`;
 
     res.status(201).json({
       success: true,
       imageUrl,
       filename,
+      removedBg: removeBg,
       sizeBytes: finalBuffer.length,
       sizeKB: `${(finalBuffer.length / 1024).toFixed(2)} KB`,
     });

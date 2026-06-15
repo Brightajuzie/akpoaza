@@ -329,7 +329,7 @@ router.get('/admin/reviews', auth_1.authenticateToken, (req, res) => __awaiter(v
         }
         const reviews = yield prisma_1.default.user.findMany({
             where: {
-                role: { in: ['VENDOR', 'HANDYMAN'] },
+                role: { in: ['VENDOR', 'HANDYMAN', 'RIDER'] },
                 verificationStatus: { not: 'UNVERIFIED' },
             },
             select: {

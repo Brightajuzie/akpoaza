@@ -17,6 +17,7 @@ interface MapComponentProps {
   providerLng?: number;
   selectable?: boolean;
   onLocationSelected?: (lat: number, lng: number) => void;
+  recenterTrigger?: number;
 }
 
 export default function MapComponent({
@@ -26,6 +27,7 @@ export default function MapComponent({
   providerLng,
   selectable = false,
   onLocationSelected,
+  recenterTrigger,
 }: MapComponentProps) {
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -209,7 +211,7 @@ export default function MapComponent({
       webViewRef.current?.injectJavaScript?.(js);
     }, 300);
     return () => clearTimeout(t);
-  }, [latitude, longitude, providerLat, providerLng, selectable]);
+  }, [latitude, longitude, providerLat, providerLng, selectable, recenterTrigger]);
 
   // ---- Web iframe: push marker updates via postMessage ----
   useEffect(() => {
@@ -223,7 +225,7 @@ export default function MapComponent({
       }),
       '*'
     );
-  }, [latitude, longitude, providerLat, providerLng, selectable]);
+  }, [latitude, longitude, providerLat, providerLng, selectable, recenterTrigger]);
 
   const handleMobileMessage = (event: any) => {
     try {

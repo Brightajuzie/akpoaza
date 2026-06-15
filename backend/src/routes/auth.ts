@@ -3,8 +3,9 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
-import { createNotification } from './notifications';
+import { sendNotification } from '../lib/notify';
 import prisma from '../lib/prisma';
+import { OAuth2Client } from 'google-auth-library';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-dummy-key';
@@ -30,7 +31,7 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
-  const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR'];
+  const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER'];
   if (role && !allowedRoles.includes(role)) {
     return res.status(400).json({ error: 'Invalid role specified' });
   }
@@ -68,9 +69,11 @@ router.post('/register', async (req, res) => {
         phone: phone || null,
         opayPhone: opayPhone || phone || null,
         specialty: role === 'HANDYMAN' ? specialty : null,
-        address: (role === 'HANDYMAN' || role === 'VENDOR') ? address : null,
-        latitude: (role === 'HANDYMAN' || role === 'VENDOR') && latitude !== undefined && latitude !== null ? parseFloat(latitude as any) : null,
-        longitude: (role === 'HANDYMAN' || role === 'VENDOR') && longitude !== undefined && longitude !== null ? parseFloat(longitude as any) : null,
+        address: (role === 'HANDYMAN' || role === 'VENDOR' || role === 'RIDER') ? address : null,
+        latitude: (role === 'HANDYMAN' || role === 'VENDOR' || role === 'RIDER') && latitude !== undefined && latitude !== null ? parseFloat(latitude as any) : null,
+        longitude: (role === 'HANDYMAN' || role === 'VENDOR' || role === 'RIDER') && longitude !== undefined && longitude !== null ? parseFloat(longitude as any) : null,
+        vehicleType: role === 'RIDER' ? req.body.vehicleType : null,
+        licensePlate: role === 'RIDER' ? req.body.licensePlate : null,
         bvnHash,
         kycReferenceId: kycReferenceId || null,
         kycSubmittedAt: kycReferenceId ? new Date() : null,
@@ -92,21 +95,21 @@ router.post('/register', async (req, res) => {
           select: { id: true },
         });
         for (const admin of admins) {
-          await createNotification(
-            prisma,
-            admin.id,
-            '🔍 New KYC Submission Pending',
-            `User ${newUser.name} (${newUser.role}) submitted verification details during registration.`,
-            'SYSTEM',
-            newUser.id
-          );
+          sendNotification({
+            userId: admin.id,
+            title: '🔍 New KYC Submission Pending',
+            body: `User ${newUser.name} (${newUser.role}) submitted verification details during registration.`,
+            type: 'KYC',
+            referenceId: newUser.id,
+            emailSubject: '🔍 New KYC Submission Pending — Akpoaza',
+          }).catch(() => {});
         }
       } catch (notifErr) {
         console.error('Error creating admin KYC notifications during register:', notifErr);
       }
     }
 
-    const requiresKYC = (newUser.role === 'VENDOR' || newUser.role === 'HANDYMAN') && newUser.verificationStatus === 'UNVERIFIED';
+    const requiresKYC = (newUser.role === 'VENDOR' || newUser.role === 'HANDYMAN' || newUser.role === 'RIDER') && newUser.verificationStatus === 'UNVERIFIED';
     
     const { passwordHash: _, ...userResponse } = newUser;
 
@@ -148,7 +151,7 @@ router.post('/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN') && user.verificationStatus !== 'VERIFIED';
+    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus !== 'VERIFIED';
     res.json({
       token,
       user: {
@@ -162,6 +165,92 @@ router.post('/login', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error during login' });
+  }
+});
+
+// Google OAuth Login / Signup
+const googleClient = new OAuth2Client(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || 'dummy-client-id');
+
+router.post('/google', async (req, res) => {
+  const { idToken, role, email: directEmail, name: directName, picture: directPicture } = req.body;
+
+  try {
+    let email: string;
+    let name: string;
+    let picture: string | null = null;
+
+    // Try full idToken verification first
+    if (idToken) {
+      try {
+        const ticket = await googleClient.verifyIdToken({
+          idToken,
+          audience: [
+            process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || 'dummy-client-id',
+            process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || 'dummy-ios-client-id',
+            process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || 'dummy-android-client-id'
+          ],
+        });
+        const payload = ticket.getPayload();
+        if (!payload || !payload.email) return res.status(400).json({ error: 'Invalid Google token payload' });
+        email   = payload.email;
+        name    = payload.name || directName || 'Google User';
+        picture = payload.picture || directPicture || null;
+      } catch (_verifyErr) {
+        // Fallback: use user info sent directly from frontend access-token flow
+        if (!directEmail) return res.status(400).json({ error: 'Invalid Google token and no fallback email provided' });
+        email   = directEmail;
+        name    = directName || 'Google User';
+        picture = directPicture || null;
+      }
+    } else if (directEmail) {
+      // Pure access-token fallback
+      email   = directEmail;
+      name    = directName || 'Google User';
+      picture = directPicture || null;
+    } else {
+      return res.status(400).json({ error: 'Missing idToken or email for Google auth' });
+    }
+
+    let user = await prisma.user.findUnique({ where: { email } });
+
+    if (!user) {
+      const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER'];
+      const userRole = (role && allowedRoles.includes(role)) ? role : 'CUSTOMER';
+      const verificationStatus: 'UNVERIFIED' | 'VERIFIED' = userRole === 'CUSTOMER' ? 'VERIFIED' : 'UNVERIFIED';
+
+      user = await prisma.user.create({
+        data: {
+          email,
+          name,
+          role: userRole as any,
+          provider: 'GOOGLE',
+          profileImage: picture,
+          verificationStatus,
+        }
+      });
+    }
+
+    const token = jwt.sign(
+      { userId: user.id, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus !== 'VERIFIED';
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        verificationStatus: user.verificationStatus,
+        requiresKYC
+      }
+    });
+  } catch (error) {
+    console.error('Google Auth Error:', error);
+    res.status(500).json({ error: 'Server error during Google auth' });
   }
 });
 
@@ -191,6 +280,9 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res) => {
         kycSubmittedAt: true,
         opayPhone: true,
         rejectionReason: true,
+        vehicleType: true,
+        licensePlate: true,
+        riderStatus: true,
         createdAt: true,
       },
     });

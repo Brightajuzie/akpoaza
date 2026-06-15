@@ -212,6 +212,8 @@ export async function createEscrowForPaidItem(checkoutType: 'booking' | 'order',
 
       return escrows;
     }
+  }, {
+    timeout: 30000
   });
 }
 
@@ -297,6 +299,8 @@ export async function releaseEscrow(escrowId: string) {
     }
 
     return updatedEscrow;
+  }, {
+    timeout: 30000
   });
 }
 

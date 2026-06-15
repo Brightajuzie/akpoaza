@@ -34,6 +34,7 @@ const users_1 = __importDefault(require("./routes/users"));
 const kyc_1 = __importDefault(require("./routes/kyc"));
 const upload_1 = __importDefault(require("./routes/upload"));
 const wallet_1 = __importDefault(require("./routes/wallet"));
+const parcels_1 = __importDefault(require("./routes/parcels"));
 const errorHandler_1 = require("./middleware/errorHandler");
 const prisma_1 = __importDefault(require("./lib/prisma"));
 const wallet_2 = require("./lib/wallet");
@@ -69,6 +70,7 @@ app.use('/api/analytics', analytics_1.default);
 app.use('/api/users', users_1.default);
 app.use('/api/kyc', kyc_1.default);
 app.use('/api/wallet', wallet_1.default);
+app.use('/api/parcels', parcels_1.default);
 // Centralized Error Handler
 app.use(errorHandler_1.errorHandler);
 if (process.env.NODE_ENV !== 'test') {
@@ -84,6 +86,19 @@ if (process.env.NODE_ENV !== 'test') {
         });
         socket.on('update_location', (data) => {
             socket.to(`booking_${data.bookingId}`).emit('location_update', {
+                role: data.role,
+                latitude: data.latitude,
+                longitude: data.longitude,
+                timestamp: Date.now()
+            });
+        });
+        socket.on('join_order', (orderId) => {
+            socket.join(`order_${orderId}`);
+            console.log(`Socket ${socket.id} joined order_${orderId}`);
+        });
+        socket.on('update_order_location', (data) => {
+            socket.to(`order_${data.orderId}`).emit('order_location_update', {
+                role: data.role,
                 latitude: data.latitude,
                 longitude: data.longitude,
                 timestamp: Date.now()
@@ -93,6 +108,33 @@ if (process.env.NODE_ENV !== 'test') {
             console.log('Socket disconnected:', socket.id);
         });
     });
+    server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`\n[ERROR] Port ${PORT} is already in use.`);
+            console.error(`[FIX]   Run: npx kill-port ${PORT}   (or change PORT in your .env)\n`);
+            process.exit(1);
+        }
+        else {
+            throw err;
+        }
+    });
+    // Graceful shutdown — nodemon sends SIGTERM on file-change restarts.
+    // Closing the server here ensures the port is released before the new
+    // process tries to bind, preventing the EADDRINUSE crash loop.
+    const shutdown = (signal) => __awaiter(void 0, void 0, void 0, function* () {
+        var _a;
+        console.log(`\n[${signal}] Graceful shutdown — closing server...`);
+        (_a = server.closeAllConnections) === null || _a === void 0 ? void 0 : _a.call(server);
+        server.close(() => __awaiter(void 0, void 0, void 0, function* () {
+            yield prisma_1.default.$disconnect();
+            console.log('[Shutdown] Server closed. Port released.');
+            process.exit(0);
+        }));
+        // Force-exit after 3 s if connections hang
+        setTimeout(() => process.exit(0), 3000).unref();
+    });
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
     server.listen(PORT, () => {
         console.log(`Server with Socket.IO is running on port ${PORT}`);
         // Background interval loop (every 30 seconds for fast sandbox testing)

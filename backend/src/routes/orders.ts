@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { PaymentProvider, OrderStatus } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
-import { createNotification } from './notifications';
+import { sendNotification, notifyMany } from '../lib/notify';
 import prisma from '../lib/prisma';
 
 const router = Router();
@@ -135,27 +135,51 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
       });
     });
 
-    // Notify vendors of the new order items
+    // ── Multi-channel notifications ──────────────────────────────────────
     try {
+      const itemsSummary = dbProducts.map(p => {
+        const req = items.find((i: any) => i.productId === p.id);
+        return `${req?.quantity || 1}× ${p.name}`;
+      }).join(', ');
+
+      // 1. Customer — order confirmation
+      sendNotification({
+        userId,
+        title: '🛒 Order Placed Successfully',
+        body: `Your order for ${itemsSummary} (₦${computedTotalAmount.toLocaleString()}) has been received and is being processed.`,
+        type: 'ORDER',
+        referenceId: order.id,
+        emailSubject: '✅ Order Confirmed — Akpoaza',
+        emailHtml: `<p style="font-size:16px;color:#374151">Hi there,</p>
+          <p>Your order has been placed successfully!</p>
+          <p><strong>Items:</strong> ${itemsSummary}</p>
+          <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
+          <p>We'll notify you as soon as it ships. Thank you for shopping with <strong>Akpoaza</strong>!</p>`,
+      }).catch(() => {});
+
+      // 2. Each vendor — new sale alert
       const vendorIds = new Set(dbProducts.map(p => p.vendorId).filter(Boolean));
       for (const vendorId of vendorIds) {
         const vendorItems = dbProducts.filter(p => p.vendorId === vendorId);
-        const itemsDesc = vendorItems.map(p => {
-          const itemReq = items.find((i: any) => i.productId === p.id);
-          return `${itemReq?.quantity || 1}x ${p.name}`;
+        const vendorDesc = vendorItems.map(p => {
+          const req = items.find((i: any) => i.productId === p.id);
+          return `${req?.quantity || 1}× ${p.name}`;
         }).join(', ');
-
-        await createNotification(
-          prisma,
-          vendorId!,
-          '📦 New Order Received',
-          `You received a new order for: ${itemsDesc}. Total order value: $${computedTotalAmount.toFixed(2)}`,
-          'ORDER',
-          order.id
-        ).catch(() => {});
+        sendNotification({
+          userId: vendorId!,
+          title: '📦 New Order Received',
+          body: `New sale: ${vendorDesc}. Order total: ₦${computedTotalAmount.toLocaleString()}. Please prepare items for dispatch.`,
+          type: 'ORDER',
+          referenceId: order.id,
+          emailSubject: '🛍️ You Have a New Order — Akpoaza',
+          emailHtml: `<p>A customer just placed a new order from your store.</p>
+            <p><strong>Items ordered:</strong> ${vendorDesc}</p>
+            <p><strong>Order Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
+            <p>Please log in to your dashboard to confirm and prepare the order.</p>`,
+        }).catch(() => {});
       }
     } catch (e) {
-      console.error('Failed to notify vendors of new order', e);
+      console.error('[orders] Failed to dispatch notifications:', e);
     }
 
     res.status(201).json({ message: 'Order created successfully', order });
@@ -196,9 +220,9 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
         return res.status(400).json({ error: 'Order is already cancelled' });
       }
     } else {
-      // Shipping and delivering requires Vendor or Admin access
-      if (role !== 'ADMIN' && role !== 'VENDOR') {
-        return res.status(403).json({ error: 'Forbidden. Vendor or Admin role required.' });
+      // Shipping and delivering requires Vendor, Admin, or the assigned Rider
+      if (role !== 'ADMIN' && role !== 'VENDOR' && !(role === 'RIDER' && order.riderId === userId)) {
+        return res.status(403).json({ error: 'Forbidden. Vendor, Admin, or assigned Rider access required.' });
       }
     }
 
@@ -229,6 +253,25 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
         where: { orderId: id, status: 'HELD' },
         data: { autoReleaseAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
       });
+    }
+
+    // ── Multi-channel notification to customer on status change ─────────
+    const statusMessages: Record<string, { title: string; body: string }> = {
+      PAID:      { title: '💳 Payment Confirmed',    body: `Your payment for order #${id.slice(-8).toUpperCase()} has been confirmed. We are preparing your items.` },
+      SHIPPED:   { title: '🚚 Order Shipped',        body: `Great news! Your order #${id.slice(-8).toUpperCase()} is on its way. Track it in the app.` },
+      DELIVERED: { title: '✅ Order Delivered',      body: `Your order #${id.slice(-8).toUpperCase()} has been delivered. Please confirm receipt in the app to release payment.` },
+      CANCELLED: { title: '❌ Order Cancelled',      body: `Your order #${id.slice(-8).toUpperCase()} has been cancelled. If this was unexpected, please contact support.` },
+    };
+    const msgData = statusMessages[status];
+    if (msgData) {
+      sendNotification({
+        userId: order.userId,
+        title: msgData.title,
+        body: msgData.body,
+        type: 'ORDER',
+        referenceId: id,
+        emailSubject: msgData.title,
+      }).catch(() => {});
     }
 
     res.json({ message: `Order status updated to ${status}`, order: updatedOrder });
@@ -281,6 +324,245 @@ router.post('/:id/confirm-receipt', authenticateToken, async (req: AuthRequest, 
     });
 
     res.json({ success: true, message: 'Order receipt confirmed and funds released.', order: updatedOrder });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Admin: Get all orders across all users
+router.get('/admin/all', authenticateToken, async (req: AuthRequest, res, next) => {
+  const role = req.user?.role;
+  if (role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  }
+  try {
+    const orders = await prisma.order.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, name: true, email: true, phone: true, address: true } },
+        items: { include: { product: true } },
+        rider: { select: { id: true, name: true, phone: true, vehicleType: true, licensePlate: true } }
+      },
+    });
+    res.json(orders);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Admin: List all verified riders (for assignment picker)
+router.get('/riders', authenticateToken, async (req: AuthRequest, res, next) => {
+  const role = req.user?.role;
+  if (role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  }
+  try {
+    const riders = await prisma.user.findMany({
+      where: { role: 'RIDER', verificationStatus: 'VERIFIED' },
+      select: {
+        id: true, name: true, email: true, phone: true,
+        vehicleType: true, licensePlate: true,
+        currentLat: true, currentLng: true,
+        verificationStatus: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+    res.json(riders);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Admin: Assign a rider to a paid/shipped order
+
+router.patch('/:id/assign-rider', authenticateToken, async (req: AuthRequest, res, next) => {
+  const role = req.user?.role;
+  if (role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  }
+  const { id } = req.params;
+  const { riderId } = req.body;
+
+  try {
+    const order = await prisma.order.findUnique({ where: { id } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    if (riderId) {
+      const rider = await prisma.user.findFirst({
+        where: { id: riderId, role: 'RIDER', verificationStatus: 'VERIFIED' }
+      });
+      if (!rider) {
+        return res.status(400).json({ error: 'Selected rider is not verified or does not exist.' });
+      }
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id },
+      data: { riderId: riderId || null },
+      include: {
+        user: { select: { id: true, name: true } },
+        rider: { select: { id: true, name: true } }
+      }
+    });
+
+    if (riderId) {
+      // Notify customer that a rider has been assigned
+      sendNotification({
+        userId: updatedOrder.userId,
+        title: '🚚 Rider Assigned to Your Order',
+        body: `Rider ${updatedOrder.rider?.name} has been assigned to deliver your order #${id.slice(-8).toUpperCase()}. Track them live in the app.`,
+        type: 'ORDER',
+        referenceId: id,
+        emailSubject: '🚚 Your Rider Has Been Assigned — Akpoaza',
+        emailHtml: `<p>A rider has been assigned to your order!</p>
+          <p><strong>Rider:</strong> ${updatedOrder.rider?.name}</p>
+          <p><strong>Order:</strong> #${id.slice(-8).toUpperCase()}</p>
+          <p>Open the app to track your rider's location in real time.</p>`,
+      }).catch(() => {});
+
+      // Notify rider of the new delivery job
+      sendNotification({
+        userId: riderId,
+        title: '📦 New Delivery Job',
+        body: `You have been assigned to deliver order #${id.slice(-8).toUpperCase()} to ${updatedOrder.user.name}. Please check the app for full details.`,
+        type: 'ORDER',
+        referenceId: id,
+        emailSubject: '📦 New Delivery Assigned — Akpoaza',
+      }).catch(() => {});
+    }
+
+    res.json(updatedOrder);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Rider: Get available deliveries (paid/shipped without rider or assigned to me)
+router.get('/rider/available', authenticateToken, async (req: AuthRequest, res, next) => {
+  const role = req.user?.role;
+  const userId = req.user?.userId;
+  if (role !== 'RIDER') {
+    return res.status(403).json({ error: 'Forbidden. Rider access required.' });
+  }
+  try {
+    const orders = await prisma.order.findMany({
+      where: {
+        status: { in: ['PAID', 'SHIPPED'] },
+        OR: [
+          { riderId: null },
+          { riderId: userId }
+        ]
+      },
+      include: {
+        user: { select: { id: true, name: true, phone: true, address: true, latitude: true, longitude: true } },
+        items: { include: { product: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(orders);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Rider: Accept a delivery self-assign
+router.patch('/:id/accept-delivery', authenticateToken, async (req: AuthRequest, res, next) => {
+  const role = req.user?.role;
+  const userId = req.user?.userId;
+  if (role !== 'RIDER') {
+    return res.status(403).json({ error: 'Forbidden. Rider access required.' });
+  }
+  const { id } = req.params;
+
+  try {
+    const order = await prisma.order.findUnique({ where: { id } });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.riderId && order.riderId !== userId) {
+      return res.status(400).json({ error: 'This delivery has already been accepted by another rider.' });
+    }
+
+    const updatedOrder = await prisma.order.update({
+      where: { id },
+      data: { riderId: userId },
+      include: {
+        user: { select: { id: true, name: true } },
+        rider: { select: { id: true, name: true } }
+      }
+    });
+
+    sendNotification({
+      userId: updatedOrder.userId,
+      title: '🚚 Rider On the Way',
+      body: `Rider ${updatedOrder.rider?.name} accepted your delivery and is on the way with order #${id.slice(-8).toUpperCase()}.`,
+      type: 'ORDER',
+      referenceId: id,
+      emailSubject: '🚚 Rider is On the Way — Akpoaza',
+    }).catch(() => {});
+
+    res.json(updatedOrder);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get real-time coordinates/tracking for an order (called by customer or rider)
+router.get('/:id/location', authenticateToken, async (req: AuthRequest, res, next) => {
+  const { id } = req.params;
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        userId: true,
+        riderId: true,
+        status: true,
+      }
+    });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const customer = await prisma.user.findUnique({
+      where: { id: order.userId },
+      select: { name: true, address: true, latitude: true, longitude: true }
+    });
+
+    let riderLocation = null;
+    if (order.riderId) {
+      const rider = await prisma.user.findUnique({
+        where: { id: order.riderId },
+        select: {
+          id: true,
+          name: true,
+          currentLat: true,
+          currentLng: true,
+          latitude: true,
+          longitude: true,
+          vehicleType: true,
+          licensePlate: true,
+        }
+      });
+      if (rider) {
+        riderLocation = {
+          id: rider.id,
+          name: rider.name,
+          lat: rider.currentLat !== null ? rider.currentLat : rider.latitude,
+          lng: rider.currentLng !== null ? rider.currentLng : rider.longitude,
+          vehicleType: rider.vehicleType,
+          licensePlate: rider.licensePlate,
+        };
+      }
+    }
+
+    res.json({
+      orderId: order.id,
+      status: order.status,
+      customerLocation: {
+        name: customer?.name,
+        address: customer?.address,
+        lat: customer?.latitude,
+        lng: customer?.longitude,
+      },
+      riderLocation,
+    });
   } catch (error) {
     next(error);
   }

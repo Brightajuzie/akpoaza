@@ -63,7 +63,7 @@ router.post('/withdraw', authenticateToken, async (req: AuthRequest, res: Respon
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     // KYC Check: Provider must be verified to withdraw
-    if (user.role === 'HANDYMAN' || user.role === 'VENDOR') {
+    if (user.role === 'HANDYMAN' || user.role === 'VENDOR' || user.role === 'RIDER') {
       if (user.verificationStatus !== 'VERIFIED') {
         return res.status(400).json({ error: 'Identity verification (KYC) required to withdraw funds.' });
       }

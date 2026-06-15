@@ -78,6 +78,8 @@ export default function NotificationsScreen({ navigation }: any) {
         navigation.navigate('History', { type: 'bookings', role: 'CUSTOMER' });
       } else if (notification.type === 'ORDER') {
         navigation.navigate('History', { type: 'orders', role: 'CUSTOMER' });
+      } else if (notification.type === 'CALL') {
+        navigation.navigate('VideoCall', { roomName: notification.referenceId });
       }
     }
   };
@@ -87,6 +89,7 @@ export default function NotificationsScreen({ navigation }: any) {
       case 'BOOKING': return '📅';
       case 'ORDER': return '📦';
       case 'JOB': return '💼';
+      case 'CALL': return '📹';
       default: return '🔔';
     }
   };
@@ -96,6 +99,7 @@ export default function NotificationsScreen({ navigation }: any) {
       case 'BOOKING': return theme.primary;
       case 'ORDER': return '#FF9500';
       case 'JOB': return '#34C759';
+      case 'CALL': return '#5856D6';
       default: return '#8E8E93';
     }
   };

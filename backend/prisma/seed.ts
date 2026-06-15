@@ -157,9 +157,13 @@ async function main() {
   const settingsData = [
     { key: 'payment_gateway_active', value: 'STRIPE' },
     { key: 'logo_url', value: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?q=80&w=200&auto=format&fit=crop' },
-    { key: 'hero_title', value: 'Find the Best Handyman & E-Commerce' },
-    { key: 'hero_subtitle', value: 'Professional handyman services and premium equipment at your fingertips.' },
-    { key: 'footer_text', value: '© 2026 Handyman E-Commerce. All rights reserved.' },
+    { key: 'hero_title', value: 'Find the Best Services & E-Commerce on FixMart' },
+    { key: 'hero_subtitle', value: 'Professional services and premium equipment at your fingertips.' },
+    { key: 'footer_text', value: '© 2026 FixMart. All rights reserved.' },
+    // Rider delivery pricing defaults
+    { key: 'rider_base_fare',        value: '1000' },
+    { key: 'rider_price_per_km',     value: '200'  },
+    { key: 'rider_platform_fee_pct', value: '10'   },
   ];
 
   for (const s of settingsData) {
@@ -197,6 +201,31 @@ async function main() {
     });
   }
   console.log('Wallets seeded.');
+
+  // 7. Seed Promo Slides
+  console.log('Seeding Promo Slides...');
+  const slidesData = [
+    {
+      imageUrl: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=800&auto=format&fit=crop',
+      caption: 'Professional Services: Book Top-Rated Techs Today!',
+      order: 1
+    },
+    {
+      imageUrl: 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?q=80&w=800&auto=format&fit=crop',
+      caption: 'Big Hardware Sale: Up to 30% Off Professional Tools!',
+      order: 2
+    },
+    {
+      imageUrl: 'https://images.unsplash.com/photo-1585776245991-cf89dd7fc73a?q=80&w=800&auto=format&fit=crop',
+      caption: 'Fastest Deliveries: Get Your Parcels Shipped in Minutes!',
+      order: 3
+    }
+  ];
+
+  for (const s of slidesData) {
+    await prisma.promoSlide.create({ data: s });
+  }
+  console.log('Promo Slides seeded.');
 
   console.log('Seeding complete!');
 }

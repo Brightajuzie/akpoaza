@@ -84,9 +84,9 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
   };
 
   const logoUrl = settings.logo_url || null;
-  const heroTitle = settings.hero_title || 'Find the Best Handyman & E-Commerce';
-  const heroSubtitle = settings.hero_subtitle || 'Professional handyman services and premium equipment at your fingertips.';
-  const footerText = settings.footer_text || '© 2026 Handyman E-Commerce. All rights reserved.';
+  const heroTitle = settings.hero_title || 'Find the Best Services & E-Commerce on FixMart';
+  const heroSubtitle = settings.hero_subtitle || 'Professional services and premium equipment at your fingertips.';
+  const footerText = settings.footer_text || '© 2026 FixMart. All rights reserved.';
 
   return (
     <SettingsContext.Provider

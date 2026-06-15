@@ -1,15 +1,63 @@
 import React, { useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, TextInput, useWindowDimensions } from 'react-native';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
+import ResponsiveContainer from '../components/ResponsiveContainer';
 
 export default function HomeScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
   const { theme, logoUrl, heroTitle, heroSubtitle, footerText } = useContext(SettingsContext);
+  const { width } = useWindowDimensions();
 
   const [promotedListings, setPromotedListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Slides State
+  const [slides, setSlides] = useState<any[]>([]);
+  const [slidesLoading, setSlidesLoading] = useState(true);
+  const [activeSlideIndex, setActiveSlideIndex] = useState(0);
+  const slideScrollViewRef = useRef<ScrollView>(null);
+
+  // Fetch Slides
+  useEffect(() => {
+    const fetchSlides = async () => {
+      try {
+        setSlidesLoading(true);
+        const res = await apiClient.get('/slides');
+        setSlides(res.data || []);
+      } catch (e) {
+        console.error('Failed to load slides', e);
+      } finally {
+        setSlidesLoading(false);
+      }
+    };
+    fetchSlides();
+  }, []);
+
+  // Auto-scroll logic for slides
+  useEffect(() => {
+    if (slides.length <= 1) return;
+    const interval = setInterval(() => {
+      const nextIndex = (activeSlideIndex + 1) % slides.length;
+      setActiveSlideIndex(nextIndex);
+      const containerWidth = Math.min(width, 1200) - 40;
+      slideScrollViewRef.current?.scrollTo({
+        x: nextIndex * containerWidth,
+        animated: true,
+      });
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [slides, activeSlideIndex, width]);
+
+  const handleScroll = (event: any) => {
+    const contentOffsetX = event.nativeEvent.contentOffset.x;
+    const containerWidth = Math.min(width, 1200) - 40;
+    const currentIndex = Math.round(contentOffsetX / containerWidth);
+    if (currentIndex !== activeSlideIndex && currentIndex >= 0 && currentIndex < slides.length) {
+      setActiveSlideIndex(currentIndex);
+    }
+  };
 
   // Search states
   const [searchQuery, setSearchQuery] = useState('');
@@ -84,6 +132,7 @@ export default function HomeScreen({ navigation }: any) {
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
+      <ResponsiveContainer>
       {/* Dynamic Header / Logo */}
       <View style={styles.brandHeader}>
         {logoUrl ? (
@@ -186,6 +235,55 @@ export default function HomeScreen({ navigation }: any) {
         </View>
       )}
 
+      {/* 🚀 Dynamic Slides Carousel */}
+      {!slidesLoading && slides.length > 0 && (
+        <View style={styles.sliderWrapper}>
+          <ScrollView
+            ref={slideScrollViewRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            style={[styles.sliderScroll, { width: Math.min(width, 1200) - 40 }]}
+          >
+            {slides.map((slide) => (
+              <View 
+                key={slide.id} 
+                style={[styles.slideCard, { width: Math.min(width, 1200) - 40 }]}
+              >
+                {slide.imageUrl ? (
+                  <Image source={{ uri: slide.imageUrl }} style={styles.slideImage} resizeMode="cover" />
+                ) : (
+                  <View style={styles.slidePlaceholder} />
+                )}
+                <View style={styles.slideOverlay} />
+                {slide.caption && (
+                  <View style={styles.slideCaptionContainer}>
+                    <Text style={styles.slideCaptionText}>{slide.caption}</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* Dots Indicator */}
+          {slides.length > 1 && (
+            <View style={styles.indicatorContainer}>
+              {slides.map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.indicatorDot,
+                    { backgroundColor: activeSlideIndex === i ? theme.primary : '#D1D1D6' }
+                  ]}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
       {/* Dynamic Welcome Hero Banner */}
       <View style={[styles.welcomeBanner, { backgroundColor: theme.primary }]}>
         <View style={styles.bannerOverlay} />
@@ -240,7 +338,7 @@ export default function HomeScreen({ navigation }: any) {
               activeOpacity={0.9}
             >
               {item.imageUrl ? (
-                <Image source={{ uri: item.imageUrl }} style={styles.spotlightImage} />
+                <Image source={{ uri: item.imageUrl }} style={styles.spotlightImage} resizeMode="cover" />
               ) : (
                 <View style={styles.spotlightPlaceholder}>
                   <Text style={styles.spotlightPlaceholderText}>
@@ -287,8 +385,20 @@ export default function HomeScreen({ navigation }: any) {
         activeOpacity={0.8}
       >
         <View style={styles.cardInfo}>
-          <Text style={[styles.cardTitle, { color: '#34C759' }]}>⚡ Book a Handyman</Text>
+          <Text style={[styles.cardTitle, { color: '#34C759' }]}>⚡ Book Services</Text>
           <Text style={styles.cardDesc}>Hire verified technicians for plumbing, wiring, and repairs.</Text>
+        </View>
+        <View style={styles.chevron}><Text style={styles.chevronText}>→</Text></View>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={[styles.card, { borderLeftColor: '#5856D6', borderColor: theme.border }]} 
+        onPress={() => navigation.navigate('BookParcel')}
+        activeOpacity={0.8}
+      >
+        <View style={styles.cardInfo}>
+          <Text style={[styles.cardTitle, { color: '#5856D6' }]}>🚚 Book a Rider</Text>
+          <Text style={styles.cardDesc}>Instant parcel pickup and delivery across the city.</Text>
         </View>
         <View style={styles.chevron}><Text style={styles.chevronText}>→</Text></View>
       </TouchableOpacity>
@@ -315,6 +425,7 @@ export default function HomeScreen({ navigation }: any) {
       <View style={styles.footerContainer}>
         <Text style={styles.footerText}>{footerText}</Text>
       </View>
+      </ResponsiveContainer>
     </ScrollView>
   );
 }
@@ -582,8 +693,9 @@ const styles = StyleSheet.create({
   },
   spotlightImage: {
     width: '100%',
-    height: 100,
-    resizeMode: 'cover',
+    height: 140,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   spotlightPlaceholder: {
     width: '100%',
@@ -688,5 +800,65 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#AEAEB2',
     textAlign: 'center',
+  },
+  sliderWrapper: {
+    marginBottom: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#FFF',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    position: 'relative',
+  },
+  sliderScroll: {
+    height: 180,
+  },
+  slideCard: {
+    height: 180,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  slideImage: {
+    width: '100%',
+    height: '100%',
+  },
+  slidePlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#E5E5EA',
+  },
+  slideOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  slideCaptionContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+  },
+  slideCaptionText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  indicatorContainer: {
+    position: 'absolute',
+    bottom: 8,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    zIndex: 10,
+  },
+  indicatorDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
 });

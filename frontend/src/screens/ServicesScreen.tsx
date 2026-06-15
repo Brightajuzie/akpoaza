@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useContext, useRef } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, TextInput, Modal, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, TextInput, Modal, KeyboardAvoidingView, Platform, useWindowDimensions } from 'react-native';
 import apiClient from '../api/client';
 import { SettingsContext } from '../context/SettingsContext';
 
@@ -17,6 +17,8 @@ export default function ServicesScreen({ navigation }: any) {
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const { theme } = useContext(SettingsContext);
+  const { width } = useWindowDimensions();
+  const numColumns = width > 1024 ? 4 : width > 600 ? 3 : 2;
 
   // Service ratings map: serviceId -> { averageRating, count }
   const [ratingsMap, setRatingsMap] = useState<Record<string, { averageRating: number | null; count: number }>>({});
@@ -98,7 +100,7 @@ export default function ServicesScreen({ navigation }: any) {
   };
 
   const handleWhatsAppSimulate = (service: any) => {
-    const msg = `Hi, I am looking for a qualified specialist for "${service.name}". I saw your service on Handyman E-Commerce. Is anyone available for booking tomorrow?`;
+    const msg = `Hi, I am looking for a qualified specialist for "${service.name}". I saw your service on FixMart. Is anyone available for booking tomorrow?`;
     Alert.alert(
       '💬 WhatsApp Redirection Simulator',
       `Opening WhatsApp thread...\n\nRecipient: Closest ${service.category} Expert\n\nPre-filled text:\n"${msg}"`,
@@ -219,9 +221,11 @@ export default function ServicesScreen({ navigation }: any) {
 
       {/* Services List */}
       <FlatList
+        key={`grid-${numColumns}`}
         data={filteredServices}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
+        numColumns={numColumns}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => {
           const isFeatured = item.featured;
@@ -468,10 +472,11 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   card: {
+    flex: 1,
+    margin: 8,
     backgroundColor: '#FFFFFF',
     padding: 20,
     borderRadius: 16,
-    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
