@@ -26,10 +26,13 @@ module.exports = async function (env, argv) {
   config.resolve.alias['@stripe/stripe-react-native'] = 
     path.resolve(__dirname, 'src/mocks/stripe-mock.js');
 
+<<<<<<< HEAD
   // Mock react-native-maps on the web
   config.resolve.alias['react-native-maps'] = 
     path.resolve(__dirname, 'src/mocks/react-native-maps-mock.js');
 
+=======
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   // Ensure cross-workspace modules (like react-native-web) can be resolved from the hoisted node_modules
   config.resolve.modules = [
     path.resolve(__dirname, 'node_modules'),

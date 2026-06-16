@@ -191,7 +191,11 @@ router.post('/google', (req, res) => __awaiter(void 0, void 0, void 0, function*
         }
         let user = yield prisma_1.default.user.findUnique({ where: { email } });
         if (!user) {
+<<<<<<< HEAD
             const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER'];
+=======
+            const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR'];
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
             const userRole = (role && allowedRoles.includes(role)) ? role : 'CUSTOMER';
             const verificationStatus = userRole === 'CUSTOMER' ? 'VERIFIED' : 'UNVERIFIED';
             user = yield prisma_1.default.user.create({
@@ -206,7 +210,11 @@ router.post('/google', (req, res) => __awaiter(void 0, void 0, void 0, function*
             });
         }
         const token = jsonwebtoken_1.default.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+<<<<<<< HEAD
         const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus !== 'VERIFIED';
+=======
+        const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN') && user.verificationStatus !== 'VERIFIED';
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
         res.json({
             token,
             user: {

@@ -400,6 +400,7 @@ router.patch('/:id/admin-cancel', authenticateToken, async (req: AuthRequest, re
     });
 
     if (updatedBooking.customerId) {
+<<<<<<< HEAD
       sendNotification({
         userId: updatedBooking.customerId,
         title: '❌ Booking Cancelled by Admin',
@@ -417,6 +418,12 @@ router.patch('/:id/admin-cancel', authenticateToken, async (req: AuthRequest, re
         type: 'BOOKING',
         referenceId: id,
       }).catch(() => {});
+=======
+      await createNotification(prisma, updatedBooking.customerId, '❌ Booking Cancelled by Admin', `Your booking for "${updatedBooking.service?.name}" was cancelled by the administrator.`, 'BOOKING', id).catch(() => {});
+    }
+    if (updatedBooking.handymanId) {
+      await createNotification(prisma, updatedBooking.handymanId, '❌ Job Cancelled by Admin', `The job for "${updatedBooking.service?.name}" was cancelled by the administrator.`, 'JOB', id).catch(() => {});
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
     }
 
     res.json(updatedBooking);
@@ -446,6 +453,7 @@ router.patch('/:id/admin-reassign', authenticateToken, async (req: AuthRequest, 
     });
 
     if (updatedBooking.customerId) {
+<<<<<<< HEAD
       sendNotification({
         userId: updatedBooking.customerId,
         title: '🔄 Professional Reassigned',
@@ -472,6 +480,14 @@ router.patch('/:id/admin-reassign', authenticateToken, async (req: AuthRequest, 
       referenceId: id,
       emailSubject: '🛠️ New Job Assigned — Akpoaza',
     }).catch(() => {});
+=======
+      await createNotification(prisma, updatedBooking.customerId, '🔄 Handyman Reassigned', `Your booking for "${updatedBooking.service?.name}" has been assigned to a new professional.`, 'BOOKING', id).catch(() => {});
+    }
+    if (oldHandymanId) {
+      await createNotification(prisma, oldHandymanId, '🔄 Job Reassigned', `You have been unassigned from the job "${updatedBooking.service?.name}" by an administrator.`, 'JOB', id).catch(() => {});
+    }
+    await createNotification(prisma, newHandymanId, '💼 New Job Assigned (Admin)', `An admin assigned you to a new job: "${updatedBooking.service?.name}".`, 'JOB', id).catch(() => {});
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 
     res.json(updatedBooking);
   } catch (error) {

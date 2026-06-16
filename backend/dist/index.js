@@ -87,6 +87,7 @@ if (process.env.NODE_ENV !== 'test') {
         socket.on('update_location', (data) => {
             socket.to(`booking_${data.bookingId}`).emit('location_update', {
                 role: data.role,
+<<<<<<< HEAD
                 latitude: data.latitude,
                 longitude: data.longitude,
                 timestamp: Date.now()
@@ -99,6 +100,8 @@ if (process.env.NODE_ENV !== 'test') {
         socket.on('update_order_location', (data) => {
             socket.to(`order_${data.orderId}`).emit('order_location_update', {
                 role: data.role,
+=======
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
                 latitude: data.latitude,
                 longitude: data.longitude,
                 timestamp: Date.now()

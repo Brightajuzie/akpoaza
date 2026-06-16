@@ -1,9 +1,49 @@
 import React, { useContext, useEffect, useState, useRef, useCallback } from 'react';
+<<<<<<< HEAD
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, TextInput, useWindowDimensions } from 'react-native';
+=======
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, TextInput, Dimensions, Animated } from 'react-native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const SLIDE_WIDTH = SCREEN_WIDTH - 40;
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
 import ResponsiveContainer from '../components/ResponsiveContainer';
+
+const PROMO_SLIDES = [
+  {
+    id: 1,
+    title: '🔥 Mega Tool Sale',
+    subtitle: 'Up to 40% off on power tools, drills & more!',
+    cta: 'Shop Now',
+    gradient: ['#1a472a', '#2d6a4f'],
+    accent: '#52b788',
+    icon: '🛒',
+    action: 'Products',
+  },
+  {
+    id: 2,
+    title: '⚡ Book a Handyman',
+    subtitle: 'Verified professionals at your doorstep. Fast & reliable.',
+    cta: 'Book Now',
+    gradient: ['#0d1b2a', '#1b4f72'],
+    accent: '#3498db',
+    icon: '🔧',
+    action: 'Services',
+  },
+  {
+    id: 3,
+    title: '🎁 Refer & Earn',
+    subtitle: 'Invite friends & earn wallet credits on every signup!',
+    cta: 'Learn More',
+    gradient: ['#4a1942', '#7b2d8b'],
+    accent: '#e040fb',
+    icon: '💜',
+    action: 'ProfileTab',
+  },
+];
 
 export default function HomeScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
@@ -13,6 +53,7 @@ export default function HomeScreen({ navigation }: any) {
   const [promotedListings, setPromotedListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+<<<<<<< HEAD
   // Slides State
   const [slides, setSlides] = useState<any[]>([]);
   const [slidesLoading, setSlidesLoading] = useState(true);
@@ -58,6 +99,12 @@ export default function HomeScreen({ navigation }: any) {
       setActiveSlideIndex(currentIndex);
     }
   };
+=======
+  // Promo carousel state
+  const [activeSlide, setActiveSlide] = useState(0);
+  const promoScrollRef = useRef<ScrollView>(null);
+  const promoTimerRef = useRef<any>(null);
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 
   // Search states
   const [searchQuery, setSearchQuery] = useState('');
@@ -123,6 +170,18 @@ export default function HomeScreen({ navigation }: any) {
     };
 
     fetchPromoted();
+  }, []);
+
+  // Auto-scroll promo carousel every 3.5 seconds
+  useEffect(() => {
+    promoTimerRef.current = setInterval(() => {
+      setActiveSlide(prev => {
+        const next = (prev + 1) % PROMO_SLIDES.length;
+        promoScrollRef.current?.scrollTo({ x: next * SLIDE_WIDTH, animated: true });
+        return next;
+      });
+    }, 3500);
+    return () => clearInterval(promoTimerRef.current);
   }, []);
 
   return (
@@ -235,6 +294,7 @@ export default function HomeScreen({ navigation }: any) {
         </View>
       )}
 
+<<<<<<< HEAD
       {/* 🚀 Dynamic Slides Carousel */}
       {!slidesLoading && slides.length > 0 && (
         <View style={styles.sliderWrapper}>
@@ -283,6 +343,63 @@ export default function HomeScreen({ navigation }: any) {
           )}
         </View>
       )}
+=======
+      {/* ── 3-Slide Promotional Carousel ── */}
+      <View style={styles.promoCarouselWrapper}>
+        <ScrollView
+          ref={promoScrollRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={16}
+          onMomentumScrollEnd={e => {
+            const idx = Math.round(e.nativeEvent.contentOffset.x / SLIDE_WIDTH);
+            setActiveSlide(idx);
+          }}
+          style={{ borderRadius: 20, overflow: 'hidden' }}
+        >
+          {PROMO_SLIDES.map((slide, idx) => (
+            <View
+              key={slide.id}
+              style={[styles.promoSlide, { width: SLIDE_WIDTH, backgroundColor: slide.gradient[0] }]}
+            >
+              {/* Gradient overlay using two-tone */}
+              <View style={[styles.promoSlideAccentBar, { backgroundColor: slide.accent + '30' }]} />
+              <View style={styles.promoSlideContent}>
+                <Text style={styles.promoSlideIcon}>{slide.icon}</Text>
+                <Text style={styles.promoSlideTitle}>{slide.title}</Text>
+                <Text style={styles.promoSlideSubtitle}>{slide.subtitle}</Text>
+                <TouchableOpacity
+                  style={[styles.promoSlideCta, { backgroundColor: slide.accent }]}
+                  onPress={() => navigation.navigate(slide.action)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.promoSlideCtaText}>{slide.cta} →</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.promoSlideBigIcon}>{slide.icon}</Text>
+            </View>
+          ))}
+        </ScrollView>
+        {/* Dot Indicators */}
+        <View style={styles.promoDots}>
+          {PROMO_SLIDES.map((_, idx) => (
+            <TouchableOpacity
+              key={idx}
+              onPress={() => {
+                promoScrollRef.current?.scrollTo({ x: idx * SLIDE_WIDTH, animated: true });
+                setActiveSlide(idx);
+              }}
+            >
+              <View style={[
+                styles.promoDot,
+                { backgroundColor: idx === activeSlide ? theme.primary : '#CED4DA', width: idx === activeSlide ? 20 : 8 }
+              ]} />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 
       {/* Dynamic Welcome Hero Banner */}
       <View style={[styles.welcomeBanner, { backgroundColor: theme.primary }]}>
@@ -397,8 +514,13 @@ export default function HomeScreen({ navigation }: any) {
         activeOpacity={0.8}
       >
         <View style={styles.cardInfo}>
+<<<<<<< HEAD
           <Text style={[styles.cardTitle, { color: '#5856D6' }]}>🚚 Book a Rider</Text>
           <Text style={styles.cardDesc}>Instant parcel pickup and delivery across the city.</Text>
+=======
+          <Text style={[styles.cardTitle, { color: '#5856D6' }]}>🚚 Book a Delivery Rider</Text>
+          <Text style={styles.cardDesc}>Request a verified rider to securely deliver your parcels and packages.</Text>
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
         </View>
         <View style={styles.chevron}><Text style={styles.chevronText}>→</Text></View>
       </TouchableOpacity>
@@ -801,6 +923,7 @@ const styles = StyleSheet.create({
     color: '#AEAEB2',
     textAlign: 'center',
   },
+<<<<<<< HEAD
   sliderWrapper: {
     marginBottom: 20,
     borderRadius: 16,
@@ -860,5 +983,81 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
+=======
+
+  // ── Promo Carousel ──────────────────────────────────────────────────────
+  promoCarouselWrapper: {
+    marginBottom: 20,
+  },
+  promoSlide: {
+    height: 160,
+    borderRadius: 20,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+    position: 'relative',
+  },
+  promoSlideAccentBar: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: '55%',
+    borderTopLeftRadius: 80,
+    borderBottomLeftRadius: 80,
+  },
+  promoSlideContent: {
+    flex: 1,
+    zIndex: 2,
+  },
+  promoSlideIcon: {
+    fontSize: 28,
+    marginBottom: 6,
+  },
+  promoSlideTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  promoSlideSubtitle: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.8)',
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  promoSlideCta: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  promoSlideCtaText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  promoSlideBigIcon: {
+    fontSize: 72,
+    position: 'absolute',
+    right: 16,
+    bottom: -8,
+    opacity: 0.25,
+    zIndex: 1,
+  },
+  promoDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+    gap: 6,
+  },
+  promoDot: {
+    height: 8,
+    borderRadius: 4,
+    marginHorizontal: 3,
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   },
 });

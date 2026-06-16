@@ -14,7 +14,11 @@ const VEHICLE_ICONS: Record<string, string> = {
   CAR: '🚗',
 };
 
+<<<<<<< HEAD
 export default function BookParcelScreen({ route, navigation }: any) {
+=======
+export default function BookParcelScreen({ navigation }: any) {
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   const { theme } = useContext(SettingsContext);
   const { userToken } = useContext(AuthContext);
 
@@ -28,6 +32,7 @@ export default function BookParcelScreen({ route, navigation }: any) {
   const [parcelDescription, setParcelDescription] = useState('');
 
   // Quote / UI state
+<<<<<<< HEAD
   const [quote, setQuote] = useState<{
     price: number;
     distanceKm: string;
@@ -36,6 +41,9 @@ export default function BookParcelScreen({ route, navigation }: any) {
     baseFare: number;
     perKmRate: number;
   } | null>(null);
+=======
+  const [quote, setQuote] = useState<{ price: number; distanceKm: string } | null>(null);
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
@@ -44,6 +52,7 @@ export default function BookParcelScreen({ route, navigation }: any) {
   const [parcelSize, setParcelSize] = useState<string>('');
   const PARCEL_SIZES = ['📄 Documents', '📦 Small Box', '🗃️ Medium Box', '🪨 Heavy Item'];
 
+<<<<<<< HEAD
   // Handle redirect params pre-filling and auto-getting quote
   useEffect(() => {
     if (route?.params) {
@@ -90,6 +99,8 @@ export default function BookParcelScreen({ route, navigation }: any) {
     }
   }, [route?.params]);
 
+=======
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   // Use current location for pickup
   const useCurrentLocation = async () => {
     setLocationLoading(true);
@@ -176,6 +187,7 @@ export default function BookParcelScreen({ route, navigation }: any) {
       Alert.alert('Get a Quote First', 'Please calculate a price quote before booking.');
       return;
     }
+<<<<<<< HEAD
 
     if (!userToken) {
       Alert.alert(
@@ -222,6 +234,8 @@ export default function BookParcelScreen({ route, navigation }: any) {
       return;
     }
 
+=======
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
     setSubmitting(true);
     try {
       const description = parcelSize ? `${parcelSize}${parcelDescription ? ' – ' + parcelDescription : ''}` : parcelDescription;
@@ -333,6 +347,7 @@ export default function BookParcelScreen({ route, navigation }: any) {
 
         {/* Quote Result */}
         {quote && (
+<<<<<<< HEAD
             <View style={[styles.quoteCard, { borderColor: '#5856D6' }]}>
               {/* Route type badge */}
               <View style={[
@@ -389,6 +404,32 @@ export default function BookParcelScreen({ route, navigation }: any) {
                 )}
               </TouchableOpacity>
             </View>
+=======
+          <View style={[styles.quoteCard, { borderColor: '#5856D6' }]}>
+            <View style={styles.quoteRow}>
+              <Text style={styles.quoteLabel}>📏 Distance</Text>
+              <Text style={styles.quoteValue}>{quote.distanceKm} km</Text>
+            </View>
+            <View style={styles.quoteDivider} />
+            <View style={styles.quoteRow}>
+              <Text style={styles.quoteLabel}>💰 Estimated Price</Text>
+              <Text style={[styles.quotePriceLarge, { color: '#5856D6' }]}>₦{quote.price.toLocaleString()}</Text>
+            </View>
+            <Text style={styles.quoteNote}>Base fare ₦1,000 + ₦200/km. Final price includes rider & platform fee.</Text>
+
+            <TouchableOpacity
+              style={[styles.bookBtn, { backgroundColor: '#34C759' }]}
+              onPress={handleBook}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.bookBtnText}>✅ Confirm Booking — ₦{quote.price.toLocaleString()}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
         )}
 
         <View style={{ height: 40 }} />
@@ -448,10 +489,13 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderRadius: 16, padding: 20, marginTop: 20,
     backgroundColor: '#f0f0ff',
   },
+<<<<<<< HEAD
   routeBadge: {
     alignSelf: 'center', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 5, marginBottom: 14,
   },
   routeBadgeText: { fontSize: 12, fontWeight: '700' },
+=======
+>>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   quoteRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   quoteLabel: { fontSize: 14, color: '#3A3A3C', fontWeight: '600' },
   quoteValue: { fontSize: 14, fontWeight: '700', color: '#1C1C1E' },
