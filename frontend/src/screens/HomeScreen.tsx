@@ -173,7 +173,7 @@ export default function HomeScreen({ navigation }: any) {
         {logoUrl ? (
           <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
         ) : (
-          <Text style={[styles.logoText, { color: theme.primary }]}>🛠️Akpoaza</Text>
+          <Text style={[styles.logoText, { color: theme.primary }]}>🛠️ FixMart</Text>
         )}
         <TouchableOpacity 
           style={[styles.profileIndicator, { borderColor: theme.primary }]}

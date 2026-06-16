@@ -393,7 +393,7 @@ export default function AdminScreen() {
   };
 
   const handleInitiateCall = async (targetUser: any, audioOnly = false) => {
-    const baseRoom = `akpoaza-call-${targetUser.name.replace(/\s+/g, '-').toLowerCase()}-${targetUser.id.substring(0, 8)}`;
+    const baseRoom = `fixmart-call-${targetUser.name.replace(/\s+/g, '-').toLowerCase()}-${targetUser.id.substring(0, 8)}`;
     const roomName = audioOnly ? `${baseRoom}#config.startWithVideoMuted=true` : baseRoom;
     
     try {

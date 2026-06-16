@@ -85,7 +85,7 @@ function buildEmailHtml(title: string, body: string, customHtml?: string): strin
           <tr>
             <td style="background:linear-gradient(135deg,#5856D6 0%,#007AFF 100%);padding:32px 40px;text-align:center">
               <p style="margin:0;font-size:28px">🛠️</p>
-              <h1 style="margin:8px 0 0;color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.3px">Akpoaza</h1>
+              <h1 style="margin:8px 0 0;color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.3px">FixMart</h1>
             </td>
           </tr>
           <!-- Body -->
@@ -99,7 +99,7 @@ function buildEmailHtml(title: string, body: string, customHtml?: string): strin
           <tr>
             <td style="background:#F9FAFB;padding:20px 40px;text-align:center;border-top:1px solid #E5E7EB">
               <p style="margin:0;font-size:12px;color:#9CA3AF">
-                © ${new Date().getFullYear()} Akpoaza. You are receiving this because you have an account with us.<br>
+                © ${new Date().getFullYear()} FixMart. You are receiving this because you have an account with us.<br>
                 Do not reply to this email — it is sent from an unmonitored address.
               </p>
             </td>
@@ -149,7 +149,7 @@ export async function sendNotification(payload: NotifyPayload) {
   const mailer = getMailer();
   if (mailer && userEmail) {
     mailer.sendMail({
-      from: `"Akpoaza" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
+      from: `"FixMart" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
       to: userEmail,
       subject: emailSubject || title,
       text: body,
@@ -161,7 +161,7 @@ export async function sendNotification(payload: NotifyPayload) {
   const twilioClient = getTwilio();
   const fromNumber = process.env.TWILIO_FROM_NUMBER;
   if (twilioClient && fromNumber && userPhone) {
-    const smsBody = `[Akpoaza] ${title}\n${body}`;
+    const smsBody = `[FixMart] ${title}\n${body}`;
     twilioClient.messages.create({
       body: smsBody.substring(0, 160), // Standard SMS limit
       from: fromNumber,

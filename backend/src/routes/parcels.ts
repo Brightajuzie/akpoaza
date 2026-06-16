@@ -157,7 +157,7 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
       body: `Your parcel delivery from ${pickupAddress} to ${dropoffAddress} is booked (${result.distanceKm} km). Total: ₦${computedTotalAmount.toLocaleString()}. A rider will be assigned shortly.`,
       type: 'PARCEL',
       referenceId: parcel.id,
-      emailSubject: '✅ Parcel Delivery Confirmed — Akpoaza',
+      emailSubject: '✅ Parcel Delivery Confirmed — FixMart',
       emailHtml: `<p>Hi there,</p>
         <p>Your parcel delivery has been booked successfully!</p>
         <p><strong>Pickup:</strong> ${pickupAddress}</p>
@@ -251,7 +251,7 @@ router.patch('/:id/accept-delivery', authenticateToken, async (req: AuthRequest,
       body: `Rider ${updatedParcel.rider?.name} has accepted your parcel delivery and is heading to pick it up. Track them live in the app.`,
       type: 'PARCEL',
       referenceId: id,
-      emailSubject: '🚚 Your Rider is On the Way — Akpoaza',
+      emailSubject: '🚚 Your Rider is On the Way — FixMart',
       emailHtml: `<p>Great news!</p>
         <p>Rider <strong>${updatedParcel.rider?.name}</strong> has accepted your delivery and is on their way to pick up your parcel.</p>
         <p>Open the app to track your rider's live location.</p>`,

@@ -120,7 +120,7 @@ export default function BookParcelScreen({ route, navigation }: any) {
     try {
       const encoded = encodeURIComponent(address);
       const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1`, {
-        headers: { 'User-Agent': 'AkpoazaApp/1.0' }
+        headers: { 'User-Agent': 'FixMartApp/1.0' }
       });
       const data = await res.json();
       if (data && data.length > 0) {

@@ -188,7 +188,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
       body: `Your booking for "${service.name}" on ${scheduledStr} at ${address} is confirmed. ${assignedText}`,
       type: 'BOOKING',
       referenceId: newBooking.id,
-      emailSubject: '✅ Booking Confirmed — Akpoaza',
+      emailSubject: '✅ Booking Confirmed — FixMart',
       emailHtml: `<p>Hi there,</p>
         <p>Your service booking has been placed successfully!</p>
         <p><strong>Service:</strong> ${service.name}</p>
@@ -207,7 +207,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
         body: `New job: ${service.name}. Address: ${address}.${distText} Scheduled: ${scheduledStr}.`,
         type: 'BOOKING',
         referenceId: newBooking.id,
-        emailSubject: '🛠️ New Job Waiting for You — Akpoaza',
+        emailSubject: '🛠️ New Job Waiting for You — FixMart',
         emailHtml: `<p>You have been assigned a new job!</p>
           <p><strong>Service:</strong> ${service.name}</p>
           <p><strong>Address:</strong> ${address}</p>
@@ -335,7 +335,7 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
         body: `A professional has accepted your booking for "${svcName}". They are on their way!`,
         type: 'BOOKING',
         referenceId: id,
-        emailSubject: '✅ Your Booking Was Accepted — Akpoaza',
+        emailSubject: '✅ Your Booking Was Accepted — FixMart',
         emailHtml: `<p>Good news, ${custName}!</p>
           <p>A professional has accepted your booking for <strong>${svcName}</strong> and will be heading to your location.</p>
           <p>Track them live in the app.</p>`,
@@ -374,7 +374,7 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
         body: `Your booking for "${svcName}" has been cancelled. Contact support if this is unexpected.`,
         type: 'BOOKING',
         referenceId: id,
-        emailSubject: '❌ Booking Cancelled — Akpoaza',
+        emailSubject: '❌ Booking Cancelled — FixMart',
       }).catch(() => {});
     }
 
@@ -406,7 +406,7 @@ router.patch('/:id/admin-cancel', authenticateToken, async (req: AuthRequest, re
         body: `Your booking for "${updatedBooking.service?.name}" was cancelled by an administrator. Please contact support for assistance.`,
         type: 'BOOKING',
         referenceId: id,
-        emailSubject: '❌ Booking Cancelled — Akpoaza',
+        emailSubject: '❌ Booking Cancelled — FixMart',
       }).catch(() => {});
     }
     if (updatedBooking.handymanId) {
@@ -452,7 +452,7 @@ router.patch('/:id/admin-reassign', authenticateToken, async (req: AuthRequest, 
         body: `Your booking for "${updatedBooking.service?.name}" has been reassigned to a new professional by an administrator.`,
         type: 'BOOKING',
         referenceId: id,
-        emailSubject: '🔄 Booking Reassigned — Akpoaza',
+        emailSubject: '🔄 Booking Reassigned — FixMart',
       }).catch(() => {});
     }
     if (oldHandymanId) {
@@ -470,7 +470,7 @@ router.patch('/:id/admin-reassign', authenticateToken, async (req: AuthRequest, 
       body: `An administrator assigned you to: "${updatedBooking.service?.name}". Address: ${updatedBooking.address}.`,
       type: 'BOOKING',
       referenceId: id,
-      emailSubject: '🛠️ New Job Assigned — Akpoaza',
+      emailSubject: '🛠️ New Job Assigned — FixMart',
     }).catch(() => {});
 
     res.json(updatedBooking);

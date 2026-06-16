@@ -213,7 +213,7 @@ export default function LoginScreen({ route, navigation }: any) {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.card, { borderColor: theme.border }]}>
-        <Text style={styles.logoText}>🛠️ Akpoaza</Text>
+        <Text style={styles.logoText}>🛠️ FixMart</Text>
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>
           {redirectTo
