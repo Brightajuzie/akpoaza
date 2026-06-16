@@ -14,7 +14,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
-const notifications_1 = require("./notifications");
+const notify_1 = require("../lib/notify");
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const router = (0, express_1.Router)();
 // Get orders for a user
@@ -137,20 +137,50 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
                 include: { items: true },
             });
         }));
-        // Notify vendors of the new order items
+        // ── Multi-channel notifications ──────────────────────────────────────
         try {
+            const itemsSummary = dbProducts.map(p => {
+                const req = items.find((i) => i.productId === p.id);
+                return `${(req === null || req === void 0 ? void 0 : req.quantity) || 1}× ${p.name}`;
+            }).join(', ');
+            // 1. Customer — order confirmation
+            (0, notify_1.sendNotification)({
+                userId,
+                title: '🛒 Order Placed Successfully',
+                body: `Your order for ${itemsSummary} (₦${computedTotalAmount.toLocaleString()}) has been received and is being processed.`,
+                type: 'ORDER',
+                referenceId: order.id,
+                emailSubject: '✅ Order Confirmed — Akpoaza',
+                emailHtml: `<p style="font-size:16px;color:#374151">Hi there,</p>
+          <p>Your order has been placed successfully!</p>
+          <p><strong>Items:</strong> ${itemsSummary}</p>
+          <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
+          <p>We'll notify you as soon as it ships. Thank you for shopping with <strong>Akpoaza</strong>!</p>`,
+            }).catch(() => { });
+            // 2. Each vendor — new sale alert
             const vendorIds = new Set(dbProducts.map(p => p.vendorId).filter(Boolean));
             for (const vendorId of vendorIds) {
                 const vendorItems = dbProducts.filter(p => p.vendorId === vendorId);
-                const itemsDesc = vendorItems.map(p => {
-                    const itemReq = items.find((i) => i.productId === p.id);
-                    return `${(itemReq === null || itemReq === void 0 ? void 0 : itemReq.quantity) || 1}x ${p.name}`;
+                const vendorDesc = vendorItems.map(p => {
+                    const req = items.find((i) => i.productId === p.id);
+                    return `${(req === null || req === void 0 ? void 0 : req.quantity) || 1}× ${p.name}`;
                 }).join(', ');
-                yield (0, notifications_1.createNotification)(prisma_1.default, vendorId, '📦 New Order Received', `You received a new order for: ${itemsDesc}. Total order value: $${computedTotalAmount.toFixed(2)}`, 'ORDER', order.id).catch(() => { });
+                (0, notify_1.sendNotification)({
+                    userId: vendorId,
+                    title: '📦 New Order Received',
+                    body: `New sale: ${vendorDesc}. Order total: ₦${computedTotalAmount.toLocaleString()}. Please prepare items for dispatch.`,
+                    type: 'ORDER',
+                    referenceId: order.id,
+                    emailSubject: '🛍️ You Have a New Order — Akpoaza',
+                    emailHtml: `<p>A customer just placed a new order from your store.</p>
+            <p><strong>Items ordered:</strong> ${vendorDesc}</p>
+            <p><strong>Order Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
+            <p>Please log in to your dashboard to confirm and prepare the order.</p>`,
+                }).catch(() => { });
             }
         }
         catch (e) {
-            console.error('Failed to notify vendors of new order', e);
+            console.error('[orders] Failed to dispatch notifications:', e);
         }
         res.status(201).json({ message: 'Order created successfully', order });
     }
@@ -219,6 +249,24 @@ router.patch('/:id/status', auth_1.authenticateToken, (req, res, next) => __awai
                 where: { orderId: id, status: 'HELD' },
                 data: { autoReleaseAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
             });
+        }
+        // ── Multi-channel notification to customer on status change ─────────
+        const statusMessages = {
+            PAID: { title: '💳 Payment Confirmed', body: `Your payment for order #${id.slice(-8).toUpperCase()} has been confirmed. We are preparing your items.` },
+            SHIPPED: { title: '🚚 Order Shipped', body: `Great news! Your order #${id.slice(-8).toUpperCase()} is on its way. Track it in the app.` },
+            DELIVERED: { title: '✅ Order Delivered', body: `Your order #${id.slice(-8).toUpperCase()} has been delivered. Please confirm receipt in the app to release payment.` },
+            CANCELLED: { title: '❌ Order Cancelled', body: `Your order #${id.slice(-8).toUpperCase()} has been cancelled. If this was unexpected, please contact support.` },
+        };
+        const msgData = statusMessages[status];
+        if (msgData) {
+            (0, notify_1.sendNotification)({
+                userId: order.userId,
+                title: msgData.title,
+                body: msgData.body,
+                type: 'ORDER',
+                referenceId: id,
+                emailSubject: msgData.title,
+            }).catch(() => { });
         }
         res.json({ message: `Order status updated to ${status}`, order: updatedOrder });
     }
@@ -316,7 +364,7 @@ router.get('/riders', auth_1.authenticateToken, (req, res, next) => __awaiter(vo
 }));
 // Admin: Assign a rider to a paid/shipped order
 router.patch('/:id/assign-rider', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
+    var _a, _b, _c;
     const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
     if (role !== 'ADMIN') {
         return res.status(403).json({ error: 'Forbidden. Admin access required.' });
@@ -344,8 +392,28 @@ router.patch('/:id/assign-rider', auth_1.authenticateToken, (req, res, next) => 
             }
         });
         if (riderId) {
-            yield (0, notifications_1.createNotification)(prisma_1.default, updatedOrder.userId, '🚚 Rider Assigned', `Rider ${(_b = updatedOrder.rider) === null || _b === void 0 ? void 0 : _b.name} has been assigned to deliver your order #${id.substring(0, 8)}.`, 'ORDER', id).catch(() => { });
-            yield (0, notifications_1.createNotification)(prisma_1.default, riderId, '📦 New Delivery Assigned', `You have been assigned to deliver order #${id.substring(0, 8)} to ${updatedOrder.user.name}.`, 'ORDER', id).catch(() => { });
+            // Notify customer that a rider has been assigned
+            (0, notify_1.sendNotification)({
+                userId: updatedOrder.userId,
+                title: '🚚 Rider Assigned to Your Order',
+                body: `Rider ${(_b = updatedOrder.rider) === null || _b === void 0 ? void 0 : _b.name} has been assigned to deliver your order #${id.slice(-8).toUpperCase()}. Track them live in the app.`,
+                type: 'ORDER',
+                referenceId: id,
+                emailSubject: '🚚 Your Rider Has Been Assigned — Akpoaza',
+                emailHtml: `<p>A rider has been assigned to your order!</p>
+          <p><strong>Rider:</strong> ${(_c = updatedOrder.rider) === null || _c === void 0 ? void 0 : _c.name}</p>
+          <p><strong>Order:</strong> #${id.slice(-8).toUpperCase()}</p>
+          <p>Open the app to track your rider's location in real time.</p>`,
+            }).catch(() => { });
+            // Notify rider of the new delivery job
+            (0, notify_1.sendNotification)({
+                userId: riderId,
+                title: '📦 New Delivery Job',
+                body: `You have been assigned to deliver order #${id.slice(-8).toUpperCase()} to ${updatedOrder.user.name}. Please check the app for full details.`,
+                type: 'ORDER',
+                referenceId: id,
+                emailSubject: '📦 New Delivery Assigned — Akpoaza',
+            }).catch(() => { });
         }
         res.json(updatedOrder);
     }
@@ -406,7 +474,14 @@ router.patch('/:id/accept-delivery', auth_1.authenticateToken, (req, res, next) 
                 rider: { select: { id: true, name: true } }
             }
         });
-        yield (0, notifications_1.createNotification)(prisma_1.default, updatedOrder.userId, '🚚 Rider Accepted Delivery', `Rider ${(_c = updatedOrder.rider) === null || _c === void 0 ? void 0 : _c.name} is delivering your order #${id.substring(0, 8)}.`, 'ORDER', id).catch(() => { });
+        (0, notify_1.sendNotification)({
+            userId: updatedOrder.userId,
+            title: '🚚 Rider On the Way',
+            body: `Rider ${(_c = updatedOrder.rider) === null || _c === void 0 ? void 0 : _c.name} accepted your delivery and is on the way with order #${id.slice(-8).toUpperCase()}.`,
+            type: 'ORDER',
+            referenceId: id,
+            emailSubject: '🚚 Rider is On the Way — Akpoaza',
+        }).catch(() => { });
         res.json(updatedOrder);
     }
     catch (error) {

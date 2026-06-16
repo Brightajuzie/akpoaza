@@ -4,11 +4,7 @@ import {
   Alert, ActivityIndicator, Animated, Platform,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
-<<<<<<< HEAD
 import * as SecureStore from '../utils/storage';
-=======
-import * as SecureStore from 'expo-secure-store';
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import apiClient from '../api/client';
@@ -144,12 +140,9 @@ export default function LoginScreen({ route, navigation }: any) {
       } else {
         navigation.navigate(redirectTo, redirectParams || {});
       }
-<<<<<<< HEAD
     } else {
       // No redirect target — go to main app
       navigation.replace('Main');
-=======
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
     }
   };
 

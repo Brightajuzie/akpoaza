@@ -33,10 +33,7 @@ import kycRoutes from './routes/kyc';
 import uploadRoutes from './routes/upload';
 import walletRoutes from './routes/wallet';
 import parcelsRoutes from './routes/parcels';
-<<<<<<< HEAD
 import slidesRoutes from './routes/slides';
-=======
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 import { errorHandler } from './middleware/errorHandler';
 import prisma from './lib/prisma';
 import { triggerSplitWebhook } from './lib/wallet';
@@ -79,10 +76,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/kyc', kycRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/parcels', parcelsRoutes);
-<<<<<<< HEAD
 app.use('/api/slides', slidesRoutes);
-=======
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 
 // Centralized Error Handler
 app.use(errorHandler);

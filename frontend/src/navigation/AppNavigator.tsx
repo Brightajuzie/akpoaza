@@ -27,11 +27,7 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
-<<<<<<< HEAD
 import * as SecureStore from '../utils/storage';
-=======
-import * as SecureStore from 'expo-secure-store';
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();

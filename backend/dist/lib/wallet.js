@@ -204,7 +204,9 @@ function createEscrowForPaidItem(checkoutType, id, paidAmount) {
                 });
                 return escrows;
             }
-        }));
+        }), {
+            timeout: 30000
+        });
     });
 }
 function releaseEscrow(escrowId) {
@@ -283,7 +285,9 @@ function releaseEscrow(escrowId) {
                 });
             }
             return updatedEscrow;
-        }));
+        }), {
+            timeout: 30000
+        });
     });
 }
 function triggerSplitWebhook(escrowId) {

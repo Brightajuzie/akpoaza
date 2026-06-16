@@ -28,7 +28,7 @@ const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const crypto_1 = __importDefault(require("crypto"));
 const auth_1 = require("../middleware/auth");
-const notifications_1 = require("./notifications");
+const notify_1 = require("../lib/notify");
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const google_auth_library_1 = require("google-auth-library");
 const router = (0, express_1.Router)();
@@ -93,7 +93,14 @@ router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, functio
                     select: { id: true },
                 });
                 for (const admin of admins) {
-                    yield (0, notifications_1.createNotification)(prisma_1.default, admin.id, '🔍 New KYC Submission Pending', `User ${newUser.name} (${newUser.role}) submitted verification details during registration.`, 'SYSTEM', newUser.id);
+                    (0, notify_1.sendNotification)({
+                        userId: admin.id,
+                        title: '🔍 New KYC Submission Pending',
+                        body: `User ${newUser.name} (${newUser.role}) submitted verification details during registration.`,
+                        type: 'KYC',
+                        referenceId: newUser.id,
+                        emailSubject: '🔍 New KYC Submission Pending — Akpoaza',
+                    }).catch(() => { });
                 }
             }
             catch (notifErr) {
@@ -191,11 +198,7 @@ router.post('/google', (req, res) => __awaiter(void 0, void 0, void 0, function*
         }
         let user = yield prisma_1.default.user.findUnique({ where: { email } });
         if (!user) {
-<<<<<<< HEAD
             const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER'];
-=======
-            const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR'];
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
             const userRole = (role && allowedRoles.includes(role)) ? role : 'CUSTOMER';
             const verificationStatus = userRole === 'CUSTOMER' ? 'VERIFIED' : 'UNVERIFIED';
             user = yield prisma_1.default.user.create({
@@ -210,11 +213,7 @@ router.post('/google', (req, res) => __awaiter(void 0, void 0, void 0, function*
             });
         }
         const token = jsonwebtoken_1.default.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-<<<<<<< HEAD
         const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus !== 'VERIFIED';
-=======
-        const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN') && user.verificationStatus !== 'VERIFIED';
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
         res.json({
             token,
             user: {

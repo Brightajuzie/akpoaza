@@ -16,7 +16,7 @@ const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const axios_1 = __importDefault(require("axios"));
 const crypto_1 = __importDefault(require("crypto"));
-const notifications_1 = require("./notifications");
+const notify_1 = require("../lib/notify");
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const router = (0, express_1.Router)();
 // Dojah Credentials (defaults to mock/sandbox mode if not defined in .env)
@@ -299,7 +299,14 @@ router.post('/submit', auth_1.authenticateToken, (req, res) => __awaiter(void 0,
             select: { id: true },
         });
         for (const admin of admins) {
-            yield (0, notifications_1.createNotification)(prisma_1.default, admin.id, '🔍 New KYC Submission Pending', `User ${updatedUser.name} (${updatedUser.role}) submitted verification details.`, 'SYSTEM', updatedUser.id);
+            (0, notify_1.sendNotification)({
+                userId: admin.id,
+                title: '🔍 New KYC Submission Pending',
+                body: `User ${updatedUser.name} (${updatedUser.role}) submitted verification details.`,
+                type: 'KYC',
+                referenceId: updatedUser.id,
+                emailSubject: '🔍 New KYC Submission Pending — Akpoaza',
+            }).catch(() => { });
         }
         res.json({
             success: true,
@@ -386,7 +393,14 @@ router.patch('/:userId/review', auth_1.authenticateToken, (req, res) => __awaite
         const body = status === 'VERIFIED'
             ? 'Congratulations, your identity has been verified! You can now accept jobs and list products.'
             : `Your verification request was rejected. Reason: ${reason || 'Invalid documents.'} Please update and re-submit.`;
-        yield (0, notifications_1.createNotification)(prisma_1.default, targetUserId, title, body, 'SYSTEM', adminId);
+        (0, notify_1.sendNotification)({
+            userId: targetUserId,
+            title,
+            body,
+            type: 'KYC',
+            referenceId: adminId,
+            emailSubject: title,
+        }).catch(() => { });
         res.json({
             success: true,
             message: `KYC review submitted successfully. User status updated to ${status}.`,

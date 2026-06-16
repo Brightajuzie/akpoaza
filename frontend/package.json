@@ -6,12 +6,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-<<<<<<< HEAD
     "web": "expo start --web",
     "build": "expo export:web"
-=======
-    "web": "expo start --web"
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   },
   "dependencies": {
     "@expo/webpack-config": "^19.0.0",

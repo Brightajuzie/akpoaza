@@ -26,12 +26,6 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
   const updateLocationEvent = isOrder ? 'update_order_location' : 'update_location';
   const idToJoin = orderId || bookingId;
 
-  const isOrder = !!orderId;
-  const joinEvent = isOrder ? 'join_order' : 'join_booking';
-  const locationUpdateEvent = isOrder ? 'order_location_update' : 'location_update';
-  const updateLocationEvent = isOrder ? 'update_order_location' : 'update_location';
-  const idToJoin = orderId || bookingId;
-
   useEffect(() => {
     // Initialize socket
     socketRef.current = io(SOCKET_URL);
@@ -125,7 +119,6 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
   }, [idToJoin, role]);
 
   const fitMapToMarkers = () => {
-<<<<<<< HEAD
     setRecenterCount(prev => prev + 1);
   };
 
@@ -156,39 +149,10 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
   };
 
   const mapParams = getMapParams();
-=======
-    if (mapRef.current) {
-      if (role === 'ADMIN') {
-        if (adminCustomerLoc && adminHandymanLoc) {
-          mapRef.current.fitToCoordinates([adminCustomerLoc, adminHandymanLoc], { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true });
-        } else if (adminCustomerLoc) {
-          mapRef.current.animateToRegion({ ...adminCustomerLoc, latitudeDelta: 0.05, longitudeDelta: 0.05 });
-        } else if (adminHandymanLoc) {
-          mapRef.current.animateToRegion({ ...adminHandymanLoc, latitudeDelta: 0.05, longitudeDelta: 0.05 });
-        }
-      } else {
-        if (location && partnerLocation) {
-          mapRef.current.fitToCoordinates(
-            [
-              { latitude: location.latitude, longitude: location.longitude },
-              { latitude: partnerLocation.latitude, longitude: partnerLocation.longitude }
-            ],
-            { edgePadding: { top: 50, right: 50, bottom: 50, left: 50 }, animated: true }
-          );
-        }
-      }
-    }
-  };
-
-  useEffect(() => {
-    fitMapToMarkers();
-  }, [location, partnerLocation, adminCustomerLoc, adminHandymanLoc]);
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 
   return (
     <View style={styles.container}>
       {location ? (
-<<<<<<< HEAD
         <MapComponent
           latitude={mapParams.latitude}
           longitude={mapParams.longitude}
@@ -196,33 +160,6 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
           providerLng={mapParams.providerLng}
           recenterTrigger={recenterCount}
         />
-=======
-        <MapView
-          ref={mapRef}
-          style={styles.map}
-          initialRegion={location}
-          showsUserLocation={role !== 'ADMIN'}
-        >
-          {role === 'ADMIN' ? (
-            <>
-              {adminCustomerLoc && (
-                <Marker coordinate={adminCustomerLoc} title="Customer Location" pinColor="green" />
-              )}
-              {adminHandymanLoc && (
-                <Marker coordinate={adminHandymanLoc} title={isOrder ? 'Rider Location' : 'Handyman Location'} pinColor="blue" />
-              )}
-            </>
-          ) : (
-            partnerLocation && (
-              <Marker
-                coordinate={partnerLocation}
-                title={role === 'CUSTOMER' ? (isOrder ? 'Rider Location' : 'Handyman Location') : 'Customer Location'}
-                pinColor="blue"
-              />
-            )
-          )}
-        </MapView>
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
       ) : (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Acquiring Location...</Text>

@@ -9,10 +9,7 @@ import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import MapComponent from '../components/MapComponent';
-<<<<<<< HEAD
 import ResponsiveContainer from '../components/ResponsiveContainer';
-=======
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 
 // ─── AI Filter Configuration ────────────────────────────────────────────────
 const AI_FILTERS = [
@@ -32,11 +29,7 @@ export default function AdminScreen() {
   const isVendor = userInfo?.role === 'VENDOR';
   const isAdmin  = userInfo?.role === 'ADMIN';
 
-<<<<<<< HEAD
   const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders' | 'slides'>(
-=======
-  const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders'>(
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
     'products'
   );
   // Track which tabs have been loaded to avoid redundant fetches
@@ -111,33 +104,20 @@ export default function AdminScreen() {
   // Users state (Admin only)
   const [users, setUsers]                   = useState<any[]>([]);
   const [usersLoading, setUsersLoading]     = useState(false);
-<<<<<<< HEAD
   const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | 'HANDYMAN' | 'VENDOR' | 'RIDER' | 'CUSTOMER'>('ALL');
  
-=======
-  const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | 'HANDYMAN' | 'VENDOR' | 'CUSTOMER'>('ALL');
-
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   // User management – form/modal state
   const [showUserFormModal, setShowUserFormModal]   = useState(false);
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
   const [editingUserId, setEditingUserId]           = useState<string | null>(null);
   const [selectedUserDetails, setSelectedUserDetails] = useState<any | null>(null);
   const [userFormSaving, setUserFormSaving]         = useState(false);
-<<<<<<< HEAD
  
-=======
-
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   // User form fields
   const [uName, setUName]                     = useState('');
   const [uEmail, setUEmail]                   = useState('');
   const [uPassword, setUPassword]             = useState('');
-<<<<<<< HEAD
   const [uRole, setURole]                     = useState<'CUSTOMER' | 'HANDYMAN' | 'VENDOR' | 'RIDER'>('CUSTOMER');
-=======
-  const [uRole, setURole]                     = useState<'CUSTOMER' | 'HANDYMAN' | 'VENDOR'>('CUSTOMER');
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   const [uPhone, setUPhone]                   = useState('');
   const [uOpayPhone, setUOpayPhone]           = useState('');
   const [uSpecialty, setUSpecialty]           = useState('');
@@ -150,7 +130,6 @@ export default function AdminScreen() {
   const [reviewingUserId, setReviewingUserId]       = useState<string | null>(null);
   const [rejectionReasonInput, setRejectionReasonInput] = useState('');
 
-<<<<<<< HEAD
   // Slides state (Admin only)
   const [slides, setSlides]                         = useState<any[]>([]);
   const [slidesLoading, setSlidesLoading]           = useState(false);
@@ -158,9 +137,6 @@ export default function AdminScreen() {
   const [slideCaption, setSlideCaption]             = useState('');
   const [slideOrder, setSlideOrder]                 = useState('');
   const [editingSlideId, setEditingSlideId]         = useState<string | null>(null);
-
-=======
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   // Orders state (Admin only)
   const [orders, setOrders]                         = useState<any[]>([]);
   const [ordersLoading, setOrdersLoading]           = useState(false);
@@ -545,7 +521,6 @@ export default function AdminScreen() {
 
   // On mount: only fetch products (initial tab). Other data is lazy-loaded per tab.
   useEffect(() => {
-<<<<<<< HEAD
     if (userInfo === undefined) return; // still loading
     fetchData(); // always fetch products + services for vendor/admin
     setLoadedTabs(new Set(['products']));
@@ -563,17 +538,6 @@ export default function AdminScreen() {
     if (tabId === 'orders')   { fetchOrders(); fetchRiders(); }
     if (tabId === 'slides')    fetchSlides();
   };
-=======
-    fetchData();
-    if (isAdmin) {
-      fetchBookings();
-      fetchUsers();
-      fetchKycReviews();
-      fetchOrders();
-      fetchRiders();
-    }
-  }, []);
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 
   useEffect(() => {
     if (settings) {
@@ -1153,11 +1117,7 @@ export default function AdminScreen() {
           {/* Role */}
           <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>Role *</Text>
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-<<<<<<< HEAD
             {(['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER'] as const).map(r => (
-=======
-            {(['CUSTOMER', 'HANDYMAN', 'VENDOR'] as const).map(r => (
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
               <TouchableOpacity
                 key={r}
                 onPress={() => setURole(r)}
@@ -1167,11 +1127,7 @@ export default function AdminScreen() {
                 ]}
               >
                 <Text style={[styles.userRolePillText, uRole === r && { color: '#fff' }]}>
-<<<<<<< HEAD
                   {r === 'CUSTOMER' ? '👤 Customer' : r === 'HANDYMAN' ? '🛠️ Services' : r === 'VENDOR' ? '🏪 Vendor' : '🚚 Rider'}
-=======
-                  {r === 'CUSTOMER' ? '👤 Customer' : r === 'HANDYMAN' ? '🛠️ Handyman' : '🏪 Vendor'}
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1375,15 +1331,7 @@ export default function AdminScreen() {
             <TouchableOpacity
               key={tab.id}
               style={[styles.tabButton, activeTab === tab.id && { borderBottomColor: theme.primary }]}
-<<<<<<< HEAD
               onPress={() => handleTabPress(tab.id)}
-=======
-              onPress={() => {
-                setActiveTab(tab.id as any);
-                if (tab.id === 'kyc') fetchKycReviews();
-                if (tab.id === 'orders') { fetchOrders(); fetchRiders(); }
-              }}
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
             >
               <Text style={[styles.tabText, activeTab === tab.id && { color: theme.primary, fontWeight: '700' }]}>
                 {tab.label}
@@ -1963,11 +1911,7 @@ export default function AdminScreen() {
 
             {/* Filter Pills */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-<<<<<<< HEAD
               {(['ALL', 'HANDYMAN', 'VENDOR', 'RIDER', 'CUSTOMER'] as const).map((roleOpt) => (
-=======
-              {(['ALL', 'HANDYMAN', 'VENDOR', 'CUSTOMER'] as const).map((roleOpt) => (
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
                 <TouchableOpacity
                   key={roleOpt}
                   onPress={() => setUserRoleFilter(roleOpt)}
@@ -1979,11 +1923,7 @@ export default function AdminScreen() {
                   }}
                 >
                   <Text style={{ color: userRoleFilter === roleOpt ? '#fff' : '#1C1C1E', fontWeight: '700', fontSize: 12 }}>
-<<<<<<< HEAD
                     {roleOpt === 'ALL' ? 'All' : roleOpt === 'HANDYMAN' ? '🛠️ Services' : roleOpt === 'VENDOR' ? '🏪 Vendors' : roleOpt === 'RIDER' ? '🚚 Riders' : '👤 Customers'}
-=======
-                    {roleOpt === 'ALL' ? 'All' : roleOpt === 'HANDYMAN' ? '🛠️ Handymen' : roleOpt === 'VENDOR' ? '🏪 Vendors' : '👤 Customers'}
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -2005,21 +1945,13 @@ export default function AdminScreen() {
                         styles.badgeContainer,
                         u.role === 'HANDYMAN' ? { backgroundColor: '#EBF8FF' } :
                         u.role === 'VENDOR' ? { backgroundColor: '#FEFCBF' } :
-<<<<<<< HEAD
                         u.role === 'RIDER' ? { backgroundColor: '#E8F5E9' } :
-=======
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
                         { backgroundColor: '#EDF2F7' }
                       ]}>
                         <Text style={{
                           fontSize: 10, fontWeight: '700',
-<<<<<<< HEAD
                           color: u.role === 'HANDYMAN' ? '#2B6CB0' : u.role === 'VENDOR' ? '#B7791F' : u.role === 'RIDER' ? '#34C759' : '#4A5568'
                         }}>{u.role === 'HANDYMAN' ? 'SERVICES' : u.role}</Text>
-=======
-                          color: u.role === 'HANDYMAN' ? '#2B6CB0' : u.role === 'VENDOR' ? '#B7791F' : '#4A5568'
-                        }}>{u.role}</Text>
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
                       </View>
                     </View>
                     <Text style={styles.listItemMeta}>Email: {u.email}</Text>
@@ -2358,7 +2290,6 @@ export default function AdminScreen() {
           </View>
         )}
 
-<<<<<<< HEAD
         {/* ── SLIDES TAB ── */}
         {activeTab === 'slides' && isAdmin && (
           <View>
@@ -2395,7 +2326,7 @@ export default function AdminScreen() {
                   <View style={styles.imageSuccessContainer}>
                     <Image source={{ uri: slideImageUrl }} style={styles.imageSuccessPreview} resizeMode="cover" />
                     <View style={styles.imageSuccessInfo}>
-                      <Text style={styles.imageSuccessTitle}>✅ Image Uploaded</Text>
+                      <Text style={styles.imageSuccessTitle}>✓ Image Uploaded</Text>
                       <TouchableOpacity
                         style={[styles.imageChangeBtn, { borderColor: theme.primary }]}
                         onPress={() => handlePickImage('slide' as any)}
@@ -2465,8 +2396,6 @@ export default function AdminScreen() {
           </View>
         )}
 
-=======
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
         {/* ── REASSIGN MODAL ── */}
         <Modal
           visible={showReassignModal}

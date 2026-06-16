@@ -1,11 +1,7 @@
 import React, { useContext } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-<<<<<<< HEAD
 import * as SecureStore from '../utils/storage';
-=======
-import * as SecureStore from 'expo-secure-store';
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 import { SettingsContext } from '../context/SettingsContext';
 
 const { width, height } = Dimensions.get('window');

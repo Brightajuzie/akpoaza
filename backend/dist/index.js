@@ -18,6 +18,15 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
+// Capture unhandled errors so nodemon shows the real crash reason
+process.on('uncaughtException', (err) => {
+    console.error('[FATAL uncaughtException]', err);
+    process.exit(1);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[FATAL unhandledRejection]', reason);
+    process.exit(1);
+});
 // Load environment variables before importing routes
 dotenv_1.default.config();
 const products_1 = __importDefault(require("./routes/products"));
@@ -35,6 +44,7 @@ const kyc_1 = __importDefault(require("./routes/kyc"));
 const upload_1 = __importDefault(require("./routes/upload"));
 const wallet_1 = __importDefault(require("./routes/wallet"));
 const parcels_1 = __importDefault(require("./routes/parcels"));
+const slides_1 = __importDefault(require("./routes/slides"));
 const errorHandler_1 = require("./middleware/errorHandler");
 const prisma_1 = __importDefault(require("./lib/prisma"));
 const wallet_2 = require("./lib/wallet");
@@ -71,6 +81,7 @@ app.use('/api/users', users_1.default);
 app.use('/api/kyc', kyc_1.default);
 app.use('/api/wallet', wallet_1.default);
 app.use('/api/parcels', parcels_1.default);
+app.use('/api/slides', slides_1.default);
 // Centralized Error Handler
 app.use(errorHandler_1.errorHandler);
 if (process.env.NODE_ENV !== 'test') {
@@ -87,7 +98,6 @@ if (process.env.NODE_ENV !== 'test') {
         socket.on('update_location', (data) => {
             socket.to(`booking_${data.bookingId}`).emit('location_update', {
                 role: data.role,
-<<<<<<< HEAD
                 latitude: data.latitude,
                 longitude: data.longitude,
                 timestamp: Date.now()
@@ -100,8 +110,6 @@ if (process.env.NODE_ENV !== 'test') {
         socket.on('update_order_location', (data) => {
             socket.to(`order_${data.orderId}`).emit('order_location_update', {
                 role: data.role,
-=======
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
                 latitude: data.latitude,
                 longitude: data.longitude,
                 timestamp: Date.now()

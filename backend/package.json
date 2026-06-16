@@ -1,9 +1,9 @@
 {
-<<<<<<< HEAD
   "name": "handyman-ecommerce-backend",
   "version": "2.0.0",
   "description": "Backend API for Handyman and E-commerce App",
   "main": "dist/index.js",
+  "private": true,
   "scripts": {
     "start": "node dist/index.js",
     "predev": "npx kill-port 5000",
@@ -12,28 +12,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "test": "jest --runInBand"
-=======
-  "name": "handyman-ecommerce",
-  "private": true,
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
-  "scripts": {
-    "start": "npm run start:frontend",
-    "start:frontend": "cd frontend && npx expo start --port 8082",
-    "start:backend": "cd backend && npm run dev",
-    "build:backend": "cd backend && npm run build"
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   },
-  "overrides": {
-    "metro": "0.76.8",
-    "metro-config": "0.76.8",
-    "metro-resolver": "0.76.8",
-    "metro-runtime": "0.76.8",
-    "metro-core": "0.76.8"
-  },
-<<<<<<< HEAD
   "dependencies": {
     "@prisma/client": "^5.0.0",
     "@types/nodemailer": "^8.0.1",
@@ -68,13 +47,5 @@
     "ts-jest": "^29.4.11",
     "ts-node": "^10.9.1",
     "typescript": "^5.1.6"
-=======
-  "resolutions": {
-    "metro": "0.76.8",
-    "metro-config": "0.76.8",
-    "metro-resolver": "0.76.8",
-    "metro-runtime": "0.76.8",
-    "metro-core": "0.76.8"
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   }
 }

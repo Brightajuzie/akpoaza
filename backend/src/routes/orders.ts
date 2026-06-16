@@ -406,7 +406,6 @@ router.patch('/:id/assign-rider', authenticateToken, async (req: AuthRequest, re
     });
 
     if (riderId) {
-<<<<<<< HEAD
       // Notify customer that a rider has been assigned
       sendNotification({
         userId: updatedOrder.userId,
@@ -430,25 +429,6 @@ router.patch('/:id/assign-rider', authenticateToken, async (req: AuthRequest, re
         referenceId: id,
         emailSubject: '📦 New Delivery Assigned — Akpoaza',
       }).catch(() => {});
-=======
-      await createNotification(
-        prisma,
-        updatedOrder.userId,
-        '🚚 Rider Assigned',
-        `Rider ${updatedOrder.rider?.name} has been assigned to deliver your order #${id.substring(0, 8)}.`,
-        'ORDER',
-        id
-      ).catch(() => {});
-
-      await createNotification(
-        prisma,
-        riderId,
-        '📦 New Delivery Assigned',
-        `You have been assigned to deliver order #${id.substring(0, 8)} to ${updatedOrder.user.name}.`,
-        'ORDER',
-        id
-      ).catch(() => {});
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
     }
 
     res.json(updatedOrder);
@@ -510,7 +490,6 @@ router.patch('/:id/accept-delivery', authenticateToken, async (req: AuthRequest,
       }
     });
 
-<<<<<<< HEAD
     sendNotification({
       userId: updatedOrder.userId,
       title: '🚚 Rider On the Way',
@@ -519,16 +498,6 @@ router.patch('/:id/accept-delivery', authenticateToken, async (req: AuthRequest,
       referenceId: id,
       emailSubject: '🚚 Rider is On the Way — Akpoaza',
     }).catch(() => {});
-=======
-    await createNotification(
-      prisma,
-      updatedOrder.userId,
-      '🚚 Rider Accepted Delivery',
-      `Rider ${updatedOrder.rider?.name} is delivering your order #${id.substring(0, 8)}.`,
-      'ORDER',
-      id
-    ).catch(() => {});
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 
     res.json(updatedOrder);
   } catch (error) {

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import { Router, Request, Response, NextFunction } from 'express';
 import { PaymentProvider, OrderStatus } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
@@ -12,27 +11,12 @@ const router = Router();
 // Haversine straight-line distance (fallback)
 function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
-=======
-import { Router, Response, NextFunction } from 'express';
-import { PaymentProvider, OrderStatus } from '@prisma/client';
-import { authenticateToken, AuthRequest } from '../middleware/auth';
-import { createNotification } from './notifications';
-import prisma from '../lib/prisma';
-import { triggerSplitWebhook } from '../lib/wallet';
-
-const router = Router();
-
-// Utility function to calculate distance in km using Haversine formula
-function getDistanceInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371; // Radius of the earth in km
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
-<<<<<<< HEAD
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -72,16 +56,6 @@ function getRoadDistance(
 // Calculate base price + per km using configurable rates
 // Uses real road routing (OSRM) with Haversine × 1.3 as fallback
 async function calculateDeliveryPrice(lat1: number, lon1: number, lat2: number, lon2: number) {
-=======
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-// Calculate base price + per km using configurable rates
-async function calculateDeliveryPrice(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const distance = getDistanceInKm(lat1, lon1, lat2, lon2);
-
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   // Load admin-configured pricing from DB (with sensible defaults)
   const settings = await prisma.appSetting.findMany({
     where: { key: { in: ['rider_base_fare', 'rider_price_per_km', 'rider_platform_fee_pct'] } }
@@ -91,7 +65,6 @@ async function calculateDeliveryPrice(lat1: number, lon1: number, lat2: number, 
   const PER_KM_RATE = parseFloat(settingsMap['rider_price_per_km'] || '200');
   const PLATFORM_FEE_PCT = parseFloat(settingsMap['rider_platform_fee_pct'] || '10');
 
-<<<<<<< HEAD
   // Try real road distance first
   let distanceKm: number;
   let durationMins: number | undefined;
@@ -124,15 +97,7 @@ async function calculateDeliveryPrice(lat1: number, lon1: number, lat2: number, 
 
 // Get a quote for a parcel delivery
 router.post('/quote', async (req: Request, res) => {
-=======
-  const subTotal = BASE_FARE + (distance * PER_KM_RATE);
-  const platformFee = subTotal * (PLATFORM_FEE_PCT / 100);
-  return { price: Math.ceil(subTotal + platformFee), distanceKm: distance.toFixed(2), BASE_FARE, PER_KM_RATE, PLATFORM_FEE_PCT };
-}
 
-// Get a quote for a parcel delivery
-router.post('/quote', authenticateToken, async (req: AuthRequest, res) => {
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
   const { pickupLat, pickupLng, dropoffLat, dropoffLng } = req.body;
   
   if (!pickupLat || !pickupLng || !dropoffLat || !dropoffLng) {
@@ -140,7 +105,6 @@ router.post('/quote', authenticateToken, async (req: AuthRequest, res) => {
   }
 
   const result = await calculateDeliveryPrice(pickupLat, pickupLng, dropoffLat, dropoffLng);
-<<<<<<< HEAD
   res.json({
     price: result.price,
     distanceKm: result.distanceKm,
@@ -149,9 +113,6 @@ router.post('/quote', authenticateToken, async (req: AuthRequest, res) => {
     baseFare: result.BASE_FARE,
     perKmRate: result.PER_KM_RATE,
   });
-=======
-  res.json({ price: result.price, distanceKm: result.distanceKm, baseFare: result.BASE_FARE, perKmRate: result.PER_KM_RATE });
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 });
 
 // Checkout / Create Parcel Delivery
@@ -189,7 +150,6 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
       }
     });
 
-<<<<<<< HEAD
     // ── Customer confirmation (in-app + email + SMS) ────────────────────
     sendNotification({
       userId,
@@ -207,8 +167,6 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
         <p>A verified rider will accept your delivery shortly. Track it live in the app!</p>`,
     }).catch(() => {});
 
-=======
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
     res.status(201).json({ message: 'Parcel delivery created successfully', parcel });
   } catch (error) {
     next(error);
@@ -286,7 +244,6 @@ router.patch('/:id/accept-delivery', authenticateToken, async (req: AuthRequest,
       }
     });
 
-<<<<<<< HEAD
     // ── Notify customer + rider (in-app + email + SMS) ────────────────
     sendNotification({
       userId: updatedParcel.userId,
@@ -309,16 +266,6 @@ router.patch('/:id/accept-delivery', authenticateToken, async (req: AuthRequest,
         referenceId: id,
       }).catch(() => {});
     }
-=======
-    await createNotification(
-      prisma,
-      updatedParcel.userId,
-      '🚚 Rider Accepted Parcel',
-      `Rider ${updatedParcel.rider?.name} is on the way to pick up your parcel.`,
-      'ORDER', // Reusing ORDER type for notification navigation
-      id
-    ).catch(() => {});
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
 
     res.json(updatedParcel);
   } catch (error) {
@@ -361,7 +308,6 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res, nex
       });
     }
 
-<<<<<<< HEAD
     // ── Notify customer of status change ─────────────────────────────
     const parcelMsgs: Record<string, { title: string; body: string }> = {
       SHIPPED:   { title: '📦 Parcel Picked Up',    body: `Your parcel (ID: ${id.slice(-8).toUpperCase()}) has been picked up by the rider and is in transit.` },
@@ -380,8 +326,6 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res, nex
       }).catch(() => {});
     }
 
-=======
->>>>>>> d74cc15965da6815edf7abdf37c172020b892227
     res.json({ message: `Status updated to ${status}`, parcel: updatedParcel });
   } catch (error) {
     next(error);
