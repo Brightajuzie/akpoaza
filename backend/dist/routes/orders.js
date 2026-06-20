@@ -150,12 +150,12 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
                 body: `Your order for ${itemsSummary} (₦${computedTotalAmount.toLocaleString()}) has been received and is being processed.`,
                 type: 'ORDER',
                 referenceId: order.id,
-                emailSubject: '✅ Order Confirmed — Akpoaza',
+                emailSubject: '✅ Order Confirmed — FixMart',
                 emailHtml: `<p style="font-size:16px;color:#374151">Hi there,</p>
           <p>Your order has been placed successfully!</p>
           <p><strong>Items:</strong> ${itemsSummary}</p>
           <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
-          <p>We'll notify you as soon as it ships. Thank you for shopping with <strong>Akpoaza</strong>!</p>`,
+          <p>We'll notify you as soon as it ships. Thank you for shopping with <strong>FixMart</strong>!</p>`,
             }).catch(() => { });
             // 2. Each vendor — new sale alert
             const vendorIds = new Set(dbProducts.map(p => p.vendorId).filter(Boolean));
@@ -171,7 +171,7 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
                     body: `New sale: ${vendorDesc}. Order total: ₦${computedTotalAmount.toLocaleString()}. Please prepare items for dispatch.`,
                     type: 'ORDER',
                     referenceId: order.id,
-                    emailSubject: '🛍️ You Have a New Order — Akpoaza',
+                    emailSubject: '🛒 You Have a New Order — FixMart',
                     emailHtml: `<p>A customer just placed a new order from your store.</p>
             <p><strong>Items ordered:</strong> ${vendorDesc}</p>
             <p><strong>Order Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
@@ -399,7 +399,7 @@ router.patch('/:id/assign-rider', auth_1.authenticateToken, (req, res, next) => 
                 body: `Rider ${(_b = updatedOrder.rider) === null || _b === void 0 ? void 0 : _b.name} has been assigned to deliver your order #${id.slice(-8).toUpperCase()}. Track them live in the app.`,
                 type: 'ORDER',
                 referenceId: id,
-                emailSubject: '🚚 Your Rider Has Been Assigned — Akpoaza',
+                emailSubject: '🚚 Your Rider Has Been Assigned — FixMart',
                 emailHtml: `<p>A rider has been assigned to your order!</p>
           <p><strong>Rider:</strong> ${(_c = updatedOrder.rider) === null || _c === void 0 ? void 0 : _c.name}</p>
           <p><strong>Order:</strong> #${id.slice(-8).toUpperCase()}</p>
@@ -412,7 +412,7 @@ router.patch('/:id/assign-rider', auth_1.authenticateToken, (req, res, next) => 
                 body: `You have been assigned to deliver order #${id.slice(-8).toUpperCase()} to ${updatedOrder.user.name}. Please check the app for full details.`,
                 type: 'ORDER',
                 referenceId: id,
-                emailSubject: '📦 New Delivery Assigned — Akpoaza',
+                emailSubject: '📦 New Delivery Assigned — FixMart',
             }).catch(() => { });
         }
         res.json(updatedOrder);
@@ -480,7 +480,7 @@ router.patch('/:id/accept-delivery', auth_1.authenticateToken, (req, res, next) 
             body: `Rider ${(_c = updatedOrder.rider) === null || _c === void 0 ? void 0 : _c.name} accepted your delivery and is on the way with order #${id.slice(-8).toUpperCase()}.`,
             type: 'ORDER',
             referenceId: id,
-            emailSubject: '🚚 Rider is On the Way — Akpoaza',
+            emailSubject: '🚚 Rider is On the Way — FixMart',
         }).catch(() => { });
         res.json(updatedOrder);
     }

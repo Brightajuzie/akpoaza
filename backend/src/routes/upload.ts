@@ -1,4 +1,4 @@
-﻿import { Router } from 'express';
+import { Router } from 'express';
 import multer from 'multer';
 import Jimp from 'jimp';
 import path from 'path';
@@ -67,9 +67,9 @@ router.post('/', authenticateToken, upload.single('image') as any, async (req: A
         break;
       case 'cyberpunk':
         image.color([
-          { apply: 'blue',  params: [25]  },
-          { apply: 'red',   params: [10]  },
-          { apply: 'green', params: [-10] },
+          { apply: 'blue' as any,  params: [25]  },
+          { apply: 'red' as any,   params: [10]  },
+          { apply: 'green' as any, params: [-10] },
         ]).contrast(0.12);
         break;
       case 'vintage':
@@ -77,13 +77,13 @@ router.post('/', authenticateToken, upload.single('image') as any, async (req: A
         break;
       case 'golden':
         image.color([
-          { apply: 'red',   params: [20]  },
-          { apply: 'green', params: [8]   },
-          { apply: 'blue',  params: [-15] },
+          { apply: 'red' as any,   params: [20]  },
+          { apply: 'green' as any, params: [8]   },
+          { apply: 'blue' as any,  params: [-15] },
         ]).contrast(0.05);
         break;
       case 'vivid':
-        image.color([{ apply: 'saturate', params: [35] }]).contrast(0.10);
+        image.color([{ apply: 'saturate' as any, params: [35] }]).contrast(0.10);
         break;
       default:
         break;

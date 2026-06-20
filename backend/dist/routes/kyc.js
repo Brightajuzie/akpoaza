@@ -305,7 +305,7 @@ router.post('/submit', auth_1.authenticateToken, (req, res) => __awaiter(void 0,
                 body: `User ${updatedUser.name} (${updatedUser.role}) submitted verification details.`,
                 type: 'KYC',
                 referenceId: updatedUser.id,
-                emailSubject: '🔍 New KYC Submission Pending — Akpoaza',
+                emailSubject: '🔍 New KYC Submission Pending — FixMart',
             }).catch(() => { });
         }
         res.json({

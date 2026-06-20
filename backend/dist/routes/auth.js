@@ -99,7 +99,7 @@ router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, functio
                         body: `User ${newUser.name} (${newUser.role}) submitted verification details during registration.`,
                         type: 'KYC',
                         referenceId: newUser.id,
-                        emailSubject: '🔍 New KYC Submission Pending — Akpoaza',
+                        emailSubject: '🔍 New KYC Submission Pending — FixMart',
                     }).catch(() => { });
                 }
             }

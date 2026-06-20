@@ -8,7 +8,30 @@ import Constants from 'expo-constants';
 const getBackendURL = (): string => {
   const envURL = process.env.EXPO_PUBLIC_API_URL;
 
-  // Priority 1: Use explicitly defined environment variable if it exists
+  // On Android emulators, always default to 10.0.2.2 to connect to local PC backend
+  // and bypass stale cached LAN IPs from the Metro bundler.
+  if (Platform.OS === 'android') {
+    const fingerprint = (Platform.constants as any)?.Fingerprint ?? '';
+    const brand      = (Platform.constants as any)?.Brand      ?? '';
+    const model      = (Platform.constants as any)?.Model      ?? '';
+    const hardware   = (Platform.constants as any)?.Hardware   ?? '';
+
+    const isEmulator =
+      fingerprint.startsWith('generic') ||
+      brand.toLowerCase().startsWith('generic') ||
+      model.includes('google_sdk') ||
+      model.includes('Emulator') ||
+      model.includes('Android SDK built for x86') ||
+      hardware.includes('goldfish') ||
+      hardware.includes('ranchu');
+
+    if (isEmulator) {
+      console.log('[ApiClient] Android emulator detected → auto-routing local requests to http://10.0.2.2:5000/api');
+      return 'http://10.0.2.2:5000/api';
+    }
+  }
+
+  // Priority 2: Use explicitly defined environment variable if it exists
   if (envURL) {
     console.log('[ApiClient] Using EXPO_PUBLIC_API_URL:', envURL);
     return envURL;

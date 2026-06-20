@@ -27,13 +27,17 @@ export default function PaymentWebView({ url, onPaymentSuccess, onPaymentCancel 
     }
   };
 
-  if (Platform.OS === 'web') {
-    React.useEffect(() => {
+  // Hooks must be called unconditionally at the top level (Rules of Hooks).
+  // The platform check is inside the effect callback instead.
+  React.useEffect(() => {
+    if (Platform.OS === 'web') {
       // For web, redirect the window to the payment gateway URL directly,
       // as payment gateways generally block iframe rendering (X-Frame-Options).
       window.location.href = url;
-    }, [url]);
+    }
+  }, [url]);
 
+  if (Platform.OS === 'web') {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator color="#007AFF" size="large" />
