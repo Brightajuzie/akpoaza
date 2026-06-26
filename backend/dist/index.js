@@ -12,9 +12,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+require("./lib/env");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
-const dotenv_1 = __importDefault(require("dotenv"));
 const path_1 = __importDefault(require("path"));
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
@@ -27,8 +27,6 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('[FATAL unhandledRejection]', reason);
     process.exit(1);
 });
-// Load environment variables before importing routes
-dotenv_1.default.config();
 const products_1 = __importDefault(require("./routes/products"));
 const services_1 = __importDefault(require("./routes/services"));
 const bookings_1 = __importDefault(require("./routes/bookings"));

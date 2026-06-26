@@ -1,6 +1,6 @@
+import './lib/env';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import http from 'http';
 import { Server } from 'socket.io';
@@ -14,9 +14,6 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('[FATAL unhandledRejection]', reason);
   process.exit(1);
 });
-
-// Load environment variables before importing routes
-dotenv.config();
 
 import productRoutes from './routes/products';
 import serviceRoutes from './routes/services';
