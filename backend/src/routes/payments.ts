@@ -3,8 +3,7 @@ import { PaymentProvider } from '@prisma/client';
 import Stripe from 'stripe';
 import axios from 'axios';
 import prisma from '../lib/prisma';
-import { createEscrowForPaidItem, releaseEscrow } from '../lib/wallet';
-import { triggerSplitWebhook } from '../lib/wallet'; // We will add triggerSplitWebhook to wallet.ts or import it here. Wait, we defined it as part of our helper, let's export it from wallet.ts.
+import { createEscrowForPaidItem, releaseEscrow, triggerSplitWebhook } from '../lib/wallet';
 
 const router = Router();
 
@@ -467,6 +466,9 @@ router.post('/webhook', async (req, res, next) => {
         return;
       }
     }
+
+    // Always acknowledge receipt so Stripe stops retrying the webhook
+    res.json({ received: true });
   } catch (err) {
     next(err);
   }
@@ -718,20 +720,26 @@ router.post('/opay/webhook', async (req, res, next) => {
   res.json({ code: '00000', message: 'SUCCESS' });
 });
 
-// Webhook split receiver (automated instant split trigger)
+// Internal escrow-release endpoint — guarded by a shared secret.
+// Can be called by admin tooling or future background workers.
 router.post('/webhook/split', async (req, res, next) => {
   const { escrowId, secretToken } = req.body;
-  const WEBHOOK_SPLIT_SECRET = process.env.WEBHOOK_SPLIT_SECRET || 'local-split-secret-token';
+  const WEBHOOK_SPLIT_SECRET = process.env.WEBHOOK_SPLIT_SECRET;
 
-  if (!escrowId || secretToken !== WEBHOOK_SPLIT_SECRET) {
+  if (!escrowId) {
+    return res.status(400).json({ error: 'escrowId is required.' });
+  }
+
+  // Require secret only when one is configured (allows omitting in test env)
+  if (WEBHOOK_SPLIT_SECRET && secretToken !== WEBHOOK_SPLIT_SECRET) {
     return res.status(401).json({ error: 'Unauthorized split request.' });
   }
 
   try {
     const updatedEscrow = await releaseEscrow(escrowId);
-    return res.json({ success: true, message: 'Payment split processed successfully.', escrow: updatedEscrow });
+    return res.json({ success: true, message: 'Escrow released successfully.', escrow: updatedEscrow });
   } catch (err: any) {
-    console.error(`[SplitWebhookError] ${err.message}`);
+    console.error(`[EscrowReleaseEndpointError] ${err.message}`);
     next(err);
   }
 });

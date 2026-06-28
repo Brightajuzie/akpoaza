@@ -1,7 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-dummy-key';
+const DUMMY_JWT_SECRET = 'super-secret-dummy-key';
+const JWT_SECRET = process.env.JWT_SECRET || DUMMY_JWT_SECRET;
+
+if (JWT_SECRET === DUMMY_JWT_SECRET && process.env.NODE_ENV !== 'test') {
+  console.warn(
+    '[SECURITY WARNING] JWT_SECRET is not set — using the insecure default key. ' +
+    'Set a strong JWT_SECRET environment variable before deploying to production!'
+  );
+}
 
 export interface AuthRequest extends Request {
   user?: {

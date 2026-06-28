@@ -48,6 +48,9 @@ const prisma_1 = __importDefault(require("./lib/prisma"));
 const wallet_2 = require("./lib/wallet");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
+// Trust Render's (and most cloud providers') reverse proxy so that
+// req.protocol, req.ip, and x-forwarded-* headers are correct.
+app.set('trust proxy', 1);
 app.use((0, cors_1.default)({
     origin: '*', // allow any origin (dev)
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

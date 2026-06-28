@@ -38,6 +38,10 @@ import { triggerSplitWebhook } from './lib/wallet';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust Render's (and most cloud providers') reverse proxy so that
+// req.protocol, req.ip, and x-forwarded-* headers are correct.
+app.set('trust proxy', 1);
+
 app.use(cors({
   origin: '*',                                         // allow any origin (dev)
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

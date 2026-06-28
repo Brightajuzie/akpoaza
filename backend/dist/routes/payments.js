@@ -425,6 +425,8 @@ router.post('/webhook', (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                 return;
             }
         }
+        // Always acknowledge receipt so Stripe stops retrying the webhook
+        res.json({ received: true });
     }
     catch (err) {
         next(err);
@@ -664,19 +666,24 @@ router.post('/opay/webhook', (req, res, next) => __awaiter(void 0, void 0, void 
     console.log('[OPayWebhook] Received notification:', JSON.stringify(payload));
     res.json({ code: '00000', message: 'SUCCESS' });
 }));
-// Webhook split receiver (automated instant split trigger)
+// Internal escrow-release endpoint — guarded by a shared secret.
+// Can be called by admin tooling or future background workers.
 router.post('/webhook/split', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const { escrowId, secretToken } = req.body;
-    const WEBHOOK_SPLIT_SECRET = process.env.WEBHOOK_SPLIT_SECRET || 'local-split-secret-token';
-    if (!escrowId || secretToken !== WEBHOOK_SPLIT_SECRET) {
+    const WEBHOOK_SPLIT_SECRET = process.env.WEBHOOK_SPLIT_SECRET;
+    if (!escrowId) {
+        return res.status(400).json({ error: 'escrowId is required.' });
+    }
+    // Require secret only when one is configured (allows omitting in test env)
+    if (WEBHOOK_SPLIT_SECRET && secretToken !== WEBHOOK_SPLIT_SECRET) {
         return res.status(401).json({ error: 'Unauthorized split request.' });
     }
     try {
         const updatedEscrow = yield (0, wallet_1.releaseEscrow)(escrowId);
-        return res.json({ success: true, message: 'Payment split processed successfully.', escrow: updatedEscrow });
+        return res.json({ success: true, message: 'Escrow released successfully.', escrow: updatedEscrow });
     }
     catch (err) {
-        console.error(`[SplitWebhookError] ${err.message}`);
+        console.error(`[EscrowReleaseEndpointError] ${err.message}`);
         next(err);
     }
 }));

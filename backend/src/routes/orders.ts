@@ -3,6 +3,7 @@ import { PaymentProvider, OrderStatus } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { sendNotification, notifyMany } from '../lib/notify';
 import prisma from '../lib/prisma';
+import { triggerSplitWebhook } from '../lib/wallet';
 
 const router = Router();
 
@@ -312,7 +313,6 @@ router.post('/:id/confirm-receipt', authenticateToken, async (req: AuthRequest, 
     }
 
     // Trigger the split webhook for each escrow
-    const { triggerSplitWebhook } = require('../lib/wallet');
     for (const escrow of escrows) {
       await triggerSplitWebhook(escrow.id);
     }

@@ -1,0 +1,121 @@
+# render.yaml — Render.com Infrastructure-as-Code configuration
+# Docs: https://render.com/docs/infrastructure-as-code
+#
+# Commit this file at the repository root (or backend/ if that is the root
+# you point Render to). Render picks it up automatically on every deploy.
+
+services:
+  - type: web
+    name: fixmart-backend
+    runtime: node
+    region: oregon           # change to: frankfurt | singapore | ohio | virginia
+    plan: starter            # free | starter | standard | pro
+
+    # ── Build ────────────────────────────────────────────────────────────────
+    # rootDir must match where package.json lives relative to your repo root.
+    rootDir: .               # update to "backend" if your repo root is fixmart/
+    buildCommand: npm ci && npm run build:prod
+    startCommand: npm start
+
+    # ── Health check (Render restarts the service if this fails) ─────────────
+    healthCheckPath: /health
+
+    # ── Auto-deploy on every push to the main branch ─────────────────────────
+    autoDeploy: true
+
+    # ── Environment variables ─────────────────────────────────────────────────
+    # Set sensitive values in the Render Dashboard (Environment › Secret Files
+    # or individual env vars). Values marked sync: false must be set manually.
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=400"  # cap heap below Render's 512 MB container limit
+
+      - key: PORT
+        value: 10000          # Render injects PORT automatically; this is the default
+
+      # ── Database ────────────────────────────────────────────────────────────
+      - key: DATABASE_URL
+        sync: false           # Set in Render Dashboard → pooled Supabase URL (port 6543)
+      - key: DIRECT_URL
+        sync: false           # Set in Render Dashboard → direct Supabase URL (port 5432)
+
+      # ── Auth ────────────────────────────────────────────────────────────────
+      - key: JWT_SECRET
+        generateValue: true   # Render generates a random secret on first deploy
+
+      # ── Stripe ──────────────────────────────────────────────────────────────
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+
+      # ── Paystack ────────────────────────────────────────────────────────────
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+
+      # ── Flutterwave ─────────────────────────────────────────────────────────
+      - key: FLUTTERWAVE_SECRET_KEY
+        sync: false
+
+      # ── OPay ────────────────────────────────────────────────────────────────
+      - key: OPAY_MERCHANT_ID
+        sync: false
+      - key: OPAY_PUBLIC_KEY
+        sync: false
+      - key: OPAY_SECRET_KEY
+        sync: false
+
+      # ── Dojah KYC ───────────────────────────────────────────────────────────
+      - key: DOJAH_APP_ID
+        sync: false
+      - key: DOJAH_SECRET_KEY
+        sync: false
+      - key: DOJAH_BASE_URL
+        value: https://api.dojah.io
+      - key: DOJAH_SANDBOX
+        value: "false"
+
+      # ── Google OAuth ─────────────────────────────────────────────────────────
+      - key: EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID
+        sync: false
+      - key: EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+        sync: false
+      - key: EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+        sync: false
+
+      # ── Twilio SMS ───────────────────────────────────────────────────────────
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+
+      # ── SMTP Email ───────────────────────────────────────────────────────────
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+      # ── Internal webhook secret ──────────────────────────────────────────────
+      - key: WEBHOOK_SPLIT_SECRET
+        generateValue: true
+
+      # ── Cloudinary (persistent image storage) ───────────────────────────────
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

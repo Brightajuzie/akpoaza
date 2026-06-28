@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { sendNotification, notifyMany } from '../lib/notify';
 import prisma from '../lib/prisma';
+import { triggerSplitWebhook } from '../lib/wallet';
 
 const router = Router();
 
@@ -511,7 +512,6 @@ router.post('/:id/confirm-completion', authenticateToken, async (req: AuthReques
     }
 
     // Trigger the split webhook
-    const { triggerSplitWebhook } = require('../lib/wallet');
     await triggerSplitWebhook(escrow.id);
 
     // Force update status of booking to COMPLETED if not already

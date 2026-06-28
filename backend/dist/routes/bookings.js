@@ -16,6 +16,7 @@ const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const notify_1 = require("../lib/notify");
 const prisma_1 = __importDefault(require("../lib/prisma"));
+const wallet_1 = require("../lib/wallet");
 const router = (0, express_1.Router)();
 // Get bookings for the logged-in user
 router.get('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
@@ -484,8 +485,7 @@ router.post('/:id/confirm-completion', auth_1.authenticateToken, (req, res, next
             return res.status(400).json({ error: 'No active pending payment held in escrow for this booking.' });
         }
         // Trigger the split webhook
-        const { triggerSplitWebhook } = require('../lib/wallet');
-        yield triggerSplitWebhook(escrow.id);
+        yield (0, wallet_1.triggerSplitWebhook)(escrow.id);
         // Force update status of booking to COMPLETED if not already
         const updatedBooking = yield prisma_1.default.booking.update({
             where: { id },

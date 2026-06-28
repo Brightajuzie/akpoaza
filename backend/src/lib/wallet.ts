@@ -1,5 +1,4 @@
 import prisma from './prisma';
-import axios from 'axios';
 
 export async function getOrCreateWallet(userId: string) {
   let wallet = await prisma.wallet.findUnique({
@@ -304,23 +303,19 @@ export async function releaseEscrow(escrowId: string) {
   });
 }
 
+/**
+ * triggerSplitWebhook — releases an escrow by calling releaseEscrow() directly.
+ *
+ * The previous implementation made an HTTP POST to localhost which always fails
+ * on cloud platforms like Render (no loopback server). We now call the release
+ * function directly, which is both faster and production-safe.
+ */
 export async function triggerSplitWebhook(escrowId: string) {
-  const WEBHOOK_SPLIT_SECRET = process.env.WEBHOOK_SPLIT_SECRET || 'local-split-secret-token';
-  const port = process.env.PORT || 5000;
-  const url = `http://localhost:${port}/api/payments/webhook/split`;
   try {
-    await axios.post(url, {
-      escrowId,
-      secretToken: WEBHOOK_SPLIT_SECRET,
-    }, { timeout: 5000 });
-    console.log(`[SplitWebhook] Split triggered successfully for escrow: ${escrowId}`);
+    await releaseEscrow(escrowId);
+    console.log(`[EscrowRelease] Escrow ${escrowId} released successfully.`);
   } catch (err: any) {
-    console.warn(`[SplitWebhook] Webhook trigger failed, executing split directly: ${err.message}`);
-    // Fallback: execute release directly if webhook fails in local testing/dev
-    try {
-      await releaseEscrow(escrowId);
-    } catch (fallbackErr: any) {
-      console.error(`[SplitWebhookFallbackError] Failed to release escrow directly: ${fallbackErr.message}`);
-    }
+    console.error(`[EscrowReleaseError] Failed to release escrow ${escrowId}: ${err.message}`);
+    throw err; // Re-throw so callers can handle the failure
   }
 }

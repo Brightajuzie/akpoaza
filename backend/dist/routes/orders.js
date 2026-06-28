@@ -16,6 +16,7 @@ const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const notify_1 = require("../lib/notify");
 const prisma_1 = __importDefault(require("../lib/prisma"));
+const wallet_1 = require("../lib/wallet");
 const router = (0, express_1.Router)();
 // Get orders for a user
 router.get('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
@@ -301,9 +302,8 @@ router.post('/:id/confirm-receipt', auth_1.authenticateToken, (req, res, next) =
             return res.status(400).json({ error: 'No active pending payments held in escrow for this order.' });
         }
         // Trigger the split webhook for each escrow
-        const { triggerSplitWebhook } = require('../lib/wallet');
         for (const escrow of escrows) {
-            yield triggerSplitWebhook(escrow.id);
+            yield (0, wallet_1.triggerSplitWebhook)(escrow.id);
         }
         // Force update status of order to DELIVERED if not already
         const updatedOrder = yield prisma_1.default.order.update({

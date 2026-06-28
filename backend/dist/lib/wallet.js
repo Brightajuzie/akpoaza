@@ -17,7 +17,6 @@ exports.createEscrowForPaidItem = createEscrowForPaidItem;
 exports.releaseEscrow = releaseEscrow;
 exports.triggerSplitWebhook = triggerSplitWebhook;
 const prisma_1 = __importDefault(require("./prisma"));
-const axios_1 = __importDefault(require("axios"));
 function getOrCreateWallet(userId) {
     return __awaiter(this, void 0, void 0, function* () {
         let wallet = yield prisma_1.default.wallet.findUnique({
@@ -290,27 +289,22 @@ function releaseEscrow(escrowId) {
         });
     });
 }
+/**
+ * triggerSplitWebhook — releases an escrow by calling releaseEscrow() directly.
+ *
+ * The previous implementation made an HTTP POST to localhost which always fails
+ * on cloud platforms like Render (no loopback server). We now call the release
+ * function directly, which is both faster and production-safe.
+ */
 function triggerSplitWebhook(escrowId) {
     return __awaiter(this, void 0, void 0, function* () {
-        const WEBHOOK_SPLIT_SECRET = process.env.WEBHOOK_SPLIT_SECRET || 'local-split-secret-token';
-        const port = process.env.PORT || 5000;
-        const url = `http://localhost:${port}/api/payments/webhook/split`;
         try {
-            yield axios_1.default.post(url, {
-                escrowId,
-                secretToken: WEBHOOK_SPLIT_SECRET,
-            }, { timeout: 5000 });
-            console.log(`[SplitWebhook] Split triggered successfully for escrow: ${escrowId}`);
+            yield releaseEscrow(escrowId);
+            console.log(`[EscrowRelease] Escrow ${escrowId} released successfully.`);
         }
         catch (err) {
-            console.warn(`[SplitWebhook] Webhook trigger failed, executing split directly: ${err.message}`);
-            // Fallback: execute release directly if webhook fails in local testing/dev
-            try {
-                yield releaseEscrow(escrowId);
-            }
-            catch (fallbackErr) {
-                console.error(`[SplitWebhookFallbackError] Failed to release escrow directly: ${fallbackErr.message}`);
-            }
+            console.error(`[EscrowReleaseError] Failed to release escrow ${escrowId}: ${err.message}`);
+            throw err; // Re-throw so callers can handle the failure
         }
     });
 }
