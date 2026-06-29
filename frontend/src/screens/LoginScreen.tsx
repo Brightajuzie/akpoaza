@@ -97,6 +97,7 @@ export default function LoginScreen({ route, navigation }: any) {
             headers: { Authorization: `Bearer ${token}` }
           });
           await login(token, userRes.data);
+          navigateAfterLogin(userRes.data);
         } else {
           Alert.alert('Session Expired', 'Please log in with your password to re-enable biometrics.');
         }

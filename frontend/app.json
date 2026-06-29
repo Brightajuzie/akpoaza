@@ -44,7 +44,12 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.akpoaza.kachlinks",
-      "versionCode": 2
+      "versionCode": 2,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAk_7la_GksTZ95Awlp2IIO2_GJyRZlvKQa"
+        }
+      }
     },
     "web": {
       "bundler": "metro"

@@ -1,6 +1,7 @@
 import React, { useState, useContext } from 'react';
 import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator, Modal } from 'react-native';
 import MapComponent from '../components/MapComponent';
+import AddressInput from '../components/AddressInput';
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
@@ -233,17 +234,20 @@ export default function BookingSetupScreen({ route, navigation }: any) {
 
       {/* Location Mapping Input */}
       <Text style={styles.sectionTitle}>2. Service Location</Text>
-      
-      <TextInput
-        style={styles.input}
-        placeholder="Enter Full Address (e.g. 123 Broadway, NY)"
-        value={address}
-        onChangeText={setAddress}
-        placeholderTextColor="#8E8E93"
+
+      <AddressInput
+        label=""
+        onAddressChange={(assembledAddress, lat, lng) => {
+          setAddress(assembledAddress);
+          if (lat !== null) setLatitude(lat);
+          if (lng !== null) setLongitude(lng);
+        }}
+        initialValue={address}
+        countryCode="ng"
       />
 
-      <Text style={styles.subtext}>Pin exact location on map below:</Text>
-      
+      <Text style={styles.subtext}>Pin exact location on map below (or let GPS fill it):</Text>
+
       <View style={[styles.mapCard, { borderColor: theme.border }]}>
         <MapComponent
           latitude={latitude}

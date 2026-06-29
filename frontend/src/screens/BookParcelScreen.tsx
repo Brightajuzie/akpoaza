@@ -4,6 +4,7 @@ import {
   TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform
 } from 'react-native';
 import * as Location from 'expo-location';
+import AddressInput from '../components/AddressInput';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
@@ -268,28 +269,31 @@ export default function BookParcelScreen({ route, navigation }: any) {
         </View>
 
         {/* Pickup */}
-        <Text style={[styles.label, { color: theme.text }]}>📍 Pickup Address</Text>
-        <View style={[styles.inputRow, { borderColor: theme.border }]}>
-          <TextInput
-            style={[styles.input, { color: theme.text }]}
-            placeholder="Enter pickup address or street"
-            placeholderTextColor="#AEAEB2"
-            value={pickupAddress}
-            onChangeText={(t) => { setPickupAddress(t); setPickupLat(null); setPickupLng(null); setQuote(null); }}
-          />
-          <TouchableOpacity onPress={useCurrentLocation} style={styles.locationBtn} disabled={locationLoading}>
-            {locationLoading ? <ActivityIndicator size="small" color="#5856D6" /> : <Text style={styles.locationBtnText}>📡 GPS</Text>}
-          </TouchableOpacity>
-        </View>
+        <AddressInput
+          label="📍 Pickup Address"
+          onAddressChange={(addr, lat, lng) => {
+            setPickupAddress(addr);
+            setPickupLat(lat);
+            setPickupLng(lng);
+            setQuote(null);
+          }}
+          initialValue={pickupAddress}
+          showGps={true}
+          countryCode="ng"
+        />
 
         {/* Dropoff */}
-        <Text style={[styles.label, { color: theme.text }]}>🏁 Drop-off Address</Text>
-        <TextInput
-          style={[styles.input, styles.inputStandalone, { borderColor: theme.border, color: theme.text }]}
-          placeholder="Enter delivery destination"
-          placeholderTextColor="#AEAEB2"
-          value={dropoffAddress}
-          onChangeText={(t) => { setDropoffAddress(t); setDropoffLat(null); setDropoffLng(null); setQuote(null); }}
+        <AddressInput
+          label="🏁 Drop-off Address"
+          onAddressChange={(addr, lat, lng) => {
+            setDropoffAddress(addr);
+            setDropoffLat(lat);
+            setDropoffLng(lng);
+            setQuote(null);
+          }}
+          initialValue={dropoffAddress}
+          showGps={false}
+          countryCode="ng"
         />
 
         {/* Parcel Size */}

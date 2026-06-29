@@ -15,6 +15,7 @@ import {
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import AddressInput from '../components/AddressInput';
 
 const { width } = Dimensions.get('window');
 
@@ -39,6 +40,8 @@ export default function SignupScreen({ route, navigation }: any) {
   // Step 2: Professional Details (Handyman/Vendor/Rider)
   const [specialty, setSpecialty] = useState('Plumbing');
   const [address, setAddress] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
   const [vehicleType, setVehicleType] = useState('MOTORCYCLE'); // BICYCLE, MOTORCYCLE, CAR
   const [licensePlate, setLicensePlate] = useState('');
   
@@ -184,9 +187,9 @@ export default function SignupScreen({ route, navigation }: any) {
 
     setLoading(true);
 
-    // Generate random coordinates inside NYC area for mock tracking
-    const latitude = 40.7128 + (Math.random() - 0.5) * 0.02;
-    const longitude = -74.0060 + (Math.random() - 0.5) * 0.02;
+    // Use geocoded coordinates if available, otherwise default to Port Harcourt area coordinates
+    const finalLat = latitude !== null ? latitude : 4.8156 + (Math.random() - 0.5) * 0.02;
+    const finalLng = longitude !== null ? longitude : 7.0498 + (Math.random() - 0.5) * 0.02;
 
     try {
       // Register the account first to get JWT token
@@ -199,8 +202,8 @@ export default function SignupScreen({ route, navigation }: any) {
         opayPhone: isOpaySignup ? opayPhone : null,
         specialty: role === 'HANDYMAN' ? specialty : null,
         address,
-        latitude,
-        longitude,
+        latitude: finalLat,
+        longitude: finalLng,
         vehicleType: role === 'RIDER' ? vehicleType : null,
         licensePlate: role === 'RIDER' ? licensePlate : null,
       });
@@ -581,13 +584,15 @@ export default function SignupScreen({ route, navigation }: any) {
             )}
 
             <View style={styles.fieldSection}>
-              <Text style={styles.fieldLabel}>Work/Store Address</Text>
-              <TextInput
-                style={[styles.input, { borderColor: theme.border }]}
-                placeholder="e.g. 123 Broadway, New York, NY"
-                value={address}
-                onChangeText={setAddress}
-                placeholderTextColor="#8E8E93"
+              <AddressInput
+                label="Work/Store Address"
+                onAddressChange={(assembledAddress, lat, lng) => {
+                  setAddress(assembledAddress);
+                  setLatitude(lat);
+                  setLongitude(lng);
+                }}
+                initialValue={address}
+                countryCode="ng"
               />
             </View>
 
