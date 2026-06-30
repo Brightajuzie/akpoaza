@@ -2,6 +2,7 @@
   "expo": {
     "name": "FixMart",
     "slug": "handyman-ecommerce",
+    "icon": "./assets/icon.png",
     "platforms": [
       "ios",
       "android",
@@ -12,6 +13,7 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "splash": {
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -41,6 +43,7 @@
     "android": {
       "jsEngine": "hermes",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.akpoaza.kachlinks",
