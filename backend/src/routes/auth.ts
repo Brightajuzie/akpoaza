@@ -163,8 +163,9 @@ router.post('/login', async (req, res) => {
         requiresKYC
       }
     });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error during login' });
+  } catch (error: any) {
+    console.error('[Login Error]', error?.message ?? error);
+    res.status(500).json({ error: 'Server error during login', detail: process.env.NODE_ENV !== 'production' ? error?.message : undefined });
   }
 });
 
