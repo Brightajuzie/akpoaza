@@ -34,11 +34,7 @@
     "ios": {
       "supportsTablet": true,
       "jsEngine": "hermes",
-      "infoPlist": {
-        "NSAppTransportSecurity": {
-          "NSAllowsArbitraryLoads": true
-        }
-      }
+      "infoPlist": {}
     },
     "android": {
       "jsEngine": "hermes",
@@ -50,7 +46,7 @@
       "versionCode": 2,
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyAk_7la_GksTZ95Awlp2IIO2_GJyRZlvKQa"
+          "apiKey": "AIzaSyAk_7la_GksTZ95Awlp2IIO2_GJyRZlvKQ"
         }
       }
     },

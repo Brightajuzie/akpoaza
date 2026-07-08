@@ -6,7 +6,7 @@ import io from 'socket.io-client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 
-const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') || 'http://172.20.10.2:5000';
+const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') || 'https://akpoaza-3.onrender.com';
 
 export default function LiveTrackingScreen({ route, navigation }: any) {
   const { bookingId, orderId, role } = route.params; // role: 'CUSTOMER', 'HANDYMAN', 'RIDER', 'ADMIN'

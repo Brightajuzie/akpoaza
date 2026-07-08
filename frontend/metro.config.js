@@ -14,4 +14,24 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
+// Mock Stripe React Native and react-native-maps on the web since they lack native web support in Metro
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (platform === 'web') {
+    if (moduleName === '@stripe/stripe-react-native') {
+      return {
+        filePath: path.resolve(projectRoot, 'src/mocks/stripe-mock.js'),
+        type: 'sourceFile',
+      };
+    }
+    if (moduleName === 'react-native-maps') {
+      return {
+        filePath: path.resolve(projectRoot, 'src/mocks/react-native-maps-mock.js'),
+        type: 'sourceFile',
+      };
+    }
+  }
+  // Chain to default resolver
+  return context.resolveRequest(context, moduleName, platform);
+};
+
 module.exports = config;

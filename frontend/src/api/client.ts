@@ -102,7 +102,7 @@ const getBackendURL = (): string => {
             'Tip A: Run  adb reverse tcp:5000 tcp:5000  (USB tethering)\n' +
             'Tip B: Set  EXPO_PUBLIC_API_URL=http://<YOUR-PC-LAN-IP>:5000/api  in frontend/.env'
           );
-          return 'http://172.20.10.2:5000/api';
+          // Fall through to production URL — do NOT hardcode a personal hotspot IP here
         }
 
         // iOS Simulator: localhost works natively
@@ -126,7 +126,10 @@ console.log('[ApiClient] ✅ Resolved baseURL:', baseURL);
 
 const apiClient = axios.create({
   baseURL,
-  timeout: 15_000,
+  // 30 s gives Render.com free-tier backends enough time to cold-start
+  // (free instances spin down after ~15 min of inactivity and need up to
+  //  ~50 s to wake up before serving the first request).
+  timeout: 30_000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -142,11 +145,23 @@ export const setUnauthorizedHandler = (handler: () => void): void => {
 };
 
 // ---------------------------------------------------------------------------
-// Response interceptor – human-readable diagnostics + 401 handling
+// Request interceptor – attach a retry counter so the response interceptor
+// can attempt one automatic retry on transient network failures.
+// ---------------------------------------------------------------------------
+apiClient.interceptors.request.use((config: any) => {
+  // Initialise the retry counter on the first attempt
+  if (config._retryCount === undefined) {
+    config._retryCount = 0;
+  }
+  return config;
+});
+
+// ---------------------------------------------------------------------------
+// Response interceptor – human-readable diagnostics + 401 handling + retry
 // ---------------------------------------------------------------------------
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     const url = `${error.config?.baseURL ?? ''}${error.config?.url ?? ''}`;
 
     // ── 401 / 403 – token expired or revoked ────────────────────────────────
@@ -169,13 +184,29 @@ apiClient.interceptors.response.use(
         `URL: ${url}\n` +
         `Ensure the backend is running and reachable from this device.`
       );
-    // ── Network unreachable ──────────────────────────────────────────────────
+    // ── Network unreachable / cold-start retry ───────────────────────────────
     } else if (
       error.message === 'Network Error' ||
       error.code === 'ERR_NETWORK' ||
-      error.code === 'ECONNREFUSED'
+      error.code === 'ECONNREFUSED' ||
+      error.code === 'ECONNABORTED'
     ) {
       const platform = Platform.OS;
+      const config: any = error.config;
+
+      // Automatic single retry — handles Render.com free-tier cold starts where
+      // the first request lands while the dyno is still waking up.
+      if (config && config._retryCount < 1) {
+        config._retryCount += 1;
+        console.warn(
+          `[ApiClient] ⚠️  Transient network error (${error.code}) — retrying (attempt ${config._retryCount})…\n` +
+          `URL: ${url}`
+        );
+        // Wait 3 s before retrying so the server has more time to wake up
+        await new Promise<void>((resolve) => setTimeout(resolve, 3000));
+        return apiClient(config);
+      }
+
       console.error(
         `[ApiClient] ❌ Network Error — server unreachable.\n` +
         `Failed URL : ${url}\n` +
@@ -190,7 +221,7 @@ apiClient.interceptors.response.use(
           ? `  2. iOS simulator  →  URL should be http://localhost:5000\n` +
             `     Physical iPhone (Wi-Fi)? →  set EXPO_PUBLIC_API_URL=http://<PC-LAN-IP>:5000/api\n`
           : `  2. Web browser  →  URL should match window.location.hostname:5000\n`) +
-        `  3. android.usesCleartextTraffic = true  (already set in app.json)\n` +
+        `  3. android.usesCleartextTraffic = true  (required for local HTTP dev)\n` +
         `  4. Resolved baseURL → ${baseURL}`
       );
     }

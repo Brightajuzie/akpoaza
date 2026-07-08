@@ -61,6 +61,14 @@ app.use('/api/payments/webhook', express_1.default.raw({ type: 'application/json
 app.use(express_1.default.json());
 // Serve static uploads folder
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads')));
+// Root route
+app.get('/', (req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        message: 'Welcome to the FixMart Backend API!',
+        health: `${req.protocol}://${req.get('host')}/health`
+    });
+});
 // Basic health check route
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok', message: 'Backend is running smoothly.' });
@@ -83,6 +91,13 @@ app.use('/api/kyc', kyc_1.default);
 app.use('/api/wallet', wallet_1.default);
 app.use('/api/parcels', parcels_1.default);
 app.use('/api/slides', slides_1.default);
+// Fallback 404 handler for undefined routes / incorrect HTTP methods
+app.use((req, res, next) => {
+    res.status(404).json({
+        error: 'Not Found',
+        message: `Cannot ${req.method} ${req.originalUrl}`
+    });
+});
 // Centralized Error Handler
 app.use(errorHandler_1.errorHandler);
 if (process.env.NODE_ENV !== 'test') {

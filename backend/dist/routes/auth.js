@@ -121,6 +121,7 @@ router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, functio
 }));
 // Login User
 router.post('/login', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
     const { email, password } = req.body;
     if (!email || !password) {
         return res.status(400).json({ error: 'Missing email or password' });
@@ -149,7 +150,8 @@ router.post('/login', (req, res) => __awaiter(void 0, void 0, void 0, function* 
         });
     }
     catch (error) {
-        res.status(500).json({ error: 'Server error during login' });
+        console.error('[Login Error]', (_a = error === null || error === void 0 ? void 0 : error.message) !== null && _a !== void 0 ? _a : error);
+        res.status(500).json({ error: 'Server error during login', detail: process.env.NODE_ENV !== 'production' ? error === null || error === void 0 ? void 0 : error.message : undefined });
     }
 }));
 // Google OAuth Login / Signup
