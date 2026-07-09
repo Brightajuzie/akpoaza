@@ -2,7 +2,7 @@ import React, { useEffect, useState, useContext } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
 
 import HomeScreen from '../screens/HomeScreen';
 import ProductsScreen from '../screens/ProductsScreen';
@@ -36,6 +36,8 @@ function MainTabs() {
   const { theme } = useContext(SettingsContext);
   const { userToken } = useContext(AuthContext);
   const [unreadCount, setUnreadCount] = useState(0);
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width >= 768;
 
   useEffect(() => {
     const fetchUnread = async () => {
@@ -64,6 +66,7 @@ function MainTabs() {
           maxWidth: 600,
           alignSelf: 'center',
           width: '100%',
+          display: isLargeScreen ? 'none' : 'flex',
         },
       }}
     >

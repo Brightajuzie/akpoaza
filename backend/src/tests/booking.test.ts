@@ -1,9 +1,7 @@
 import request from 'supertest';
 import app from '../index';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
 import jwt from 'jsonwebtoken';
-
-const prisma = new PrismaClient();
 
 jest.setTimeout(30000);
 

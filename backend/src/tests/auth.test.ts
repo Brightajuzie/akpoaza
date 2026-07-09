@@ -1,8 +1,6 @@
 import request from 'supertest';
 import app from '../index';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../lib/prisma';
 const testEmail = `test_${Date.now()}@domain.com`;
 
 jest.setTimeout(60000);
