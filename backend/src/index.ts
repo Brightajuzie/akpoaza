@@ -172,10 +172,21 @@ if (process.env.NODE_ENV !== 'test') {
   server.listen(PORT, () => {
     console.log(`Server with Socket.IO is running on port ${PORT}`);
 
-    // Background interval loop (every 30 seconds for fast sandbox testing)
-    setInterval(async () => {
+    // ── Resilient background cron worker ─────────────────────────────────────
+    // Uses exponential back-off so a cold Supabase database doesn't spam logs.
+    // Resets to the base interval (30 s) once the DB is reachable again.
+    const CRON_BASE_MS  = 30_000;   // 30 s normal interval
+    const CRON_MAX_MS   = 300_000;  // 5 min maximum back-off
+    let   cronDelay     = CRON_BASE_MS;
+    let   cronTimer: ReturnType<typeof setTimeout>;
+
+    // Prisma error codes for "can't reach DB" — treat these as transient
+    const DB_UNREACHABLE_CODES = new Set(['P1001', 'P1002', 'P1008', 'P1017']);
+
+    const runCron = async () => {
       try {
         const now = new Date();
+
         // 1. Auto-release HELD escrows that have passed their autoReleaseAt time
         const expiredEscrows = await prisma.escrow.findMany({
           where: { status: 'HELD', autoReleaseAt: { lte: now } }
@@ -186,8 +197,8 @@ if (process.env.NODE_ENV !== 'test') {
           await triggerSplitWebhook(escrow.id);
         }
 
-        // 2. Auto-complete standard batch withdrawals (T+1 simulation, 1 minute threshold in sandbox)
-        const cutoff = new Date(Date.now() - 60000); // 1 minute
+        // 2. Auto-complete standard batch withdrawals (T+1 simulation, 1 min threshold in sandbox)
+        const cutoff = new Date(Date.now() - 60_000); // 1 minute
         const pendingWithdrawals = await prisma.withdrawal.findMany({
           where: { status: 'PENDING', instant: false, createdAt: { lte: cutoff } }
         });
@@ -206,10 +217,34 @@ if (process.env.NODE_ENV !== 'test') {
           ]);
           console.log(`[CronWorker] Automatically settled ${ids.length} standard batch withdrawals.`);
         }
+
+        // DB is healthy — reset to normal interval
+        if (cronDelay !== CRON_BASE_MS) {
+          console.log('[CronWorker] Database reachable again — resuming normal 30 s interval.');
+          cronDelay = CRON_BASE_MS;
+        }
       } catch (err: any) {
-        console.error('[CronWorkerError]', err.message);
+        const code: string | undefined = err?.code;
+        if (code && DB_UNREACHABLE_CODES.has(code)) {
+          // Database is cold-starting or temporarily unreachable — back off
+          cronDelay = Math.min(cronDelay * 2, CRON_MAX_MS);
+          console.warn(
+            `[CronWorker] Database unreachable (${code}) — ` +
+            `retrying in ${cronDelay / 1000}s. ` +
+            'Check DATABASE_URL is set correctly in Render Dashboard.'
+          );
+        } else {
+          // Application-level error — log and keep normal interval
+          console.error('[CronWorkerError]', err.message);
+        }
       }
-    }, 30000); // Check every 30 seconds
+
+      // Schedule the next tick with the current (possibly backed-off) delay
+      cronTimer = setTimeout(runCron, cronDelay);
+    };
+
+    // Kick off the first run after the base delay
+    cronTimer = setTimeout(runCron, cronDelay);
   });
 }
 

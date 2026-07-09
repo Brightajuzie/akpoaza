@@ -38,13 +38,13 @@ services:
 
       # ── Database ────────────────────────────────────────────────────────────
       - key: DATABASE_URL
-        sync: false           # Set in Render Dashboard → pooled Supabase URL (port 6543)
+        value: "postgresql://postgres.swzsvvqsdwkhefrwvpvs:28%40Chidozie1@aws-1-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
       - key: DIRECT_URL
-        sync: false           # Set in Render Dashboard → direct Supabase URL (port 5432)
+        value: "postgresql://postgres.swzsvvqsdwkhefrwvpvs:28%40Chidozie1@aws-1-eu-central-1.pooler.supabase.com:5432/postgres"
 
       # ── Auth ────────────────────────────────────────────────────────────────
       - key: JWT_SECRET
-        generateValue: true   # Render generates a random secret on first deploy
+        value: "c5049b0ce1ab8d367d95062662f9036072f0f1a4634bc1585ffc2602a09d3ef68054575c680027c965d6f0314e5b677e"
 
       # ── Stripe ──────────────────────────────────────────────────────────────
       - key: STRIPE_SECRET_KEY
