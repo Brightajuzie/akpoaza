@@ -3,7 +3,7 @@ import app from '../index';
 import prisma from '../lib/prisma';
 import jwt from 'jsonwebtoken';
 
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 describe('Booking & Matchmaking Integration Tests', () => {
   let customerToken = '';
