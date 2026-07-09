@@ -214,8 +214,8 @@ export default function LoginScreen({ route, navigation }: any) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.card, { borderColor: theme.border, maxWidth: isLargeScreen ? 460 : '100%', alignSelf: 'center', width: '100%' }]}>
+    <View style={[styles.container, { backgroundColor: theme.background }, isLargeScreen && styles.containerWeb]}>
+      <View style={[styles.card, { borderColor: theme.border }, isLargeScreen && styles.cardWeb]}>
         <Text style={styles.logoText}>🛠️ FixMart</Text>
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>
@@ -302,6 +302,13 @@ export default function LoginScreen({ route, navigation }: any) {
             <Text style={[styles.linkHighlight, { color: theme.primary }]}>Sign Up</Text>
           </Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Main')}
+          style={styles.cancelLinkContainer}
+        >
+          <Text style={[styles.cancelLinkText, { color: theme.lightText }]}>Cancel</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -309,6 +316,8 @@ export default function LoginScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 24, justifyContent: 'center' },
+  containerWeb: { alignItems: 'center', minHeight: '100%' },
+  cardWeb: { maxWidth: 400, width: '100%' },
   card: {
     backgroundColor: '#FFFFFF',
     padding: 32,
@@ -376,4 +385,13 @@ const styles = StyleSheet.create({
   linkContainer: { alignItems: 'center' },
   linkText: { color: '#8E8E93', fontSize: 14 },
   linkHighlight: { fontWeight: '700' },
+  cancelLinkContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+    paddingVertical: 4,
+  },
+  cancelLinkText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

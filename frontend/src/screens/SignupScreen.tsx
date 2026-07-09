@@ -10,7 +10,6 @@ import {
   ScrollView,
   ActivityIndicator,
   Animated,
-  Dimensions,
   useWindowDimensions,
 } from 'react-native';
 import apiClient from '../api/client';
@@ -18,7 +17,6 @@ import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import AddressInput from '../components/AddressInput';
 
-const { width } = Dimensions.get('window');
 
 export default function SignupScreen({ route, navigation }: any) {
   const { width } = useWindowDimensions();
@@ -389,10 +387,10 @@ export default function SignupScreen({ route, navigation }: any) {
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.background }]} 
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={[styles.contentContainer, isLargeScreen && styles.contentContainerWeb]}
       showsVerticalScrollIndicator={false}
     >
-      <View style={[styles.card, { borderColor: theme.border, maxWidth: isLargeScreen ? 520 : '100%', alignSelf: 'center', width: '100%' }]}>
+      <View style={[styles.card, { borderColor: theme.border }, isLargeScreen && styles.cardWeb]}>
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>
           {role === 'CUSTOMER' ? 'Join as a Customer' : `Partner Registration (Step ${currentStep} of 6)`}
@@ -866,14 +864,23 @@ export default function SignupScreen({ route, navigation }: any) {
         )}
 
         {currentStep === 1 && (
-          <TouchableOpacity 
-            onPress={() => navigation.navigate('Login', { redirectTo, redirectParams })} 
-            style={styles.linkContainer}
-          >
-            <Text style={styles.linkText}>
-              Already have an account? <Text style={[styles.linkHighlight, { color: theme.primary }]}>Log In</Text>
-            </Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity 
+              onPress={() => navigation.navigate('Login', { redirectTo, redirectParams })} 
+              style={styles.linkContainer}
+            >
+              <Text style={styles.linkText}>
+                Already have an account? <Text style={[styles.linkHighlight, { color: theme.primary }]}>Log In</Text>
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              onPress={() => navigation.navigate('Main')} 
+              style={styles.cancelLinkContainer}
+            >
+              <Text style={[styles.cancelLinkText, { color: theme.lightText }]}>Cancel</Text>
+            </TouchableOpacity>
+          </>
         )}
       </View>
     </ScrollView>
@@ -888,6 +895,14 @@ const styles = StyleSheet.create({
     padding: 20,
     justifyContent: 'center',
     flexGrow: 1,
+  },
+  contentContainerWeb: {
+    alignItems: 'center',
+    minHeight: '100%',
+  },
+  cardWeb: {
+    maxWidth: 420,
+    width: '100%',
   },
   card: {
     backgroundColor: '#FFFFFF',
@@ -1236,5 +1251,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#1C1C1E',
+  },
+  cancelLinkContainer: {
+    alignItems: 'center',
+    marginTop: 16,
+    paddingVertical: 4,
+  },
+  cancelLinkText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

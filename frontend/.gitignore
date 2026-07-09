@@ -8,3 +8,5 @@ yarn-error.log*
 .env
 android/
 ios/
+
+.vercel

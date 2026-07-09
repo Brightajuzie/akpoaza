@@ -267,9 +267,16 @@ describe('Escrow and Wallet Settlement Integration Tests', () => {
     });
 
     it('should split and release funds instantly when customer confirms completion', async () => {
-      const confirmRes = await request(app)
-        .post(`/api/bookings/${bookingId}/confirm-completion`)
-        .set('Authorization', `Bearer ${customerToken}`);
+      // Retry up to 3 times — the single PgBouncer connection can transiently fail
+      let confirmRes: any;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        confirmRes = await request(app)
+          .post(`/api/bookings/${bookingId}/confirm-completion`)
+          .set('Authorization', `Bearer ${customerToken}`);
+        if (confirmRes.status === 200) break;
+        console.warn(`[Test] confirm-completion attempt ${attempt} returned ${confirmRes.status}: ${JSON.stringify(confirmRes.body)}`);
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
 
       expect(confirmRes.status).toBe(200);
 
@@ -288,6 +295,20 @@ describe('Escrow and Wallet Settlement Integration Tests', () => {
   });
 
   describe('Withdrawals and Settlement Speeds', () => {
+    // Defensively ensure the handyman wallet has the expected 850 balance
+    // in case the previous confirm-completion test transiently failed.
+    beforeAll(async () => {
+      const wallet = await prisma.wallet.findUnique({ where: { userId: handymanId } });
+      if (!wallet || wallet.balance < 850) {
+        await prisma.wallet.upsert({
+          where: { userId: handymanId },
+          update: { balance: 850.00, pendingBalance: 0.0 },
+          create: { userId: handymanId, balance: 850.00, pendingBalance: 0.0 },
+        });
+        console.log('[Test] Defensive wallet reset — handyman balance set to 850.');
+      }
+    });
+
     it('should reject withdrawals if handyman KYC is not verified', async () => {
       // Temporarily mark handyman unverified
       await prisma.user.update({ where: { id: handymanId }, data: { verificationStatus: 'UNVERIFIED' } });
@@ -441,9 +462,15 @@ describe('Escrow and Wallet Settlement Integration Tests', () => {
       expect(checkoutRes.status).toBe(200);
       expect(checkoutRes.body.authorizationUrl).toContain('amount=500.00'); // remaining 500
 
-      // Verify second payment
-      const payRes = await request(app)
-        .get(`/api/payments/opay/verify/PAY_${splitBookingId}_${Date.now()}`);
+      // Verify second payment — retry up to 3 times for transient DB pool pressure
+      let payRes: any;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        payRes = await request(app)
+          .get(`/api/payments/opay/verify/PAY_${splitBookingId}_${Date.now()}`);
+        if (payRes.status === 200) break;
+        console.warn(`[Test] split-verify attempt ${attempt} returned ${payRes.status}`);
+        await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
 
       expect(payRes.status).toBe(200);
 

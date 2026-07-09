@@ -1,10 +1,12 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView, useWindowDimensions } from 'react-native';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
 
 export default function ProfileScreen({ navigation }: any) {
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width >= 768;
   const { logout, userToken, userInfo, refreshUser } = useContext(AuthContext);
   const { theme } = useContext(SettingsContext);
   const [profile, setProfile] = useState<any>(null);
