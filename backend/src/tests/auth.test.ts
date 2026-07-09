@@ -5,7 +5,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const testEmail = `test_${Date.now()}@domain.com`;
 
-jest.setTimeout(30000);
+jest.setTimeout(60000);
 
 describe('Handyman E-Commerce Backend Integration Tests', () => {
   beforeAll(async () => {

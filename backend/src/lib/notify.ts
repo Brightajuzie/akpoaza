@@ -42,6 +42,8 @@ export interface NotifyPayload {
 let _mailer: nodemailer.Transporter | null = null;
 
 function getMailer(): nodemailer.Transporter | null {
+  // Skip email entirely during automated tests to prevent hangs on bad SMTP credentials
+  if (process.env.NODE_ENV === 'test') return null;
   if (_mailer) return _mailer;
   const host = process.env.SMTP_HOST;
   if (!host) return null;
@@ -53,6 +55,10 @@ function getMailer(): nodemailer.Transporter | null {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
+    // Fail fast (10 s) rather than hanging on bad credentials
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
   });
   return _mailer;
 }
@@ -119,6 +125,8 @@ function buildEmailHtml(title: string, body: string, customHtml?: string): strin
  * Returns the created in-app Notification record.
  */
 export async function sendNotification(payload: NotifyPayload) {
+  // In test mode skip all external channels — only create the in-app notification
+  const isTest = process.env.NODE_ENV === 'test';
   const {
     userId, title, body, type, referenceId,
     emailSubject, emailHtml,
@@ -145,9 +153,9 @@ export async function sendNotification(payload: NotifyPayload) {
     return null;
   });
 
-  // 3. Email (fire-and-forget)
+  // 3. Email (fire-and-forget — skipped in test mode)
   const mailer = getMailer();
-  if (mailer && userEmail) {
+  if (!isTest && mailer && userEmail) {
     mailer.sendMail({
       from: `"FixMart" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
       to: userEmail,
@@ -157,10 +165,10 @@ export async function sendNotification(payload: NotifyPayload) {
     }).catch((e) => console.error('[notify] email send failed:', e));
   }
 
-  // 4. SMS (fire-and-forget)
+  // 4. SMS (fire-and-forget — skipped in test mode)
   const twilioClient = getTwilio();
   const fromNumber = process.env.TWILIO_FROM_NUMBER;
-  if (twilioClient && fromNumber && userPhone) {
+  if (!isTest && twilioClient && fromNumber && userPhone) {
     const smsBody = `[FixMart] ${title}\n${body}`;
     twilioClient.messages.create({
       body: smsBody.substring(0, 160), // Standard SMS limit
