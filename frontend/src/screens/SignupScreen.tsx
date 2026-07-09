@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
@@ -20,6 +21,8 @@ import AddressInput from '../components/AddressInput';
 const { width } = Dimensions.get('window');
 
 export default function SignupScreen({ route, navigation }: any) {
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width >= 768;
   const { login, refreshUser } = useContext(AuthContext);
   const { theme } = useContext(SettingsContext);
 
@@ -389,7 +392,7 @@ export default function SignupScreen({ route, navigation }: any) {
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
     >
-      <View style={[styles.card, { borderColor: theme.border }]}>
+      <View style={[styles.card, { borderColor: theme.border, maxWidth: isLargeScreen ? 520 : '100%', alignSelf: 'center', width: '100%' }]}>
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>
           {role === 'CUSTOMER' ? 'Join as a Customer' : `Partner Registration (Step ${currentStep} of 6)`}

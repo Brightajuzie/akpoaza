@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Alert, ActivityIndicator, Animated, Platform,
+  Alert, ActivityIndicator, Animated, Platform, useWindowDimensions,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from '../utils/storage';
@@ -18,6 +18,8 @@ const BIOMETRIC_TOKEN_KEY = 'biometric_auth_token';
 const BIOMETRIC_ENABLED_KEY = 'biometric_enabled';
 
 export default function LoginScreen({ route, navigation }: any) {
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width >= 768;
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
@@ -213,7 +215,7 @@ export default function LoginScreen({ route, navigation }: any) {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <View style={[styles.card, { borderColor: theme.border }]}>
+      <View style={[styles.card, { borderColor: theme.border, maxWidth: isLargeScreen ? 460 : '100%', alignSelf: 'center', width: '100%' }]}>
         <Text style={styles.logoText}>🛠️ FixMart</Text>
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>
