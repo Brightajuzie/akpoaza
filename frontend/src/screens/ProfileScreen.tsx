@@ -156,7 +156,7 @@ export default function ProfileScreen({ navigation }: any) {
 
   if (!userToken) {
     return (
-      <View style={[styles.guestContainer, { backgroundColor: theme.background }]}>
+      <View style={[styles.guestContainer, { backgroundColor: theme.background }, isLargeScreen && styles.guestContainerWeb]}>
         <View style={[styles.card, { borderColor: theme.border, alignItems: 'center', padding: 32 }]}>
           <Text style={{ fontSize: 48, marginBottom: 16 }}>👤</Text>
           <Text style={[styles.cardTitle, { textAlign: 'center', fontSize: 20, marginBottom: 12 }]}>Unlock Your Profile</Text>
@@ -265,7 +265,7 @@ export default function ProfileScreen({ navigation }: any) {
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: theme.background }]} 
-      contentContainerStyle={styles.contentContainer}
+      contentContainerStyle={[styles.contentContainer, isLargeScreen && styles.contentContainerWeb]}
       showsVerticalScrollIndicator={false}
     >
       {renderVerificationBanner()}
@@ -927,5 +927,16 @@ const styles = StyleSheet.create({
     width: 1,
     height: 36,
     marginHorizontal: 16,
+  },
+  guestContainerWeb: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 420,
+    justifyContent: 'center',
+  },
+  contentContainerWeb: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 600,
   },
 });
