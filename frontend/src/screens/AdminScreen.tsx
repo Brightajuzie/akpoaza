@@ -104,7 +104,7 @@ export default function AdminScreen() {
   // Users state (Admin only)
   const [users, setUsers]                   = useState<any[]>([]);
   const [usersLoading, setUsersLoading]     = useState(false);
-  const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | 'HANDYMAN' | 'VENDOR' | 'RIDER' | 'CUSTOMER'>('ALL');
+  const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | 'ADMIN' | 'HANDYMAN' | 'VENDOR' | 'RIDER' | 'CUSTOMER'>('ALL');
  
   // User management – form/modal state
   const [showUserFormModal, setShowUserFormModal]   = useState(false);
@@ -1911,7 +1911,7 @@ export default function AdminScreen() {
 
             {/* Filter Pills */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-              {(['ALL', 'HANDYMAN', 'VENDOR', 'RIDER', 'CUSTOMER'] as const).map((roleOpt) => (
+              {(['ALL', 'ADMIN', 'HANDYMAN', 'VENDOR', 'RIDER', 'CUSTOMER'] as const).map((roleOpt) => (
                 <TouchableOpacity
                   key={roleOpt}
                   onPress={() => setUserRoleFilter(roleOpt)}
@@ -1923,7 +1923,7 @@ export default function AdminScreen() {
                   }}
                 >
                   <Text style={{ color: userRoleFilter === roleOpt ? '#fff' : '#1C1C1E', fontWeight: '700', fontSize: 12 }}>
-                    {roleOpt === 'ALL' ? 'All' : roleOpt === 'HANDYMAN' ? '🛠️ Services' : roleOpt === 'VENDOR' ? '🏪 Vendors' : roleOpt === 'RIDER' ? '🚚 Riders' : '👤 Customers'}
+                    {roleOpt === 'ALL' ? 'All' : roleOpt === 'ADMIN' ? '🔑 Admins' : roleOpt === 'HANDYMAN' ? '🛠️ Services' : roleOpt === 'VENDOR' ? '🏪 Vendors' : roleOpt === 'RIDER' ? '🚚 Riders' : '👤 Customers'}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -1943,6 +1943,7 @@ export default function AdminScreen() {
                       <Text style={styles.listItemName}>{u.name}</Text>
                       <View style={[
                         styles.badgeContainer,
+                        u.role === 'ADMIN' ? { backgroundColor: '#FED7D7' } :
                         u.role === 'HANDYMAN' ? { backgroundColor: '#EBF8FF' } :
                         u.role === 'VENDOR' ? { backgroundColor: '#FEFCBF' } :
                         u.role === 'RIDER' ? { backgroundColor: '#E8F5E9' } :
@@ -1950,7 +1951,7 @@ export default function AdminScreen() {
                       ]}>
                         <Text style={{
                           fontSize: 10, fontWeight: '700',
-                          color: u.role === 'HANDYMAN' ? '#2B6CB0' : u.role === 'VENDOR' ? '#B7791F' : u.role === 'RIDER' ? '#34C759' : '#4A5568'
+                          color: u.role === 'ADMIN' ? '#E53E3E' : u.role === 'HANDYMAN' ? '#2B6CB0' : u.role === 'VENDOR' ? '#B7791F' : u.role === 'RIDER' ? '#34C759' : '#4A5568'
                         }}>{u.role === 'HANDYMAN' ? 'SERVICES' : u.role}</Text>
                       </View>
                     </View>

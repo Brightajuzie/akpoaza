@@ -61,6 +61,7 @@ function MainTabs() {
       screenOptions={{ 
         headerTitleAlign: 'center', 
         tabBarActiveTintColor: theme.primary,
+        headerShown: !isLargeScreen,
         tabBarStyle: { 
           borderTopColor: '#E5E5EA',
           maxWidth: 600,
