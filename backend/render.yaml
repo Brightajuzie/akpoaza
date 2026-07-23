@@ -23,6 +23,12 @@ services:
     # ── Auto-deploy on every push to the main branch ─────────────────────────
     autoDeploy: true
 
+    # ── Persistent Storage ───────────────────────────────────────────────────
+    disk:
+      name: fixmart-uploads
+      mountPath: /opt/render/project/src/backend/uploads
+      sizeGB: 1
+
     # ── Environment variables ─────────────────────────────────────────────────
     # Set sensitive values in the Render Dashboard (Environment › Secret Files
     # or individual env vars). Values marked sync: false must be set manually.

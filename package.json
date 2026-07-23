@@ -10,6 +10,7 @@
     "start:frontend": "cd frontend && npx expo start --port 8082",
     "start:backend": "cd backend && npm run dev",
     "build:backend": "cd backend && npm run build",
-    "build:frontend": "npm run build --workspace=frontend"
+    "build:frontend": "npm run build --workspace=frontend",
+    "deploy:frontend": "npm run deploy --workspace=frontend"
   }
 }

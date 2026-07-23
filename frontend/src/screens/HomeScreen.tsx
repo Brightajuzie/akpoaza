@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, TextInput, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, TextInput, useWindowDimensions, Platform } from 'react-native';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
@@ -161,152 +161,170 @@ export default function HomeScreen({ navigation }: any) {
 
 
 
-  return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: theme.background }]} 
-      contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-    >
-      <ResponsiveContainer>
-      {/* ─── RESPONSIVE NAVIGATION HEADER ─── */}
-      <View style={[styles.navHeader, { borderBottomColor: theme.border }]}>
-        <View style={styles.navHeaderContainer}>
-          {/* Logo / Brand Name */}
-          <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} style={styles.logoContainer}>
-            {logoUrl ? (
-              <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
-            ) : (
-              <Text style={[styles.logoText, { color: theme.primary }]}>🛠️ FixMart</Text>
-            )}
-          </TouchableOpacity>
-
-          {width >= 768 ? (
-            /* 🖥️ DESKTOP/WEB FULL SCREEN NAVIGATION BAR */
-            <View style={styles.desktopNav}>
-              <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} style={styles.navLink}>
-                <Text style={[styles.navLinkLabel, styles.activeNavLink, { color: theme.primary }]}>Home</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigation.navigate('Products')} style={styles.navLink}>
-                <Text style={styles.navLinkLabel}>Products</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigation.navigate('Services')} style={styles.navLink}>
-                <Text style={styles.navLinkLabel}>Services</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigation.navigate('BookParcel')} style={styles.navLink}>
-                <Text style={styles.navLinkLabel}>Book Rider</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={styles.navLink}>
-                <Text style={styles.navLinkLabel}>Wallet</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigation.navigate('CartTab')} style={styles.navLink}>
-                <Text style={styles.navLinkLabel}>Cart 🛒</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => navigation.navigate('NotificationsTab')} style={styles.navLink}>
-                <Text style={styles.navLinkLabel}>Alerts 🔔</Text>
-              </TouchableOpacity>
-              {userInfo?.role === 'ADMIN' && (
-                <TouchableOpacity onPress={() => navigation.navigate('Admin')} style={styles.navLink}>
-                  <Text style={[styles.navLinkLabel, { color: theme.secondary }]}>Admin 🔑</Text>
-                </TouchableOpacity>
-              )}
-              
-              {/* User Avatar */}
-              <TouchableOpacity 
-                style={[styles.profileIndicator, { borderColor: theme.primary, marginLeft: 16 }]}
-                onPress={() => navigation.navigate('ProfileTab')}
-              >
-                <Text style={styles.profileIndicatorText}>
-                  {userInfo?.name ? userInfo.name.charAt(0).toUpperCase() : 'G'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+  const renderHeader = () => (
+    <View style={[
+      styles.navHeader, 
+      { borderBottomColor: theme.border }, 
+      Platform.OS === 'web' && { marginBottom: 0, borderBottomWidth: 0 }
+    ]}>
+      <View style={styles.navHeaderContainer}>
+        {/* Logo / Brand Name */}
+        <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} style={styles.logoContainer}>
+          {logoUrl ? (
+            <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
           ) : (
-            /* 📱 MOBILE HAMBURGER BUTTON */
-            <View style={styles.mobileNavHeaderRight}>
-              <TouchableOpacity 
-                style={[styles.profileIndicator, { borderColor: theme.primary, marginRight: 12 }]}
-                onPress={() => navigation.navigate('ProfileTab')}
-              >
-                <Text style={styles.profileIndicatorText}>
-                  {userInfo?.name ? userInfo.name.charAt(0).toUpperCase() : 'G'}
-                </Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.hamburgerButton, { backgroundColor: theme.primary + '15' }]} 
-                onPress={() => setMenuOpen(!menuOpen)}
-              >
-                <Text style={[styles.hamburgerIcon, { color: theme.primary }]}>
-                  {menuOpen ? '✕' : '☰'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={[styles.logoText, { color: theme.primary }]}>🛠️ FixMart</Text>
           )}
-        </View>
+        </TouchableOpacity>
 
-        {/* 📱 MOBILE DROP-DOWN DRAWER MENU */}
-        {width < 768 && menuOpen && (
-          <View style={[styles.mobileMenuDropdown, { borderColor: theme.border }]}>
-            <TouchableOpacity 
-              style={styles.mobileMenuItem} 
-              onPress={() => { setMenuOpen(false); navigation.navigate('HomeTab'); }}
-            >
-              <Text style={[styles.mobileMenuText, { color: theme.primary, fontWeight: '700' }]}>🏠 Home</Text>
+        {width >= 768 ? (
+          /* 🖥️ DESKTOP/WEB FULL SCREEN NAVIGATION BAR */
+          <View style={styles.desktopNav}>
+            <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} style={styles.navLink}>
+              <Text style={[styles.navLinkLabel, styles.activeNavLink, { color: theme.primary }]}>Home</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.mobileMenuItem} 
-              onPress={() => { setMenuOpen(false); navigation.navigate('Products'); }}
-            >
-              <Text style={styles.mobileMenuText}>📦 Products</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Products')} style={styles.navLink}>
+              <Text style={styles.navLinkLabel}>Products</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.mobileMenuItem} 
-              onPress={() => { setMenuOpen(false); navigation.navigate('Services'); }}
-            >
-              <Text style={styles.mobileMenuText}>⚡ Services</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Services')} style={styles.navLink}>
+              <Text style={styles.navLinkLabel}>Services</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.mobileMenuItem} 
-              onPress={() => { setMenuOpen(false); navigation.navigate('BookParcel'); }}
-            >
-              <Text style={styles.mobileMenuText}>🚚 Book Rider</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('BookParcel')} style={styles.navLink}>
+              <Text style={styles.navLinkLabel}>Book Rider</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.mobileMenuItem} 
-              onPress={() => { setMenuOpen(false); navigation.navigate('Wallet'); }}
-            >
-              <Text style={styles.mobileMenuText}>💳 Wallet</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={styles.navLink}>
+              <Text style={styles.navLinkLabel}>Wallet</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.mobileMenuItem} 
-              onPress={() => { setMenuOpen(false); navigation.navigate('CartTab'); }}
-            >
-              <Text style={styles.mobileMenuText}>🛒 Cart</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('CartTab')} style={styles.navLink}>
+              <Text style={styles.navLinkLabel}>Cart 🛒</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.mobileMenuItem} 
-              onPress={() => { setMenuOpen(false); navigation.navigate('NotificationsTab'); }}
-            >
-              <Text style={styles.mobileMenuText}>🔔 Alerts</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.mobileMenuItem} 
-              onPress={() => { setMenuOpen(false); navigation.navigate('ProfileTab'); }}
-            >
-              <Text style={styles.mobileMenuText}>👤 Profile</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('NotificationsTab')} style={styles.navLink}>
+              <Text style={styles.navLinkLabel}>Alerts 🔔</Text>
             </TouchableOpacity>
             {userInfo?.role === 'ADMIN' && (
-              <TouchableOpacity 
-                style={[styles.mobileMenuItem, { borderTopWidth: 1, borderTopColor: '#F2F2F7' }]} 
-                onPress={() => { setMenuOpen(false); navigation.navigate('Admin'); }}
-              >
-                <Text style={[styles.mobileMenuText, { color: theme.secondary, fontWeight: '700' }]}>🔑 Admin Panel</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Admin')} style={styles.navLink}>
+                <Text style={[styles.navLinkLabel, { color: theme.secondary }]}>Admin 🔑</Text>
               </TouchableOpacity>
             )}
+            
+            {/* User Avatar */}
+            <TouchableOpacity 
+              style={[styles.profileIndicator, { borderColor: theme.primary, marginLeft: 16 }]}
+              onPress={() => navigation.navigate('ProfileTab')}
+            >
+              <Text style={styles.profileIndicatorText}>
+                {userInfo?.name ? userInfo.name.charAt(0).toUpperCase() : 'G'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          /* 📱 MOBILE HAMBURGER BUTTON */
+          <View style={styles.mobileNavHeaderRight}>
+            <TouchableOpacity 
+              style={[styles.profileIndicator, { borderColor: theme.primary, marginRight: 12 }]}
+              onPress={() => navigation.navigate('ProfileTab')}
+            >
+              <Text style={styles.profileIndicatorText}>
+                {userInfo?.name ? userInfo.name.charAt(0).toUpperCase() : 'G'}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.hamburgerButton, { backgroundColor: theme.primary + '15' }]} 
+              onPress={() => setMenuOpen(!menuOpen)}
+            >
+              <Text style={[styles.hamburgerIcon, { color: theme.primary }]}>
+                {menuOpen ? '✕' : '☰'}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
+
+      {/* 📱 MOBILE DROP-DOWN DRAWER MENU */}
+      {width < 768 && menuOpen && (
+        <View style={[styles.mobileMenuDropdown, { borderColor: theme.border }]}>
+          <TouchableOpacity 
+            style={styles.mobileMenuItem} 
+            onPress={() => { setMenuOpen(false); navigation.navigate('HomeTab'); }}
+          >
+            <Text style={[styles.mobileMenuText, { color: theme.primary, fontWeight: '700' }]}>🏠 Home</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.mobileMenuItem} 
+            onPress={() => { setMenuOpen(false); navigation.navigate('Products'); }}
+          >
+            <Text style={styles.mobileMenuText}>📦 Products</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.mobileMenuItem} 
+            onPress={() => { setMenuOpen(false); navigation.navigate('Services'); }}
+          >
+            <Text style={styles.mobileMenuText}>⚡ Services</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.mobileMenuItem} 
+            onPress={() => { setMenuOpen(false); navigation.navigate('BookParcel'); }}
+          >
+            <Text style={styles.mobileMenuText}>🚚 Book Rider</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.mobileMenuItem} 
+            onPress={() => { setMenuOpen(false); navigation.navigate('Wallet'); }}
+          >
+            <Text style={styles.mobileMenuText}>💳 Wallet</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.mobileMenuItem} 
+            onPress={() => { setMenuOpen(false); navigation.navigate('CartTab'); }}
+          >
+            <Text style={styles.mobileMenuText}>🛒 Cart</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.mobileMenuItem} 
+            onPress={() => { setMenuOpen(false); navigation.navigate('NotificationsTab'); }}
+          >
+            <Text style={styles.mobileMenuText}>🔔 Alerts</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.mobileMenuItem} 
+            onPress={() => { setMenuOpen(false); navigation.navigate('ProfileTab'); }}
+          >
+            <Text style={styles.mobileMenuText}>👤 Profile</Text>
+          </TouchableOpacity>
+          {userInfo?.role === 'ADMIN' && (
+            <TouchableOpacity 
+              style={[styles.mobileMenuItem, { borderTopWidth: 1, borderTopColor: '#F2F2F7' }]} 
+              onPress={() => { setMenuOpen(false); navigation.navigate('Admin'); }}
+            >
+              <Text style={[styles.mobileMenuText, { color: theme.secondary, fontWeight: '700' }]}>🔑 Admin Panel</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
+  );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      {Platform.OS === 'web' && (
+        <View style={[styles.webHeaderWrapper, { backgroundColor: theme.card || '#FFFFFF', borderBottomColor: theme.border }]}>
+          <ResponsiveContainer>
+            {renderHeader()}
+          </ResponsiveContainer>
+        </View>
+      )}
+      <ScrollView 
+        style={[styles.container, { backgroundColor: theme.background }]} 
+        contentContainerStyle={[
+          styles.contentContainer, 
+          Platform.OS === 'web' && { paddingTop: 20 }
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <ResponsiveContainer>
+          {Platform.OS !== 'web' && renderHeader()}
 
       {/* 🔍 Unified Smart Search Bar */}
       <View style={[styles.searchContainer, { borderColor: searchQuery ? theme.primary : '#E5E5EA' }]}>
@@ -585,6 +603,7 @@ export default function HomeScreen({ navigation }: any) {
       </View>
       </ResponsiveContainer>
     </ScrollView>
+    </View>
   );
 }
 
@@ -1092,5 +1111,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: '#1C1C1E',
+  },
+  webHeaderWrapper: {
+    width: '100%',
+    zIndex: 1000,
+    borderBottomWidth: 1,
+    paddingHorizontal: 20,
   },
 });
