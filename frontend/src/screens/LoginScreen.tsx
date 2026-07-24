@@ -168,7 +168,13 @@ export default function LoginScreen({ route, navigation }: any) {
 
       navigateAfterLogin(res.data.user);
     } catch (error: any) {
-      Alert.alert('Authentication Failed', error.response?.data?.error || 'Invalid credentials.');
+      const msg =
+        error.response?.data?.error ||
+        error.response?.data?.detail ||
+        (error.code === 'ECONNABORTED' ? 'Request timed out. The server may be waking up — please try again.' : null) ||
+        (error.message === 'Network Error' ? 'Cannot reach server. Check your internet connection.' : null) ||
+        'Login failed. Please try again.';
+      Alert.alert('Login Failed', msg);
     } finally {
       setLoading(false);
     }
@@ -193,7 +199,8 @@ export default function LoginScreen({ route, navigation }: any) {
       await login(res.data.token, res.data.user);
       navigateAfterLogin(res.data.user);
     } catch (err: any) {
-      Alert.alert('Google Sign-In Failed', err.response?.data?.error || 'Could not complete Google sign-in.');
+      const msg = err.response?.data?.error || err.response?.data?.detail || 'Could not complete Google sign-in.';
+      Alert.alert('Google Sign-In Failed', msg);
     } finally {
       setGoogleLoading(false);
     }

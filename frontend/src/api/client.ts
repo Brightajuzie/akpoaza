@@ -8,8 +8,14 @@ import Constants from 'expo-constants';
 const getBackendURL = (): string => {
   const envURL = process.env.EXPO_PUBLIC_API_URL;
 
-  // On Android emulators, always default to 10.0.2.2 to connect to local PC backend
-  // and bypass stale cached LAN IPs from the Metro bundler.
+  // ── Priority 1: Always respect an explicit env var (works for ALL platforms) ──
+  // This is the correct production URL set in Vercel / EAS / .env
+  if (envURL) {
+    console.log('[ApiClient] Using EXPO_PUBLIC_API_URL:', envURL);
+    return envURL;
+  }
+
+  // On Android emulators, default to 10.0.2.2 to connect to the local PC backend
   if (Platform.OS === 'android') {
     const fingerprint = (Platform.constants as any)?.Fingerprint ?? '';
     const brand      = (Platform.constants as any)?.Brand      ?? '';
@@ -31,19 +37,21 @@ const getBackendURL = (): string => {
     }
   }
 
-  // Priority 2: Use explicitly defined environment variable if it exists
-  if (envURL) {
-    console.log('[ApiClient] Using EXPO_PUBLIC_API_URL:', envURL);
-    return envURL;
-  }
-
-  // --- Web Platform ---
+  // --- Web Platform (no EXPO_PUBLIC_API_URL set — local dev only) ---
   if (Platform.OS === 'web') {
+    // Only use window.location in local dev (localhost / LAN IP)
     if (typeof window !== 'undefined') {
-      const url = `http://${window.location.hostname}:5000/api`;
-      console.log('[ApiClient] Web mode, using window.location.hostname:', url);
-      return url;
+      const host = window.location.hostname;
+      // Never proxy through the production Vercel domain to a local port
+      const isLocalHost = host === 'localhost' || host === '127.0.0.1' || /^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(host);
+      if (isLocalHost) {
+        const url = `http://${host}:5000/api`;
+        console.log('[ApiClient] Web local dev mode, using window.location.hostname:', url);
+        return url;
+      }
     }
+    // Production web with no env var — hard-coded fallback so nothing breaks
+    console.warn('[ApiClient] ⚠️  EXPO_PUBLIC_API_URL not set on web. Falling back to localhost. Set this in Vercel env vars.');
     return 'http://localhost:5000/api';
   }
 

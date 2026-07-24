@@ -164,8 +164,18 @@ router.post('/login', async (req, res) => {
       }
     });
   } catch (error: any) {
-    console.error('[Login Error]', error?.message ?? error);
-    res.status(500).json({ error: 'Server error during login', detail: process.env.NODE_ENV !== 'production' ? error?.message : undefined });
+    const isDbConnError = ['P1001', 'P1002', 'P1008', 'P1017', 'P2024'].includes(error?.code);
+    console.error('[Login Error]', {
+      code: error?.code,
+      message: error?.message,
+      meta: error?.meta,
+    });
+    res.status(500).json({
+      error: isDbConnError
+        ? 'Database connection error. The server is waking up — please try again in a moment.'
+        : 'Server error during login',
+      detail: process.env.NODE_ENV !== 'production' ? error?.message : undefined,
+    });
   }
 });
 
