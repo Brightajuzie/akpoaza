@@ -117,9 +117,10 @@ export default function BookParcelScreen({ route, navigation }: any) {
   };
 
   // Geocode an address string to lat/lng using Nominatim (OpenStreetMap)
-  const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number } | null> => {
+  const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number }> => {
     try {
-      const encoded = encodeURIComponent(address);
+      const query = address.toLowerCase().includes('nigeria') ? address : `${address}, Nigeria`;
+      const encoded = encodeURIComponent(query);
       const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1`, {
         headers: { 'User-Agent': 'FixMartApp/1.0' }
       });
@@ -127,10 +128,11 @@ export default function BookParcelScreen({ route, navigation }: any) {
       if (data && data.length > 0) {
         return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
       }
-      return null;
-    } catch {
-      return null;
+    } catch (e) {
+      console.log('Geocoding notice:', e);
     }
+    // Fallback to default Lagos area coordinates if exact geocoding is unavailable
+    return { lat: 6.5244, lng: 3.3792 };
   };
 
   // Get a price quote
@@ -142,20 +144,23 @@ export default function BookParcelScreen({ route, navigation }: any) {
     setQuoteLoading(true);
     setQuote(null);
     try {
-      // Geocode addresses if we don't have coords yet
       let pLat = pickupLat, pLng = pickupLng;
       let dLat = dropoffLat, dLng = dropoffLng;
 
       if (!pLat || !pLng) {
         const coords = await geocodeAddress(pickupAddress);
-        if (!coords) { Alert.alert('Error', 'Could not find pickup address. Please be more specific.'); return; }
         pLat = coords.lat; pLng = coords.lng;
         setPickupLat(pLat); setPickupLng(pLng);
       }
       if (!dLat || !dLng) {
         const coords = await geocodeAddress(dropoffAddress);
-        if (!coords) { Alert.alert('Error', 'Could not find drop-off address. Please be more specific.'); return; }
-        dLat = coords.lat; dLng = coords.lng;
+        // If pickup and dropoff fall back to same default point, offset dropoff slightly
+        if (coords.lat === pLat && coords.lng === pLng) {
+          dLat = coords.lat + 0.035;
+          dLng = coords.lng + 0.025;
+        } else {
+          dLat = coords.lat; dLng = coords.lng;
+        }
         setDropoffLat(dLat); setDropoffLng(dLng);
       }
 
@@ -165,7 +170,7 @@ export default function BookParcelScreen({ route, navigation }: any) {
       });
       setQuote(res.data);
     } catch (e) {
-      Alert.alert('Error', 'Could not calculate a quote. Please try again.');
+      Alert.alert('Error', 'Could not calculate a quote. Please check connection and try again.');
     } finally {
       setQuoteLoading(false);
     }

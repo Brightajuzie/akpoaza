@@ -97,14 +97,18 @@ async function calculateDeliveryPrice(lat1: number, lon1: number, lat2: number, 
 
 // Get a quote for a parcel delivery
 router.post('/quote', async (req: Request, res) => {
-
   const { pickupLat, pickupLng, dropoffLat, dropoffLng } = req.body;
-  
-  if (!pickupLat || !pickupLng || !dropoffLat || !dropoffLng) {
-    return res.status(400).json({ error: 'Pickup and dropoff coordinates are required' });
+
+  const pLat = parseFloat(pickupLat);
+  const pLng = parseFloat(pickupLng);
+  const dLat = parseFloat(dropoffLat);
+  const dLng = parseFloat(dropoffLng);
+
+  if (isNaN(pLat) || isNaN(pLng) || isNaN(dLat) || isNaN(dLng)) {
+    return res.status(400).json({ error: 'Valid pickup and dropoff coordinates are required' });
   }
 
-  const result = await calculateDeliveryPrice(pickupLat, pickupLng, dropoffLat, dropoffLng);
+  const result = await calculateDeliveryPrice(pLat, pLng, dLat, dLng);
   res.json({
     price: result.price,
     distanceKm: result.distanceKm,
@@ -126,12 +130,17 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
     parcelDescription, paymentProvider 
   } = req.body;
 
-  if (!pickupAddress || !dropoffAddress || !pickupLat || !pickupLng || !dropoffLat || !dropoffLng) {
-    return res.status(400).json({ error: 'All address and coordinate fields are required' });
+  const pLat = parseFloat(pickupLat);
+  const pLng = parseFloat(pickupLng);
+  const dLat = parseFloat(dropoffLat);
+  const dLng = parseFloat(dropoffLng);
+
+  if (!pickupAddress || !dropoffAddress || isNaN(pLat) || isNaN(pLng) || isNaN(dLat) || isNaN(dLng)) {
+    return res.status(400).json({ error: 'All address and valid coordinate fields are required' });
   }
 
   try {
-    const result = await calculateDeliveryPrice(pickupLat, pickupLng, dropoffLat, dropoffLng);
+    const result = await calculateDeliveryPrice(pLat, pLng, dLat, dLng);
     const computedTotalAmount = result.price;
 
     const parcel = await prisma.parcelDelivery.create({
@@ -139,10 +148,10 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
         userId,
         pickupAddress,
         dropoffAddress,
-        pickupLat,
-        pickupLng,
-        dropoffLat,
-        dropoffLng,
+        pickupLat: pLat,
+        pickupLng: pLng,
+        dropoffLat: dLat,
+        dropoffLng: dLng,
         parcelDescription,
         totalAmount: computedTotalAmount,
         paymentProvider: (paymentProvider as PaymentProvider) || 'NONE',
