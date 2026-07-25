@@ -568,4 +568,55 @@ router.get('/:id/location', authenticateToken, async (req: AuthRequest, res, nex
   }
 });
 
+// Rider: Earnings summary + trip history
+router.get('/rider/earnings', authenticateToken, async (req: AuthRequest, res, next) => {
+  const userId = req.user?.userId;
+  const role = req.user?.role;
+  if (role !== 'RIDER') return res.status(403).json({ error: 'Rider access required.' });
+
+  try {
+    // Wallet balance
+    const wallet = await prisma.wallet.findUnique({
+      where: { userId },
+      select: { balance: true, pendingBalance: true }
+    });
+
+    // Escrows earned from orders
+    const orderEscrows = await prisma.escrow.findMany({
+      where: { providerId: userId, order: { isNot: null } },
+      select: { providerAmount: true, status: true, releasedAt: true, createdAt: true,
+        order: { select: { id: true, status: true, deliveryAddress: true, totalAmount: true, createdAt: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Escrows earned from parcels
+    const parcelEscrows = await prisma.escrow.findMany({
+      where: { providerId: userId, parcelDelivery: { isNot: null } },
+      select: { providerAmount: true, status: true, releasedAt: true, createdAt: true,
+        parcelDelivery: { select: { id: true, status: true, pickupAddress: true, dropoffAddress: true, totalAmount: true, createdAt: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const totalReleased = [...orderEscrows, ...parcelEscrows]
+      .filter(e => e.status === 'RELEASED')
+      .reduce((sum, e) => sum + e.providerAmount, 0);
+
+    const totalPending = [...orderEscrows, ...parcelEscrows]
+      .filter(e => e.status === 'HELD')
+      .reduce((sum, e) => sum + e.providerAmount, 0);
+
+    const completedTrips = [...orderEscrows, ...parcelEscrows].filter(e => e.status === 'RELEASED').length;
+    const activeTrips = [...orderEscrows, ...parcelEscrows].filter(e => e.status === 'HELD').length;
+
+    res.json({
+      wallet: { balance: wallet?.balance ?? 0, pendingBalance: wallet?.pendingBalance ?? 0 },
+      earnings: { totalReleased, totalPending, completedTrips, activeTrips },
+      orderTrips: orderEscrows,
+      parcelTrips: parcelEscrows,
+    });
+  } catch (error) { next(error); }
+});
+
 export default router;

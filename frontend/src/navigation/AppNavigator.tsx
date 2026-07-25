@@ -24,6 +24,7 @@ import VideoCallScreen from '../screens/VideoCallScreen';
 import WalletScreen from '../screens/WalletScreen';
 import BookParcelScreen from '../screens/BookParcelScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
+import RiderEarningsScreen from '../screens/RiderEarningsScreen';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
@@ -255,6 +256,11 @@ export default function AppNavigator() {
           name="BookParcel" 
           component={BookParcelScreen} 
           options={{ title: '🚚 Book Delivery Rider', headerBackTitle: 'Home' }} 
+        />
+        <Stack.Screen 
+          name="RiderEarnings" 
+          component={RiderEarningsScreen} 
+          options={{ title: '💰 My Earnings' }} 
         />
       </Stack.Navigator>
     </NavigationContainer>

@@ -773,6 +773,15 @@ export default function HistoryScreen({ route, navigation }: any) {
             <Text style={styles.riderMetricLabel}>GPS Beacon</Text>
           </View>
         </View>
+
+        {/* Quick Actions */}
+        <TouchableOpacity
+          style={[styles.riderEarningsBtn, { backgroundColor: theme.primary }]}
+          onPress={() => navigation.navigate('RiderEarnings')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.riderEarningsBtnText}>💰 View Earnings & Trip History</Text>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -1629,5 +1638,21 @@ const styles = StyleSheet.create({
   riderMetricDivider: {
     width: 1,
     height: 24,
+  },
+  riderEarningsBtn: {
+    marginTop: 14,
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  riderEarningsBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14,
   },
 });
