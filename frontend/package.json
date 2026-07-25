@@ -9,7 +9,7 @@
     "web": "expo start --web",
     "build": "expo export -p web",
     "postinstall": "node postinstall.js",
-    "deploy": "npm run build && npx vercel --token $VERCEL_TOKEN --prod --yes"
+    "deploy": "npm run build && npx vercel --prod --yes"
   },
   "dependencies": {
     "@react-native-community/netinfo": "11.4.1",

@@ -1,6 +1,14 @@
 {
   "cleanUrls": true,
   "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/((?!_expo/|assets/|static/|.*\\..*$).*)",

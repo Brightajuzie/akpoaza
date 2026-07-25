@@ -142,7 +142,8 @@ const navStyles = StyleSheet.create({
 });
 
 export default function AppNavigator() {
-  const { isLoading } = React.useContext(AuthContext);
+  const { isLoading, userInfo } = React.useContext(AuthContext);
+  const isAdmin = userInfo?.role === 'ADMIN';
   const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -203,11 +204,13 @@ export default function AppNavigator() {
           component={CheckoutScreen} 
           options={{ title: 'Checkout' }}
         />
-        <Stack.Screen 
-          name="Admin" 
-          component={AdminScreen} 
-          options={{ title: 'Admin Panel' }}
-        />
+        {isAdmin && (
+          <Stack.Screen 
+            name="Admin" 
+            component={AdminScreen} 
+            options={{ title: 'Admin Panel', headerShown: false }}
+          />
+        )}
         <Stack.Screen 
           name="ProductDetail" 
           component={ProductDetailScreen} 

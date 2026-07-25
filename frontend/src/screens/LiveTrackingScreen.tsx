@@ -5,8 +5,9 @@ import * as Location from 'expo-location';
 import io from 'socket.io-client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import apiClient, { getSocketURL } from '../api/client';
 
-const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL?.replace('/api', '') || 'https://akpoaza-3.onrender.com';
+const SOCKET_URL = getSocketURL();
 
 export default function LiveTrackingScreen({ route, navigation }: any) {
   const { bookingId, orderId, role } = route.params; // role: 'CUSTOMER', 'HANDYMAN', 'RIDER', 'ADMIN'
@@ -25,6 +26,38 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
   const locationUpdateEvent = isOrder ? 'order_location_update' : 'location_update';
   const updateLocationEvent = isOrder ? 'update_order_location' : 'update_location';
   const idToJoin = orderId || bookingId;
+
+  // HTTP API Fallback Polling (in case Socket drops on mobile networks)
+  useEffect(() => {
+    let pollInterval: any;
+    const fetchLatestLocation = async () => {
+      if (!idToJoin) return;
+      try {
+        const endpoint = isOrder ? `/parcels/${idToJoin}/location` : `/bookings/${idToJoin}/location`;
+        const res = await apiClient.get(endpoint);
+        if (res.data) {
+          if (role === 'ADMIN') {
+            if (res.data.customerLocation?.lat && res.data.customerLocation?.lng) {
+              setAdminCustomerLoc({ latitude: res.data.customerLocation.lat, longitude: res.data.customerLocation.lng });
+            }
+            if (res.data.riderLocation?.lat && res.data.riderLocation?.lng) {
+              setAdminHandymanLoc({ latitude: res.data.riderLocation.lat, longitude: res.data.riderLocation.lng });
+            }
+          } else if (role === 'CUSTOMER' && res.data.riderLocation?.lat && res.data.riderLocation?.lng) {
+            setPartnerLocation({ latitude: res.data.riderLocation.lat, longitude: res.data.riderLocation.lng });
+          } else if ((role === 'RIDER' || role === 'HANDYMAN') && res.data.customerLocation?.lat && res.data.customerLocation?.lng) {
+            setPartnerLocation({ latitude: res.data.customerLocation.lat, longitude: res.data.customerLocation.lng });
+          }
+        }
+      } catch (e) {
+        // Silent catch for polling
+      }
+    };
+
+    fetchLatestLocation();
+    pollInterval = setInterval(fetchLatestLocation, 5000);
+    return () => clearInterval(pollInterval);
+  }, [idToJoin, role, isOrder]);
 
   useEffect(() => {
     // Initialize socket

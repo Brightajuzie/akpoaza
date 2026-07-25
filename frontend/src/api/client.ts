@@ -238,4 +238,9 @@ apiClient.interceptors.response.use(
   }
 );
 
+export const getSocketURL = (): string => {
+  return baseURL.replace(/\/api\/?$/, '');
+};
+
 export default apiClient;
+

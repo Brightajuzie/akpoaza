@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView,
-  Alert, ActivityIndicator, Modal, Image, Platform, Linking
+  Alert, ActivityIndicator, Modal, Image, Platform, Linking, useWindowDimensions
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
@@ -25,10 +25,12 @@ export default function AdminScreen() {
   const { userInfo } = useContext(AuthContext);
   const { theme, settings, updateSettings } = useContext(SettingsContext);
   const navigation = useNavigation<any>();
+  const { width } = useWindowDimensions();
 
   const isVendor = userInfo?.role === 'VENDOR';
   const isAdmin  = userInfo?.role === 'ADMIN';
 
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders' | 'slides'>(
     'products'
   );
@@ -1310,36 +1312,150 @@ export default function AdminScreen() {
       {renderUserFormModal()}
       {renderUserDetailsModal()}
 
-      {/* Tab bar for Admins */}
+      {/* Navigation bar for Admins (Fixed on top, aligned on the same line) */}
       {isAdmin && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.tabScrollContainer}
-          contentContainerStyle={styles.tabContentContainer}
-        >
-          {[
-            { id: 'products',  label: '📦 Inventory' },
-            { id: 'services',  label: '⚡ Services' },
-            { id: 'bookings',  label: '📋 Bookings' },
-            { id: 'users',     label: '👥 Users' },
-            { id: 'orders',    label: '🛒 Orders' },
-            { id: 'settings',  label: '⚙️ Settings' },
-            { id: 'kyc',       label: '🔍 KYC Reviews' },
-            { id: 'slides',    label: '🖼️ Slides' },
-          ].map(tab => (
-            <TouchableOpacity
-              key={tab.id}
-              style={[styles.tabButton, activeTab === tab.id && { borderBottomColor: theme.primary }]}
-              onPress={() => handleTabPress(tab.id)}
-            >
-              <Text style={[styles.tabText, activeTab === tab.id && { color: theme.primary, fontWeight: '700' }]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <View style={[styles.adminNavBarFixed, { backgroundColor: theme.card || '#FFFFFF', borderBottomColor: theme.border }]}>
+          <ResponsiveContainer style={{ flex: 0 }}>
+            <View style={styles.adminNavSingleLineContainer}>
+              {/* Brand Icon, Text & Retained Arrow */}
+              <TouchableOpacity 
+                style={styles.adminNavBrand}
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.7}
+                accessibilityLabel="Go Back"
+              >
+                <Text style={[styles.adminNavBrandIcon, { color: theme.primary }]}>🔑</Text>
+                <Text style={[styles.adminNavBrandText, { color: theme.text || '#1C1C1E' }]}>Admin Panel</Text>
+                <Text style={[styles.adminNavBrandArrow, { color: theme.primary }]}>➔</Text>
+              </TouchableOpacity>
+
+              {width >= 768 ? (
+                /* 🖥️ DESKTOP: ALL CONTROL PANEL TABS ALIGNED ON THE SAME LINE */
+                <View style={styles.adminDesktopTabsRow}>
+                  {[
+                    { id: 'products',  label: 'Inventory',  icon: '📦' },
+                    { id: 'services',  label: 'Services',   icon: '⚡' },
+                    { id: 'bookings',  label: 'Bookings',   icon: '📋' },
+                    { id: 'users',     label: 'Users',      icon: '👥' },
+                    { id: 'orders',    label: 'Orders',     icon: '🛒' },
+                    { id: 'settings',  label: 'Settings',   icon: '⚙️' },
+                    { id: 'kyc',       label: 'KYC',        icon: '🔍' },
+                    { id: 'slides',    label: 'Slides',     icon: '🖼️' },
+                  ].map(tab => {
+                    const isActive = activeTab === tab.id;
+                    return (
+                      <TouchableOpacity
+                        key={tab.id}
+                        style={[
+                          styles.adminDesktopTabPill,
+                          isActive && [styles.adminDesktopTabPillActive, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]
+                        ]}
+                        onPress={() => handleTabPress(tab.id)}
+                      >
+                        <Text style={styles.adminTabPillIcon}>{tab.icon}</Text>
+                        <Text style={[
+                          styles.adminTabPillText,
+                          isActive && { color: theme.primary, fontWeight: '800' }
+                        ]}>
+                          {tab.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  {/* 🌐 Live Vercel App Link (Accessible without login prompt) */}
+                  <TouchableOpacity
+                    style={[styles.adminVercelLinkBtn, { backgroundColor: theme.primary + '12', borderColor: theme.primary + '30' }]}
+                    onPress={() => Linking.openURL('https://fixmart.vercel.app')}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.adminVercelLinkText, { color: theme.primary }]}>🌐 fixmart.vercel.app ↗</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                /* 📱 MOBILE: ACTIVE TAB SELECTOR WITH RETAINED ARROW */
+                <View style={styles.adminMobileMenuToggleContainer}>
+                  <TouchableOpacity
+                    style={[styles.adminMobileActiveSelector, { backgroundColor: theme.primary + '12', borderColor: theme.border }]}
+                    onPress={() => setAdminMenuOpen(!adminMenuOpen)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.adminMobileActiveIcon}>
+                      {[
+                        { id: 'products',  label: 'Inventory',  icon: '📦' },
+                        { id: 'services',  label: 'Services',   icon: '⚡' },
+                        { id: 'bookings',  label: 'Bookings',   icon: '📋' },
+                        { id: 'users',     label: 'Users',      icon: '👥' },
+                        { id: 'orders',    label: 'Orders',     icon: '🛒' },
+                        { id: 'settings',  label: 'Settings',   icon: '⚙️' },
+                        { id: 'kyc',       label: 'KYC Reviews',icon: '🔍' },
+                        { id: 'slides',    label: 'Slides',     icon: '🖼️' },
+                      ].find(t => t.id === activeTab)?.icon}
+                    </Text>
+                    <Text style={[styles.adminMobileActiveLabel, { color: theme.primary }]}>
+                      {[
+                        { id: 'products',  label: 'Inventory',  icon: '📦' },
+                        { id: 'services',  label: 'Services',   icon: '⚡' },
+                        { id: 'bookings',  label: 'Bookings',   icon: '📋' },
+                        { id: 'users',     label: 'Users',      icon: '👥' },
+                        { id: 'orders',    label: 'Orders',     icon: '🛒' },
+                        { id: 'settings',  label: 'Settings',   icon: '⚙️' },
+                        { id: 'kyc',       label: 'KYC Reviews',icon: '🔍' },
+                        { id: 'slides',    label: 'Slides',     icon: '🖼️' },
+                      ].find(t => t.id === activeTab)?.label}
+                    </Text>
+                    {/* Retained Arrow */}
+                    <Text style={[styles.adminDropdownArrow, { color: theme.primary }]}>
+                      {adminMenuOpen ? '▲' : '▼'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </ResponsiveContainer>
+
+          {/* Vertically Aligned Mobile Dropdown Menu */}
+          {width < 768 && adminMenuOpen && (
+            <View style={[styles.adminMobileDropdownMenu, { backgroundColor: theme.card || '#FFFFFF', borderColor: theme.border }]}>
+              {[
+                { id: 'products',  label: 'Inventory',  icon: '📦' },
+                { id: 'services',  label: 'Services',   icon: '⚡' },
+                { id: 'bookings',  label: 'Bookings',   icon: '📋' },
+                { id: 'users',     label: 'Users',      icon: '👥' },
+                { id: 'orders',    label: 'Orders',     icon: '🛒' },
+                { id: 'settings',  label: 'Settings',   icon: '⚙️' },
+                { id: 'kyc',       label: 'KYC Reviews',icon: '🔍' },
+                { id: 'slides',    label: 'Slides',     icon: '🖼️' },
+              ].map(tab => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <TouchableOpacity
+                    key={tab.id}
+                    style={[
+                      styles.adminMobileMenuItem,
+                      isActive && [styles.adminMobileMenuItemActive, { backgroundColor: theme.primary + '12' }]
+                    ]}
+                    onPress={() => {
+                      setAdminMenuOpen(false);
+                      handleTabPress(tab.id);
+                    }}
+                  >
+                    <Text style={styles.adminMobileMenuIcon}>{tab.icon}</Text>
+                    <Text style={[
+                      styles.adminMobileMenuText,
+                      isActive && { color: theme.primary, fontWeight: '800' }
+                    ]}>
+                      {tab.label}
+                    </Text>
+                    {isActive && <Text style={[styles.adminActiveCheckmark, { color: theme.primary }]}>✓</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
       )}
+
 
 
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
@@ -2528,7 +2644,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabText: { fontSize: 13, color: '#8E8E93', fontWeight: '600' },
-  scrollContent: { padding: 20 },
+  scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 60 },
   formTitle: { fontSize: 20, fontWeight: '800', marginBottom: 12, color: '#1C1C1E' },
   card: {
     backgroundColor: '#FFFFFF',
@@ -2962,4 +3078,208 @@ const styles = StyleSheet.create({
     minWidth: 44,
   },
   removeBgToggleText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+
+  // ── Responsive Admin Navigation Styles ──────────────────────────────────────
+  adminDesktopNavBar: {
+    borderBottomWidth: 1,
+    paddingVertical: 10,
+    zIndex: 100,
+  },
+  adminDesktopNavInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  adminDesktopBrandContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  adminDesktopBrandText: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  adminDesktopNavTabs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+  },
+  adminDesktopTabButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  adminDesktopTabActive: {
+    borderRadius: 10,
+  },
+  adminTabIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  adminDesktopTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#3A3A3C',
+  },
+  adminMobileNavWrapper: {
+    position: 'relative',
+    width: '100%',
+  },
+  adminMobileNavHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  adminMobileNavHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  adminMobileNavTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  adminActiveBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  adminActiveBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  adminHamburgerBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminHamburgerIcon: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  adminMobileDropdownMenu: {
+    position: 'absolute',
+    top: 54,
+    left: 12,
+    right: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 12,
+    zIndex: 9999,
+  },
+  adminMobileMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    marginVertical: 2,
+  },
+  adminMobileMenuItemActive: {
+    borderRadius: 10,
+  },
+  adminMobileMenuIcon: {
+    fontSize: 16,
+    marginRight: 10,
+  },
+  adminMobileMenuText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    flex: 1,
+  },
+  adminActiveCheckmark: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  // ── Unified Single-Line Fixed Admin Nav Bar ─────────────────────────────────
+  adminNavBarFixed: {
+    borderBottomWidth: 1,
+    zIndex: 200,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    ...(Platform.OS === 'web' ? ({ position: 'sticky', top: 0 } as any) : {}),
+  },
+  adminNavSingleLineContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    gap: 8,
+  },
+  adminNavBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 10,
+    borderRightWidth: 1,
+    borderRightColor: '#E5E5EA',
+    marginRight: 4,
+    flexShrink: 0,
+  },
+  adminNavBrandIcon: { fontSize: 18, marginRight: 4 },
+  adminNavBrandText: { fontSize: 14, fontWeight: '800', marginRight: 6 },
+  adminNavBrandArrow: { fontSize: 16, fontWeight: '700' },
+  adminDesktopTabsRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flexWrap: 'nowrap',
+  },
+  adminDesktopTabPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  adminDesktopTabPillActive: { borderRadius: 9 },
+  adminTabPillIcon: { fontSize: 13, marginRight: 4 },
+  adminTabPillText: { fontSize: 12, fontWeight: '600', color: '#3A3A3C' },
+  adminVercelLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 9,
+    borderWidth: 1,
+    marginLeft: 'auto',
+  },
+  adminVercelLinkText: { fontSize: 12, fontWeight: '700' },
+  adminMobileMenuToggleContainer: { flex: 1 },
+  adminMobileActiveSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+  },
+  adminMobileActiveIcon: { fontSize: 18 },
+  adminMobileActiveLabel: { flex: 1, fontSize: 14, fontWeight: '700' },
+  adminDropdownArrow: { fontSize: 11, fontWeight: '800' },
 });
+
+

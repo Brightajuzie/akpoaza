@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, TextInput, useWindowDimensions, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, TextInput, useWindowDimensions, Platform, Linking, Alert } from 'react-native';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
@@ -201,12 +201,6 @@ export default function HomeScreen({ navigation }: any) {
             <TouchableOpacity onPress={() => navigation.navigate('NotificationsTab')} style={styles.navLink}>
               <Text style={styles.navLinkLabel}>Alerts 🔔</Text>
             </TouchableOpacity>
-            {userInfo?.role === 'ADMIN' && (
-              <TouchableOpacity onPress={() => navigation.navigate('Admin')} style={styles.navLink}>
-                <Text style={[styles.navLinkLabel, { color: theme.secondary }]}>Admin 🔑</Text>
-              </TouchableOpacity>
-            )}
-            
             {/* User Avatar */}
             <TouchableOpacity 
               style={[styles.profileIndicator, { borderColor: theme.primary, marginLeft: 16 }]}
@@ -292,14 +286,6 @@ export default function HomeScreen({ navigation }: any) {
           >
             <Text style={styles.mobileMenuText}>👤 Profile</Text>
           </TouchableOpacity>
-          {userInfo?.role === 'ADMIN' && (
-            <TouchableOpacity 
-              style={[styles.mobileMenuItem, { borderTopWidth: 1, borderTopColor: '#F2F2F7' }]} 
-              onPress={() => { setMenuOpen(false); navigation.navigate('Admin'); }}
-            >
-              <Text style={[styles.mobileMenuText, { color: theme.secondary, fontWeight: '700' }]}>🔑 Admin Panel</Text>
-            </TouchableOpacity>
-          )}
         </View>
       )}
     </View>
@@ -597,10 +583,84 @@ export default function HomeScreen({ navigation }: any) {
         </TouchableOpacity>
       )}
 
-      {/* Dynamic brand footer */}
+      {/* Dynamic brand footer with App Download section */}
       <View style={styles.footerContainer}>
+        {Platform.OS === 'web' && (
+          <View style={[styles.downloadAppCard, { backgroundColor: theme.card || '#FFFFFF', borderColor: theme.border, width: '100%' }]}>
+            <View style={styles.downloadAppContent}>
+              <Text style={[styles.downloadAppTitle, { color: theme.text }]}>📱 Get the FixMart App</Text>
+              <Text style={styles.downloadAppDesc}>
+                Book verified handymen, track delivery riders live on the map, and shop power tools anywhere.
+              </Text>
+
+              <View style={styles.downloadBtnRow}>
+                {/* Direct Android APK Download Button */}
+                <TouchableOpacity
+                  style={[styles.storeBadgeBtn, styles.apkDownloadBtn]}
+                  onPress={() => {
+                    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
+                      const link = document.createElement('a');
+                      link.href = '/assets/fixmart-app.apk';
+                      link.download = 'fixmart-app.apk';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    } else {
+                      Linking.openURL('/assets/fixmart-app.apk');
+                    }
+                  }}
+                  activeOpacity={0.85}
+                  accessibilityLabel="Download Android APK File"
+                >
+                  <Text style={styles.storeIcon}>📥</Text>
+                  <View style={styles.storeTextCol}>
+                    <Text style={styles.storeSubtext}>DIRECT FILE</Text>
+                    <Text style={styles.storeTitle}>Android APK</Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Google Play (Android) Button */}
+                <TouchableOpacity
+                  style={styles.storeBadgeBtn}
+                  onPress={() => {
+                    Linking.openURL('https://play.google.com/store').catch(() => {
+                      Alert.alert('FixMart Android App', 'Opening Google Play Store...');
+                    });
+                  }}
+                  activeOpacity={0.85}
+                  accessibilityLabel="Download on Google Play"
+                >
+                  <Text style={styles.storeIcon}>🤖</Text>
+                  <View style={styles.storeTextCol}>
+                    <Text style={styles.storeSubtext}>GET IT ON</Text>
+                    <Text style={styles.storeTitle}>Google Play</Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* App Store (iOS) Button */}
+                <TouchableOpacity
+                  style={[styles.storeBadgeBtn, styles.appStoreBtn]}
+                  onPress={() => {
+                    Linking.openURL('https://apps.apple.com').catch(() => {
+                      Alert.alert('FixMart iOS App', 'Opening Apple App Store...');
+                    });
+                  }}
+                  activeOpacity={0.85}
+                  accessibilityLabel="Download on App Store"
+                >
+                  <Text style={styles.storeIcon}>🍏</Text>
+                  <View style={styles.storeTextCol}>
+                    <Text style={styles.storeSubtext}>DOWNLOAD ON THE</Text>
+                    <Text style={styles.storeTitle}>App Store</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
         <Text style={styles.footerText}>{footerText}</Text>
       </View>
+
       </ResponsiveContainer>
     </ScrollView>
     </View>
@@ -1118,4 +1178,83 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingHorizontal: 20,
   },
+
+  // ── Download App Card Styles ─────────────────────────────────────────────
+  downloadAppCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 24,
+    marginTop: 24,
+    marginBottom: 24,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  downloadAppContent: {
+    alignItems: 'center',
+  },
+  downloadAppTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  downloadAppDesc: {
+    fontSize: 14,
+    color: '#8E8E93',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+    maxWidth: 480,
+  },
+  downloadBtnRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  storeBadgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    minWidth: 160,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  appStoreBtn: {
+    backgroundColor: '#1C1C1E',
+  },
+  apkDownloadBtn: {
+    backgroundColor: '#2E7D32',
+  },
+  storeIcon: {
+    fontSize: 24,
+    marginRight: 10,
+  },
+  storeTextCol: {
+    flexDirection: 'column',
+  },
+  storeSubtext: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#A1A1A6',
+    letterSpacing: 0.5,
+  },
+  storeTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
 });
+

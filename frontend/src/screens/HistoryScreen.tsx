@@ -32,6 +32,18 @@ export default function HistoryScreen({ route, navigation }: any) {
   const [reviewComment, setReviewComment] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
+  const [riderStatus, setRiderStatus] = useState<string>(userInfo?.riderStatus || 'ONLINE');
+
+  const handleToggleRiderStatus = async () => {
+    const newStatus = riderStatus === 'ONLINE' ? 'OFFLINE' : 'ONLINE';
+    try {
+      await apiClient.patch('/users/rider-status', { riderStatus: newStatus });
+      setRiderStatus(newStatus);
+      Alert.alert('Status Updated', `Your status is now ${newStatus === 'ONLINE' ? '🟢 ONLINE' : '🔴 OFFLINE'}.`);
+    } catch (e: any) {
+      Alert.alert('Error', e?.response?.data?.error || 'Failed to update status.');
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -717,6 +729,54 @@ export default function HistoryScreen({ route, navigation }: any) {
     );
   }
 
+  const renderRiderHeader = () => {
+    if (userInfo?.role !== 'RIDER') return null;
+    const activeCount = parcels.filter((p: any) => p.riderId === userInfo.id && p.status === 'SHIPPED').length;
+    const completedCount = parcels.filter((p: any) => p.riderId === userInfo.id && p.status === 'DELIVERED').length;
+    const isOnline = riderStatus === 'ONLINE';
+
+    return (
+      <View style={[styles.riderHeaderCard, { backgroundColor: theme.card || '#FFFFFF', borderColor: theme.border }]}>
+        <View style={styles.riderHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.riderHeaderTitle, { color: theme.text }]}>🏍️ Rider Dashboard</Text>
+            <Text style={styles.riderHeaderSub}>
+              {userInfo.vehicleType || 'Motorcycle'} {userInfo.licensePlate ? `· ${userInfo.licensePlate}` : ''}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.riderStatusBtn, { backgroundColor: isOnline ? '#34C75915' : '#FF3B3015', borderColor: isOnline ? '#34C759' : '#FF3B30' }]}
+            onPress={handleToggleRiderStatus}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.riderStatusBtnText, { color: isOnline ? '#34C759' : '#FF3B30' }]}>
+              {isOnline ? '🟢 ONLINE' : '🔴 OFFLINE'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.riderMetricsRow}>
+          <View style={styles.riderMetricCol}>
+            <Text style={[styles.riderMetricValue, { color: theme.primary }]}>{activeCount}</Text>
+            <Text style={styles.riderMetricLabel}>Active Rides</Text>
+          </View>
+          <View style={[styles.riderMetricDivider, { backgroundColor: theme.border || '#E5E5EA' }]} />
+          <View style={styles.riderMetricCol}>
+            <Text style={[styles.riderMetricValue, { color: '#34C759' }]}>{completedCount}</Text>
+            <Text style={styles.riderMetricLabel}>Completed</Text>
+          </View>
+          <View style={[styles.riderMetricDivider, { backgroundColor: theme.border || '#E5E5EA' }]} />
+          <View style={styles.riderMetricCol}>
+            <Text style={[styles.riderMetricValue, { color: isOnline ? '#34C759' : '#FF9500' }]}>
+              {isOnline ? '📡 ACTIVE' : '💤 PAUSED'}
+            </Text>
+            <Text style={styles.riderMetricLabel}>GPS Beacon</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
 
@@ -745,6 +805,7 @@ export default function HistoryScreen({ route, navigation }: any) {
           renderItem={type === 'orders' ? (userInfo?.role === 'VENDOR' ? renderVendorSaleItem : userInfo?.role === 'RIDER' ? renderRiderDeliveryItem : renderOrderItem) : renderBookingItem}
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={renderRiderHeader}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>You have no history records yet.</Text>
@@ -761,6 +822,7 @@ export default function HistoryScreen({ route, navigation }: any) {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContainer}
             showsVerticalScrollIndicator={false}
+            ListHeaderComponent={renderRiderHeader}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
                 <Text style={{ fontSize: 48, marginBottom: 12 }}>📦</Text>
@@ -1503,5 +1565,69 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#3A3A3C',
     marginBottom: 3,
+  },
+
+  // ── Rider Dashboard Header Styles ───────────────────────────────────
+  riderHeaderCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  riderHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  riderHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  riderHeaderSub: {
+    fontSize: 12,
+    color: '#8E8E93',
+    marginTop: 2,
+  },
+  riderStatusBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1.5,
+  },
+  riderStatusBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  riderMetricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F2F2F7',
+  },
+  riderMetricCol: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  riderMetricValue: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  riderMetricLabel: {
+    fontSize: 11,
+    color: '#8E8E93',
+    marginTop: 2,
+    fontWeight: '600',
+  },
+  riderMetricDivider: {
+    width: 1,
+    height: 24,
   },
 });
