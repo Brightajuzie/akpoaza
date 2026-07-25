@@ -598,15 +598,17 @@ export default function HomeScreen({ navigation }: any) {
                 <TouchableOpacity
                   style={[styles.storeBadgeBtn, styles.apkDownloadBtn]}
                   onPress={() => {
+                    const apkUrl = 'https://expo.dev/artifacts/eas/JKOsVz9wIz0Y15_d4EaJHYXgmEJMW5Z1zLBHGSo68FA.apk';
                     if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
                       const link = document.createElement('a');
-                      link.href = '/assets/fixmart-app.apk';
+                      link.href = apkUrl;
+                      link.target = '_blank';
                       link.download = 'fixmart-app.apk';
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
                     } else {
-                      Linking.openURL('/assets/fixmart-app.apk');
+                      Linking.openURL(apkUrl);
                     }
                   }}
                   activeOpacity={0.85}
@@ -623,9 +625,12 @@ export default function HomeScreen({ navigation }: any) {
                 <TouchableOpacity
                   style={styles.storeBadgeBtn}
                   onPress={() => {
-                    Linking.openURL('https://play.google.com/store').catch(() => {
-                      Alert.alert('FixMart Android App', 'Opening Google Play Store...');
-                    });
+                    const apkUrl = 'https://expo.dev/artifacts/eas/JKOsVz9wIz0Y15_d4EaJHYXgmEJMW5Z1zLBHGSo68FA.apk';
+                    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                      window.open(apkUrl, '_blank');
+                    } else {
+                      Linking.openURL(apkUrl);
+                    }
                   }}
                   activeOpacity={0.85}
                   accessibilityLabel="Download on Google Play"
@@ -641,9 +646,15 @@ export default function HomeScreen({ navigation }: any) {
                 <TouchableOpacity
                   style={[styles.storeBadgeBtn, styles.appStoreBtn]}
                   onPress={() => {
-                    Linking.openURL('https://apps.apple.com').catch(() => {
-                      Alert.alert('FixMart iOS App', 'Opening Apple App Store...');
-                    });
+                    const apkUrl = 'https://expo.dev/artifacts/eas/JKOsVz9wIz0Y15_d4EaJHYXgmEJMW5Z1zLBHGSo68FA.apk';
+                    Alert.alert(
+                      '📱 FixMart Mobile App',
+                      'Direct Android APK download will start. iOS App Store package is available upon request.',
+                      [
+                        { text: 'Download APK', onPress: () => Linking.openURL(apkUrl) },
+                        { text: 'Cancel', style: 'cancel' }
+                      ]
+                    );
                   }}
                   activeOpacity={0.85}
                   accessibilityLabel="Download on App Store"
