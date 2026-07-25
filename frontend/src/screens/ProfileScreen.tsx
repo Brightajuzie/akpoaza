@@ -1,8 +1,13 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView, useWindowDimensions, Platform } from 'react-native';
+import * as LocalAuthentication from 'expo-local-authentication';
+import * as SecureStore from '../utils/storage';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
+
+const BIOMETRIC_TOKEN_KEY = 'biometric_auth_token';
+const BIOMETRIC_ENABLED_KEY = 'biometric_enabled';
 
 export default function ProfileScreen({ navigation }: any) {
   const { width } = useWindowDimensions();
@@ -14,11 +19,69 @@ export default function ProfileScreen({ navigation }: any) {
   const [isOnline, setIsOnline] = useState(false);
   const [trackingIntervalId, setTrackingIntervalId] = useState<any>(null);
 
-  // Analytics state for handyman
+  // Biometric state
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+
   // Analytics state for handyman
   const [analytics, setAnalytics] = useState<any>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [walletPreview, setWalletPreview] = useState<any>(null);
+
+  useEffect(() => {
+    checkBiometricSupport();
+  }, []);
+
+  const checkBiometricSupport = async () => {
+    if (Platform.OS === 'web') return;
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      const available = hasHardware && isEnrolled;
+      setBiometricAvailable(available);
+
+      if (available) {
+        const enabled = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
+        setBiometricEnabled(enabled === 'true');
+      }
+    } catch (e) {
+      console.log('Biometric support check error in profile', e);
+    }
+  };
+
+  const toggleBiometric = async () => {
+    if (!biometricAvailable) {
+      Alert.alert(
+        'Biometrics Unavailable',
+        'Biometric authentication (Face ID / Fingerprint) is not enrolled or supported on this device.'
+      );
+      return;
+    }
+
+    if (biometricEnabled) {
+      await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, 'false');
+      await SecureStore.deleteItemAsync(BIOMETRIC_TOKEN_KEY);
+      setBiometricEnabled(false);
+      Alert.alert('Disabled', 'Biometric login has been turned off.');
+    } else {
+      try {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Authenticate to enable Biometric Login',
+          cancelLabel: 'Cancel',
+          fallbackLabel: 'Use Password',
+        });
+
+        if (result.success && userToken) {
+          await SecureStore.setItemAsync(BIOMETRIC_TOKEN_KEY, userToken);
+          await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, 'true');
+          setBiometricEnabled(true);
+          Alert.alert('✅ Enabled', 'Biometric login (Face ID / Fingerprint) is now active!');
+        }
+      } catch (err) {
+        Alert.alert('Failed', 'Could not authenticate biometrics.');
+      }
+    }
+  };
 
   const fetchProfile = async () => {
     try {
@@ -450,6 +513,30 @@ export default function ProfileScreen({ navigation }: any) {
         ) : (
           <Text style={styles.subLabel}>Set your location address during sign-up to enable distance matchmaking.</Text>
         )}
+      </View>
+
+      {/* Security & Biometric Login Card */}
+      <View style={[styles.card, { borderColor: theme.border }]}>
+        <Text style={styles.cardTitle}>🔐 Security & Authentication</Text>
+        <View style={styles.trackingHeader}>
+          <View style={{ flex: 1, marginRight: 12 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }}>
+              {Platform.OS === 'ios' ? 'Face ID / Touch ID Login' : 'Fingerprint / Biometric Login'}
+            </Text>
+            <Text style={{ fontSize: 12, color: theme.lightText, marginTop: 2 }}>
+              {biometricAvailable
+                ? 'Sign in quickly without typing your password.'
+                : 'Not available or enrolled on this device.'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.switchContainer, biometricEnabled ? { backgroundColor: theme.primary } : styles.switchOff]}
+            onPress={toggleBiometric}
+            disabled={!biometricAvailable}
+          >
+            <View style={[styles.switchThumb, biometricEnabled ? styles.switchThumbOn : styles.switchThumbOff]} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Navigation Options List */}
