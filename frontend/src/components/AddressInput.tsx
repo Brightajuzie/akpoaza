@@ -18,7 +18,7 @@
  *   />
  */
 
-import React, { useState, useRef, useContext } from 'react';
+import React, { useState, useRef, useContext, useEffect } from 'react';
 import {
   View,
   Text,
@@ -58,7 +58,16 @@ export default function AddressInput({
   showGps = true,
   countryCode = 'ng',
 }: AddressInputProps) {
-  const { theme } = useContext(SettingsContext);
+  const settingsCtx = useContext(SettingsContext);
+  const theme = settingsCtx?.theme || {
+    primary: '#007AFF',
+    secondary: '#5856D6',
+    background: '#F8F9FA',
+    card: '#FFFFFF',
+    text: '#1C1C1E',
+    lightText: '#8E8E93',
+    border: '#E5E5EA',
+  };
 
   const [streetAddress, setStreetAddress] = useState(initialValue);
   const [junction, setJunction] = useState(initialJunction);
@@ -67,6 +76,19 @@ export default function AddressInput({
   const [gpsLoading, setGpsLoading] = useState(false);
 
   const googleRef = useRef<any>(null);
+
+  // Keep internal state in sync with incoming initialValue / initialJunction props
+  useEffect(() => {
+    if (initialValue !== undefined && initialValue !== streetAddress) {
+      setStreetAddress(initialValue);
+    }
+  }, [initialValue]);
+
+  useEffect(() => {
+    if (initialJunction !== undefined && initialJunction !== junction) {
+      setJunction(initialJunction);
+    }
+  }, [initialJunction]);
 
   /** Build the final assembled address string and emit it */
   const emitChange = (street: string, junc: string, latitude: number | null, longitude: number | null) => {
@@ -121,7 +143,7 @@ export default function AddressInput({
       setLng(loc.coords.longitude);
 
       // Update the Google autocomplete input display text
-      if (googleRef.current) {
+      if (googleRef.current && typeof googleRef.current.setAddressText === 'function') {
         googleRef.current.setAddressText(resolved);
       }
 
@@ -141,45 +163,62 @@ export default function AddressInput({
   return (
     <View style={styles.wrapper}>
       {/* ── Street / Google Places row ── */}
-      <Text style={[styles.label, { color: theme.text }]}>{label}</Text>
+      {!!label && <Text style={[styles.label, { color: theme.text }]}>{label}</Text>}
       <View style={[styles.autocompleteRow, { borderColor: theme.border }]}>
         <View style={styles.autocompleteContainer}>
-          <GooglePlacesAutocomplete
-            ref={googleRef}
-            placeholder="Search street, area or city…"
-            fetchDetails={true}
-            onPress={handlePlaceSelect}
-            query={{
-              key: GOOGLE_MAPS_API_KEY,
-              language: 'en',
-              components: `country:${countryCode}`,
-            }}
-            styles={{
-              textInput: [
+          {Platform.OS === 'web' || !GOOGLE_MAPS_API_KEY ? (
+            <TextInput
+              style={[
                 styles.googleInput,
-                { color: theme.text, backgroundColor: 'transparent' },
-              ],
-              listView: styles.suggestionsList,
-              row: styles.suggestionRow,
-              description: { fontSize: 13, color: '#1C1C1E' },
-              poweredContainer: { display: 'none' },
-            }}
-            enablePoweredByContainer={false}
-            debounce={400}
-            minLength={3}
-            textInputProps={{
-              placeholderTextColor: '#AEAEB2',
-              onChangeText: (text) => {
-                // If user clears or changes the field, reset coordinates
-                if (text !== streetAddress) {
-                  setStreetAddress(text);
-                  setLat(null);
-                  setLng(null);
-                  emitChange(text, junction, null, null);
-                }
-              },
-            }}
-          />
+                { color: theme.text, backgroundColor: 'transparent', height: 44, paddingHorizontal: 12, flex: 1, width: '100%' }
+              ]}
+              placeholder="Enter street, area or city…"
+              placeholderTextColor="#AEAEB2"
+              value={streetAddress}
+              onChangeText={(text) => {
+                setStreetAddress(text);
+                setLat(null);
+                setLng(null);
+                emitChange(text, junction, null, null);
+              }}
+            />
+          ) : (
+            <GooglePlacesAutocomplete
+              ref={googleRef}
+              placeholder="Search street, area or city…"
+              fetchDetails={true}
+              onPress={handlePlaceSelect}
+              query={{
+                key: GOOGLE_MAPS_API_KEY,
+                language: 'en',
+                components: `country:${countryCode}`,
+              }}
+              styles={{
+                textInput: [
+                  styles.googleInput,
+                  { color: theme.text, backgroundColor: 'transparent', flex: 1, width: '100%' },
+                ],
+                listView: styles.suggestionsList,
+                row: styles.suggestionRow,
+                description: { fontSize: 13, color: '#1C1C1E' },
+                poweredContainer: { display: 'none' },
+              }}
+              enablePoweredByContainer={false}
+              debounce={400}
+              minLength={3}
+              textInputProps={{
+                placeholderTextColor: '#AEAEB2',
+                onChangeText: (text: string) => {
+                  if (text !== streetAddress) {
+                    setStreetAddress(text);
+                    setLat(null);
+                    setLng(null);
+                    emitChange(text, junction, null, null);
+                  }
+                },
+              }}
+            />
+          )}
         </View>
         {showGps && (
           <TouchableOpacity
@@ -245,7 +284,7 @@ const styles = StyleSheet.create({
   // ── Autocomplete row ──────────────────────────────────────────────────────
   autocompleteRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     borderWidth: 1.5,
     borderRadius: 12,
     backgroundColor: '#FFF',
@@ -256,8 +295,11 @@ const styles = StyleSheet.create({
   autocompleteContainer: {
     flex: 1,
     minHeight: 46,
+    justifyContent: 'center',
   },
   googleInput: {
+    flex: 1,
+    width: '100%',
     height: 46,
     fontSize: 14,
     paddingHorizontal: 12,

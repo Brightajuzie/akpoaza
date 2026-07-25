@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform
+  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, useWindowDimensions
 } from 'react-native';
 import * as Location from 'expo-location';
 import AddressInput from '../components/AddressInput';
@@ -16,8 +16,19 @@ const VEHICLE_ICONS: Record<string, string> = {
 };
 
 export default function BookParcelScreen({ route, navigation }: any) {
-  const { theme } = useContext(SettingsContext);
+  const settingsCtx = useContext(SettingsContext);
+  const theme = settingsCtx?.theme || {
+    primary: '#007AFF',
+    secondary: '#5856D6',
+    background: '#F8F9FA',
+    card: '#FFFFFF',
+    text: '#1C1C1E',
+    lightText: '#8E8E93',
+    border: '#E5E5EA',
+  };
   const { userToken } = useContext(AuthContext);
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width >= 768;
 
   // Form state
   const [pickupAddress, setPickupAddress] = useState('');
@@ -254,7 +265,21 @@ export default function BookParcelScreen({ route, navigation }: any) {
       style={{ flex: 1, backgroundColor: theme.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.container, isLargeScreen && styles.desktopContainer]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Back navigation button for web/desktop */}
+        {isLargeScreen && (
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={{ fontSize: 16, fontWeight: '700', color: theme.primary }}>← Back</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerIcon}>🚚</Text>
@@ -408,6 +433,21 @@ export default function BookParcelScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { padding: 20 },
+  desktopContainer: {
+    maxWidth: 720,
+    width: '100%',
+    alignSelf: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#F0F0FF',
+  },
   header: { alignItems: 'center', marginBottom: 24, paddingTop: 12 },
   headerIcon: { fontSize: 52, marginBottom: 8 },
   headerTitle: { fontSize: 24, fontWeight: '900', marginBottom: 4 },

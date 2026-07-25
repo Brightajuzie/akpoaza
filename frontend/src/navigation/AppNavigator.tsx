@@ -258,6 +258,11 @@ export default function AppNavigator() {
           options={{ title: '🚚 Book Delivery Rider', headerBackTitle: 'Home' }} 
         />
         <Stack.Screen 
+          name="BookRider" 
+          component={BookParcelScreen} 
+          options={{ title: '🚚 Book Delivery Rider', headerBackTitle: 'Home' }} 
+        />
+        <Stack.Screen 
           name="RiderEarnings" 
           component={RiderEarningsScreen} 
           options={{ title: '💰 My Earnings' }} 
