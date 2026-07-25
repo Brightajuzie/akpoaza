@@ -102,6 +102,14 @@ export default function BookParcelScreen({ route, navigation }: any) {
     }
   }, [route?.params]);
 
+  // Auto-proceed to booking & payment after guest logs in or registers
+  useEffect(() => {
+    if (userToken && route.params?.autoProceed && quote && pickupAddress.trim() && dropoffAddress.trim()) {
+      navigation.setParams({ autoProceed: undefined });
+      handleBook();
+    }
+  }, [userToken, route.params?.autoProceed, quote]);
+
   // Use current location for pickup
   const useCurrentLocation = async () => {
     setLocationLoading(true);
@@ -259,6 +267,7 @@ export default function BookParcelScreen({ route, navigation }: any) {
                   dropoffLng,
                   parcelDescription,
                   parcelSize,
+                  autoProceed: true,
                 },
               }),
           },
@@ -276,6 +285,7 @@ export default function BookParcelScreen({ route, navigation }: any) {
                   dropoffLng,
                   parcelDescription,
                   parcelSize,
+                  autoProceed: true,
                 },
               }),
           },

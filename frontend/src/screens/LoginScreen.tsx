@@ -139,7 +139,7 @@ export default function LoginScreen({ route, navigation }: any) {
       });
     } else if (redirectTo) {
       if (TAB_SCREENS.includes(redirectTo)) {
-        navigation.navigate('Main', { screen: redirectTo });
+        navigation.navigate('Main', { screen: redirectTo, params: redirectParams });
       } else {
         navigation.navigate(redirectTo, redirectParams || {});
       }

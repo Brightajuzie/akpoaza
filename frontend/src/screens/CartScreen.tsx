@@ -5,12 +5,20 @@ import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
 
-export default function CartScreen({ navigation }: any) {
+export default function CartScreen({ route, navigation }: any) {
   const { cart, cartTotal, removeFromCart, updateQuantity } = useContext(CartContext);
   const { userToken } = useContext(AuthContext);
   const { theme } = useContext(SettingsContext);
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+
+  // Auto-proceed to checkout after guest logs in or registers
+  React.useEffect(() => {
+    if (userToken && route?.params?.autoProceed && cart.length > 0 && !loading) {
+      navigation.setParams({ autoProceed: undefined });
+      handleCheckout();
+    }
+  }, [userToken, route?.params?.autoProceed, cart.length]);
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
@@ -79,7 +87,7 @@ export default function CartScreen({ navigation }: any) {
               style={[styles.modalPrimaryBtn, { backgroundColor: theme.primary }]}
               onPress={() => {
                 setShowAuthModal(false);
-                navigation.navigate('Login', { redirectTo: 'CartTab' });
+                navigation.navigate('Login', { redirectTo: 'CartTab', redirectParams: { autoProceed: true } });
               }}
             >
               <Text style={styles.modalPrimaryText}>Log In</Text>
@@ -88,7 +96,7 @@ export default function CartScreen({ navigation }: any) {
               style={[styles.modalSecondaryBtn, { borderColor: theme.primary }]}
               onPress={() => {
                 setShowAuthModal(false);
-                navigation.navigate('Signup', { redirectTo: 'CartTab' });
+                navigation.navigate('Signup', { redirectTo: 'CartTab', redirectParams: { autoProceed: true } });
               }}
             >
               <Text style={[styles.modalSecondaryText, { color: theme.primary }]}>Create Account</Text>

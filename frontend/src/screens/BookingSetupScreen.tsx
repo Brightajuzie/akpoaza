@@ -124,7 +124,16 @@ export default function BookingSetupScreen({ route, navigation }: any) {
     savedLongitude: longitude,
     savedDate: selectedDate,
     savedTimeSlot: selectedTimeSlot,
+    autoProceed: true,
   };
+
+  // Auto-proceed to booking & payment after guest logs in or registers
+  React.useEffect(() => {
+    if (userToken && route.params?.autoProceed && address.trim() && !loading) {
+      navigation.setParams({ autoProceed: undefined });
+      handleProceedToPayment();
+    }
+  }, [userToken, route.params?.autoProceed]);
 
   return (
     <ScrollView 
