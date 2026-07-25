@@ -549,4 +549,52 @@ router.get('/:id/location', auth_1.authenticateToken, (req, res, next) => __awai
         next(error);
     }
 }));
+// Rider: Earnings summary + trip history
+router.get('/rider/earnings', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d;
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const role = (_b = req.user) === null || _b === void 0 ? void 0 : _b.role;
+    if (role !== 'RIDER')
+        return res.status(403).json({ error: 'Rider access required.' });
+    try {
+        // Wallet balance
+        const wallet = yield prisma_1.default.wallet.findUnique({
+            where: { userId },
+            select: { balance: true, pendingBalance: true }
+        });
+        // Escrows earned from orders
+        const orderEscrows = yield prisma_1.default.escrow.findMany({
+            where: { providerId: userId, order: { isNot: null } },
+            select: { providerAmount: true, status: true, releasedAt: true, createdAt: true,
+                order: { select: { id: true, status: true, deliveryAddress: true, totalAmount: true, createdAt: true } }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        // Escrows earned from parcels
+        const parcelEscrows = yield prisma_1.default.escrow.findMany({
+            where: { providerId: userId, parcelDelivery: { isNot: null } },
+            select: { providerAmount: true, status: true, releasedAt: true, createdAt: true,
+                parcelDelivery: { select: { id: true, status: true, pickupAddress: true, dropoffAddress: true, totalAmount: true, createdAt: true } }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        const totalReleased = [...orderEscrows, ...parcelEscrows]
+            .filter(e => e.status === 'RELEASED')
+            .reduce((sum, e) => sum + e.providerAmount, 0);
+        const totalPending = [...orderEscrows, ...parcelEscrows]
+            .filter(e => e.status === 'HELD')
+            .reduce((sum, e) => sum + e.providerAmount, 0);
+        const completedTrips = [...orderEscrows, ...parcelEscrows].filter(e => e.status === 'RELEASED').length;
+        const activeTrips = [...orderEscrows, ...parcelEscrows].filter(e => e.status === 'HELD').length;
+        res.json({
+            wallet: { balance: (_c = wallet === null || wallet === void 0 ? void 0 : wallet.balance) !== null && _c !== void 0 ? _c : 0, pendingBalance: (_d = wallet === null || wallet === void 0 ? void 0 : wallet.pendingBalance) !== null && _d !== void 0 ? _d : 0 },
+            earnings: { totalReleased, totalPending, completedTrips, activeTrips },
+            orderTrips: orderEscrows,
+            parcelTrips: parcelEscrows,
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
 exports.default = router;

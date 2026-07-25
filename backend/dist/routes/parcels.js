@@ -106,10 +106,14 @@ function calculateDeliveryPrice(lat1, lon1, lat2, lon2) {
 router.post('/quote', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const { pickupLat, pickupLng, dropoffLat, dropoffLng } = req.body;
-    if (!pickupLat || !pickupLng || !dropoffLat || !dropoffLng) {
-        return res.status(400).json({ error: 'Pickup and dropoff coordinates are required' });
+    const pLat = parseFloat(pickupLat);
+    const pLng = parseFloat(pickupLng);
+    const dLat = parseFloat(dropoffLat);
+    const dLng = parseFloat(dropoffLng);
+    if (isNaN(pLat) || isNaN(pLng) || isNaN(dLat) || isNaN(dLng)) {
+        return res.status(400).json({ error: 'Valid pickup and dropoff coordinates are required' });
     }
-    const result = yield calculateDeliveryPrice(pickupLat, pickupLng, dropoffLat, dropoffLng);
+    const result = yield calculateDeliveryPrice(pLat, pLng, dLat, dLng);
     res.json({
         price: result.price,
         distanceKm: result.distanceKm,
@@ -126,21 +130,25 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
     if (!userId)
         return res.status(401).json({ error: 'Unauthorized' });
     const { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, parcelDescription, paymentProvider } = req.body;
-    if (!pickupAddress || !dropoffAddress || !pickupLat || !pickupLng || !dropoffLat || !dropoffLng) {
-        return res.status(400).json({ error: 'All address and coordinate fields are required' });
+    const pLat = parseFloat(pickupLat);
+    const pLng = parseFloat(pickupLng);
+    const dLat = parseFloat(dropoffLat);
+    const dLng = parseFloat(dropoffLng);
+    if (!pickupAddress || !dropoffAddress || isNaN(pLat) || isNaN(pLng) || isNaN(dLat) || isNaN(dLng)) {
+        return res.status(400).json({ error: 'All address and valid coordinate fields are required' });
     }
     try {
-        const result = yield calculateDeliveryPrice(pickupLat, pickupLng, dropoffLat, dropoffLng);
+        const result = yield calculateDeliveryPrice(pLat, pLng, dLat, dLng);
         const computedTotalAmount = result.price;
         const parcel = yield prisma_1.default.parcelDelivery.create({
             data: {
                 userId,
                 pickupAddress,
                 dropoffAddress,
-                pickupLat,
-                pickupLng,
-                dropoffLat,
-                dropoffLng,
+                pickupLat: pLat,
+                pickupLng: pLng,
+                dropoffLat: dLat,
+                dropoffLng: dLng,
                 parcelDescription,
                 totalAmount: computedTotalAmount,
                 paymentProvider: paymentProvider || 'NONE',

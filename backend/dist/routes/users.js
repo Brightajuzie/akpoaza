@@ -132,6 +132,36 @@ router.patch('/location', auth_1.authenticateToken, (req, res) => __awaiter(void
     }
 }));
 /**
+ * PATCH /users/rider-status
+ * Rider toggles online/offline/busy status.
+ */
+router.patch('/rider-status', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const role = (_b = req.user) === null || _b === void 0 ? void 0 : _b.role;
+    if (!userId)
+        return res.status(401).json({ error: 'Unauthorized' });
+    if (role !== 'RIDER' && role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Forbidden. Rider or Admin access required.' });
+    }
+    const { riderStatus } = req.body;
+    if (!riderStatus || !['ONLINE', 'OFFLINE', 'BUSY'].includes(riderStatus)) {
+        return res.status(400).json({ error: 'riderStatus must be ONLINE, OFFLINE, or BUSY' });
+    }
+    try {
+        const updatedUser = yield prisma_1.default.user.update({
+            where: { id: userId },
+            data: { riderStatus },
+            select: { id: true, name: true, role: true, riderStatus: true }
+        });
+        res.json({ success: true, user: updatedUser });
+    }
+    catch (error) {
+        console.error('PATCH /users/rider-status error:', error);
+        res.status(500).json({ error: 'Failed to update rider status' });
+    }
+}));
+/**
  * POST /users
  * ADMIN only.
  * Creates a new user with hashed password.

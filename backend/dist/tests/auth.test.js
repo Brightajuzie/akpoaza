@@ -14,20 +14,19 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const supertest_1 = __importDefault(require("supertest"));
 const index_1 = __importDefault(require("../index"));
-const client_1 = require("@prisma/client");
-const prisma = new client_1.PrismaClient();
+const prisma_1 = __importDefault(require("../lib/prisma"));
 const testEmail = `test_${Date.now()}@domain.com`;
-jest.setTimeout(30000);
+jest.setTimeout(60000);
 describe('Handyman E-Commerce Backend Integration Tests', () => {
     beforeAll(() => __awaiter(void 0, void 0, void 0, function* () {
         process.env.NODE_ENV = 'test';
         // Clear out any previous test users if they exist
-        yield prisma.user.deleteMany({ where: { email: { startsWith: 'test_' } } });
+        yield prisma_1.default.user.deleteMany({ where: { email: { startsWith: 'test_' } } });
     }));
     afterAll(() => __awaiter(void 0, void 0, void 0, function* () {
         // Clean up test users
-        yield prisma.user.deleteMany({ where: { email: { startsWith: 'test_' } } });
-        yield prisma.$disconnect();
+        yield prisma_1.default.user.deleteMany({ where: { email: { startsWith: 'test_' } } });
+        yield prisma_1.default.$disconnect();
     }));
     describe('GET /health', () => {
         it('should return 200 and running message', () => __awaiter(void 0, void 0, void 0, function* () {

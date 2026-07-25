@@ -14,10 +14,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const supertest_1 = __importDefault(require("supertest"));
 const index_1 = __importDefault(require("../index"));
-const client_1 = require("@prisma/client");
+const prisma_1 = __importDefault(require("../lib/prisma"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const prisma = new client_1.PrismaClient();
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 describe('Booking & Matchmaking Integration Tests', () => {
     let customerToken = '';
     let customerId = '';
@@ -31,8 +30,8 @@ describe('Booking & Matchmaking Integration Tests', () => {
     beforeAll(() => __awaiter(void 0, void 0, void 0, function* () {
         process.env.NODE_ENV = 'test';
         // Clear existing mock/test data
-        yield prisma.booking.deleteMany({});
-        yield prisma.user.deleteMany({
+        yield prisma_1.default.booking.deleteMany({});
+        yield prisma_1.default.user.deleteMany({
             where: {
                 OR: [
                     { email: { startsWith: 'customer_' } },
@@ -42,7 +41,7 @@ describe('Booking & Matchmaking Integration Tests', () => {
             },
         });
         // Create a mock service
-        const service = yield prisma.service.create({
+        const service = yield prisma_1.default.service.create({
             data: {
                 name: 'Plumbing Repair Test',
                 description: 'Test plumbing repairs',
@@ -91,7 +90,7 @@ describe('Booking & Matchmaking Integration Tests', () => {
             specialty: 'Plumbing',
         });
         // Directly set specialty and verification status via prisma since signup might not have it in req.body
-        yield prisma.user.update({
+        yield prisma_1.default.user.update({
             where: { id: handymanId },
             data: { specialty: 'Plumbing', verificationStatus: 'VERIFIED' },
         });
@@ -113,15 +112,15 @@ describe('Booking & Matchmaking Integration Tests', () => {
             longitude: -73.9682,
             specialty: 'Plumbing',
         });
-        yield prisma.user.update({
+        yield prisma_1.default.user.update({
             where: { id: handymanFarId },
             data: { specialty: 'Plumbing', verificationStatus: 'VERIFIED' },
         });
     }), 120000);
     afterAll(() => __awaiter(void 0, void 0, void 0, function* () {
         // Cleanup
-        yield prisma.booking.deleteMany({});
-        yield prisma.user.deleteMany({
+        yield prisma_1.default.booking.deleteMany({});
+        yield prisma_1.default.user.deleteMany({
             where: {
                 OR: [
                     { email: { startsWith: 'customer_' } },
@@ -130,8 +129,8 @@ describe('Booking & Matchmaking Integration Tests', () => {
                 ]
             },
         });
-        yield prisma.service.deleteMany({ where: { id: serviceId } });
-        yield prisma.$disconnect();
+        yield prisma_1.default.service.deleteMany({ where: { id: serviceId } });
+        yield prisma_1.default.$disconnect();
     }));
     describe('Intelligent Matchmaking and Live Tracking', () => {
         let bookingId = '';

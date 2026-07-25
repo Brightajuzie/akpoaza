@@ -84,6 +84,17 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
                 totalAmount = updatedBooking.isSplitPayment ? updatedBooking.totalPrice / 2 : updatedBooking.totalPrice;
             }
         }
+        else if (checkoutType === 'parcel') {
+            const parcel = yield prisma_1.default.parcelDelivery.findUnique({
+                where: { id },
+                include: { user: true },
+            });
+            if (!parcel)
+                return res.status(404).json({ error: 'Parcel delivery not found' });
+            userEmail = parcel.user.email;
+            userName = parcel.user.name;
+            totalAmount = parcel.totalAmount;
+        }
         else {
             return res.status(400).json({ error: 'Invalid checkoutType' });
         }
@@ -282,6 +293,13 @@ router.get('/paystack/verify/:reference', (req, res, next) => __awaiter(void 0, 
                 }
                 return res.json({ status: 'success', message: 'Booking payment verified.', booking });
             }
+            else if (checkoutType === 'parcel') {
+                const parcel = yield prisma_1.default.parcelDelivery.update({
+                    where: { id },
+                    data: { status: 'PAID', paymentProvider: 'PAYSTACK', paymentRef: reference },
+                });
+                return res.json({ status: 'success', message: 'Parcel delivery payment verified.', parcel });
+            }
             return res.status(400).json({ error: 'Invalid checkout type in payment metadata' });
         }
         else {
@@ -341,6 +359,13 @@ router.get('/flutterwave/verify/:transactionId', (req, res, next) => __awaiter(v
                     yield prisma_1.default.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
                 }
                 return res.json({ status: 'success', message: 'Booking payment verified.', booking });
+            }
+            else if (checkoutType === 'parcel') {
+                const parcel = yield prisma_1.default.parcelDelivery.update({
+                    where: { id },
+                    data: { status: 'PAID', paymentProvider: 'FLUTTERWAVE', paymentRef: String(transactionId) },
+                });
+                return res.json({ status: 'success', message: 'Parcel delivery payment verified.', parcel });
             }
             return res.status(400).json({ error: 'Invalid checkout type in payment metadata' });
         }
@@ -418,6 +443,13 @@ router.post('/webhook', (req, res, next) => __awaiter(void 0, void 0, void 0, fu
                         yield prisma_1.default.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
                     }
                     console.log(`Booking ${id} marked as ACCEPTED.`);
+                }
+                else if (checkoutType === 'parcel') {
+                    yield prisma_1.default.parcelDelivery.update({
+                        where: { id },
+                        data: { status: 'PAID', paymentProvider: 'STRIPE', paymentRef: paymentIntent.id },
+                    });
+                    console.log(`Parcel ${id} marked as PAID.`);
                 }
             }
             catch (err) {
