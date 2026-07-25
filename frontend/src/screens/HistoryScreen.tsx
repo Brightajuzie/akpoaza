@@ -6,9 +6,12 @@ import { SettingsContext } from '../context/SettingsContext';
 import MapComponent from '../components/MapComponent';
 
 export default function HistoryScreen({ route, navigation }: any) {
-  const { type, role } = route.params || { type: 'orders', role: 'CUSTOMER' };
   const { userInfo, userToken } = useContext(AuthContext);
   const { theme } = useContext(SettingsContext);
+
+  const type = route.params?.type || 'orders';
+  const currentRole = route.params?.role || userInfo?.role || 'CUSTOMER';
+
   const [activeTab, setActiveTab] = useState<'main' | 'parcels'>(route.params?.tab === 'parcels' ? 'parcels' : 'main');
   const [data, setData] = useState<any[]>([]);
   const [parcels, setParcels] = useState<any[]>([]);
@@ -49,7 +52,7 @@ export default function HistoryScreen({ route, navigation }: any) {
     setLoading(true);
     try {
       const endpoint = type === 'orders' 
-        ? (role === 'VENDOR' ? '/orders/vendor' : role === 'RIDER' ? '/orders/rider/available' : '/orders') 
+        ? (currentRole === 'VENDOR' ? '/orders/vendor' : currentRole === 'RIDER' ? '/orders/rider/available' : '/orders') 
         : '/bookings';
       const response = await apiClient.get(endpoint);
       setData(response.data);
@@ -67,7 +70,7 @@ export default function HistoryScreen({ route, navigation }: any) {
     } else {
       setLoading(false);
     }
-  }, [type, userToken]);
+  }, [type, userToken, currentRole, userInfo?.role]);
 
   const fetchParcels = async () => {
     setParcelsLoading(true);

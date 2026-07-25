@@ -201,6 +201,11 @@ export default function HomeScreen({ navigation }: any) {
             <TouchableOpacity onPress={() => navigation.navigate('NotificationsTab')} style={styles.navLink}>
               <Text style={styles.navLinkLabel}>Alerts 🔔</Text>
             </TouchableOpacity>
+            {userInfo?.role === 'RIDER' && (
+              <TouchableOpacity onPress={() => navigation.navigate('History', { type: 'orders', role: 'RIDER' })} style={styles.navLink}>
+                <Text style={[styles.navLinkLabel, { color: '#34C759', fontWeight: '800' }]}>🚚 Rider Hub</Text>
+              </TouchableOpacity>
+            )}
             {/* User Avatar */}
             <TouchableOpacity 
               style={[styles.profileIndicator, { borderColor: theme.primary, marginLeft: 16 }]}
@@ -286,6 +291,14 @@ export default function HomeScreen({ navigation }: any) {
           >
             <Text style={styles.mobileMenuText}>👤 Profile</Text>
           </TouchableOpacity>
+          {userInfo?.role === 'RIDER' && (
+            <TouchableOpacity 
+              style={[styles.mobileMenuItem, { backgroundColor: '#34C75915' }]} 
+              onPress={() => { setMenuOpen(false); navigation.navigate('History', { type: 'orders', role: 'RIDER' }); }}
+            >
+              <Text style={[styles.mobileMenuText, { color: '#34C759', fontWeight: '800' }]}>🚚 Rider Dashboard</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </View>
@@ -311,6 +324,35 @@ export default function HomeScreen({ navigation }: any) {
       >
         <ResponsiveContainer>
           {Platform.OS !== 'web' && renderHeader()}
+
+          {/* 🚚 Dedicated Rider Control Banner (When Logged in as RIDER) */}
+          {userInfo?.role === 'RIDER' && (
+            <View style={styles.riderHeroBanner}>
+              <View style={styles.riderHeroHeader}>
+                <Text style={styles.riderHeroIcon}>🛵</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.riderHeroTitle}>Rider Control Center</Text>
+                  <Text style={styles.riderHeroSub}>Deliver parcels & order dispatches in real-time</Text>
+                </View>
+              </View>
+              <View style={styles.riderHeroBtnRow}>
+                <TouchableOpacity
+                  style={[styles.riderHeroBtn, { backgroundColor: '#34C759' }]}
+                  onPress={() => navigation.navigate('History', { type: 'orders', role: 'RIDER' })}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.riderHeroBtnText}>📋 Available Jobs</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.riderHeroBtn, { backgroundColor: theme.primary }]}
+                  onPress={() => navigation.navigate('RiderEarnings')}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.riderHeroBtnText}>💰 Earnings & Wallet</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
 
       {/* 🔍 Unified Smart Search Bar */}
       <View style={[styles.searchContainer, { borderColor: searchQuery ? theme.primary : '#E5E5EA' }]}>
@@ -1262,10 +1304,55 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   storeTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     color: '#FFFFFF',
-    letterSpacing: -0.2,
+  },
+
+  // ── Rider Hero Banner Styles ─────────────────────────────────────────────
+  riderHeroBanner: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  riderHeroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+    gap: 12,
+  },
+  riderHeroIcon: {
+    fontSize: 36,
+  },
+  riderHeroTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  riderHeroSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  riderHeroBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  riderHeroBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  riderHeroBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 13,
   },
 });
-
