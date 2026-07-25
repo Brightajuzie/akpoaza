@@ -187,8 +187,54 @@ export default function BookParcelScreen({ route, navigation }: any) {
     }
   };
 
-  // Book the parcel delivery
+  // Execute parcel delivery creation and navigate to payment
+  // NOTE: This is only called after quote is verified to be non-null in handleBook
+  const processBooking = async (paymentChoice: 'ONLINE' | 'WALLET' | 'CASH', confirmedQuote: NonNullable<typeof quote>) => {
+    setSubmitting(true);
+    try {
+      const description = parcelSize ? `${parcelSize}${parcelDescription ? ' – ' + parcelDescription : ''}` : parcelDescription;
+      // WALLET maps to NONE until wallet payment integration is complete
+      const provider = 'NONE';
+      const res = await apiClient.post('/parcels/checkout', {
+        pickupAddress, dropoffAddress,
+        pickupLat, pickupLng, dropoffLat, dropoffLng,
+        parcelDescription: description || undefined,
+        paymentProvider: provider,
+      });
+
+      const parcelId = res.data?.parcel?.id;
+
+      if (paymentChoice === 'ONLINE' && parcelId) {
+        // Navigate to Checkout screen for card/bank payment via Stripe / Paystack / Flutterwave / OPay
+        navigation.navigate('Checkout', {
+          checkoutType: 'parcel',
+          id: parcelId,
+          amount: confirmedQuote.price,
+        });
+      } else {
+        Alert.alert(
+          '✅ Delivery Booked!',
+          `Your parcel delivery has been created.\n\n📍 From: ${pickupAddress}\n📍 To: ${dropoffAddress}\n💰 Total: ₦${confirmedQuote.price.toLocaleString()}\n\nA verified rider will be assigned shortly.`,
+          [{ text: 'View My Deliveries', onPress: () => navigation.navigate('History', { tab: 'parcels' }) }]
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('Booking Failed', e?.response?.data?.error || 'Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Book the parcel delivery - enforce Address, Login, and Payment
   const handleBook = async () => {
+    if (!pickupAddress.trim() || !dropoffAddress.trim()) {
+      Alert.alert(
+        'Address Required',
+        'Please enter both your pickup and drop-off addresses to continue with booking.'
+      );
+      return;
+    }
+
     if (!quote || !pickupLat || !pickupLng || !dropoffLat || !dropoffLng) {
       Alert.alert('Get a Quote First', 'Please calculate a price quote before booking.');
       return;
@@ -196,8 +242,8 @@ export default function BookParcelScreen({ route, navigation }: any) {
 
     if (!userToken) {
       Alert.alert(
-        'Login Required',
-        'Please log in or sign up to confirm your booking.',
+        '🔐 Login Required to Book',
+        'Please log in or sign up to confirm your delivery booking and complete payment.',
         [
           {
             text: 'Log In',
@@ -239,25 +285,29 @@ export default function BookParcelScreen({ route, navigation }: any) {
       return;
     }
 
-    setSubmitting(true);
-    try {
-      const description = parcelSize ? `${parcelSize}${parcelDescription ? ' – ' + parcelDescription : ''}` : parcelDescription;
-      const res = await apiClient.post('/parcels/checkout', {
-        pickupAddress, dropoffAddress,
-        pickupLat, pickupLng, dropoffLat, dropoffLng,
-        parcelDescription: description || undefined,
-        paymentProvider: 'NONE',
-      });
-      Alert.alert(
-        '✅ Delivery Booked!',
-        `Your parcel delivery has been created.\n\n📍 From: ${pickupAddress}\n📍 To: ${dropoffAddress}\n💰 Total: ₦${quote.price.toLocaleString()}\n\nA verified rider will be assigned shortly.`,
-        [{ text: 'View My Deliveries', onPress: () => navigation.navigate('History', { tab: 'parcels' }) }]
-      );
-    } catch (e: any) {
-      Alert.alert('Booking Failed', e?.response?.data?.error || 'Something went wrong. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
+    // At this point quote is guaranteed non-null (checked above)
+    const confirmedQuote = quote;
+
+    // Prompt payment method selection
+    Alert.alert(
+      '💳 Confirm & Select Payment',
+      `Total Delivery Fee: ₦${confirmedQuote.price.toLocaleString()}\n\n📍 From: ${pickupAddress}\n📍 To: ${dropoffAddress}\n\nChoose your preferred payment method:`,
+      [
+        {
+          text: '💳 Pay Online (Card / Bank)',
+          onPress: () => processBooking('ONLINE', confirmedQuote),
+        },
+        {
+          text: '👛 Pay with Wallet',
+          onPress: () => processBooking('WALLET', confirmedQuote),
+        },
+        {
+          text: '💵 Pay on Delivery',
+          onPress: () => processBooking('CASH', confirmedQuote),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
   };
 
   return (

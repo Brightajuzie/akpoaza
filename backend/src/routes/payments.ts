@@ -79,6 +79,16 @@ router.post('/checkout', async (req, res, next) => {
       } else {
         totalAmount = updatedBooking.isSplitPayment ? updatedBooking.totalPrice / 2 : updatedBooking.totalPrice;
       }
+    } else if (checkoutType === 'parcel') {
+      const parcel = await prisma.parcelDelivery.findUnique({
+        where: { id },
+        include: { user: true },
+      });
+      if (!parcel) return res.status(404).json({ error: 'Parcel delivery not found' });
+
+      userEmail = parcel.user.email;
+      userName = parcel.user.name;
+      totalAmount = parcel.totalAmount;
     } else {
       return res.status(400).json({ error: 'Invalid checkoutType' });
     }
@@ -310,6 +320,12 @@ router.get('/paystack/verify/:reference', async (req, res, next) => {
         }
 
         return res.json({ status: 'success', message: 'Booking payment verified.', booking });
+      } else if (checkoutType === 'parcel') {
+        const parcel = await prisma.parcelDelivery.update({
+          where: { id },
+          data: { status: 'PAID', paymentProvider: 'PAYSTACK', paymentRef: reference },
+        });
+        return res.json({ status: 'success', message: 'Parcel delivery payment verified.', parcel });
       }
 
       return res.status(400).json({ error: 'Invalid checkout type in payment metadata' });
@@ -377,6 +393,12 @@ router.get('/flutterwave/verify/:transactionId', async (req, res, next) => {
         }
 
         return res.json({ status: 'success', message: 'Booking payment verified.', booking });
+      } else if (checkoutType === 'parcel') {
+        const parcel = await prisma.parcelDelivery.update({
+          where: { id },
+          data: { status: 'PAID', paymentProvider: 'FLUTTERWAVE', paymentRef: String(transactionId) },
+        });
+        return res.json({ status: 'success', message: 'Parcel delivery payment verified.', parcel });
       }
 
       return res.status(400).json({ error: 'Invalid checkout type in payment metadata' });
@@ -460,6 +482,12 @@ router.post('/webhook', async (req, res, next) => {
             await prisma.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
           }
           console.log(`Booking ${id} marked as ACCEPTED.`);
+        } else if (checkoutType === 'parcel') {
+          await prisma.parcelDelivery.update({
+            where: { id },
+            data: { status: 'PAID', paymentProvider: 'STRIPE', paymentRef: paymentIntent.id },
+          });
+          console.log(`Parcel ${id} marked as PAID.`);
         }
       } catch (err) {
         next(err);

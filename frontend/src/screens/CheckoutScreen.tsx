@@ -179,7 +179,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
         <Text style={styles.headerIcon}>🛒</Text>
         <Text style={[styles.title, { color: theme.text }]}>Secure Checkout</Text>
         <Text style={[styles.subtitle, { color: theme.lightText }]}>
-          {checkoutType === 'booking' ? 'Booking Payment' : 'Order Payment'}
+          {checkoutType === 'booking' ? 'Booking Payment' : checkoutType === 'parcel' ? 'Parcel Delivery Payment' : 'Order Payment'}
         </Text>
       </View>
 
