@@ -1,9 +1,11 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView, useWindowDimensions, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView, useWindowDimensions, Platform, Modal, FlatList } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from '../utils/storage';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
+import { SUPPORTED_COUNTRIES } from '../utils/currency';
 import apiClient from '../api/client';
 
 const BIOMETRIC_TOKEN_KEY = 'biometric_auth_token';
@@ -14,10 +16,13 @@ export default function ProfileScreen({ navigation }: any) {
   const isLargeScreen = width >= 768;
   const { logout, userToken, userInfo, refreshUser } = useContext(AuthContext);
   const { theme } = useContext(SettingsContext);
+  const { activeCountry, setCountry, countries } = useCurrency();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(false);
   const [trackingIntervalId, setTrackingIntervalId] = useState<any>(null);
+  const [showCountryModal, setShowCountryModal] = useState(false);
+  const [savingCountry, setSavingCountry] = useState(false);
 
   // Biometric state
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -514,6 +519,100 @@ export default function ProfileScreen({ navigation }: any) {
           <Text style={styles.subLabel}>Set your location address during sign-up to enable distance matchmaking.</Text>
         )}
       </View>
+
+      {/* Country & Currency Preference Card */}
+      <View style={[styles.card, { borderColor: theme.border }]}>
+        <Text style={styles.cardTitle}>🌍 Country & Currency</Text>
+        <Text style={[styles.subLabel, { marginBottom: 12 }]}>
+          All prices and payments will be shown and charged in your selected country's currency.
+        </Text>
+        <TouchableOpacity
+          style={[
+            styles.countrySelector,
+            { borderColor: theme.border, backgroundColor: theme.background },
+          ]}
+          onPress={() => setShowCountryModal(true)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.countryFlag}>{activeCountry.flag}</Text>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={[styles.countryName, { color: theme.text }]}>{activeCountry.country}</Text>
+            <Text style={[styles.currencyTag, { color: theme.primary }]}>
+              {activeCountry.currency} · {activeCountry.symbol}
+            </Text>
+          </View>
+          <Text style={{ color: theme.lightText, fontSize: 18 }}>›</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Country Picker Modal */}
+      <Modal
+        visible={showCountryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCountryModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: theme.card || '#FFF' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Select Your Country</Text>
+              <TouchableOpacity onPress={() => setShowCountryModal(false)}>
+                <Text style={{ color: theme.primary, fontSize: 16, fontWeight: '700' }}>Done</Text>
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={countries}
+              keyExtractor={(item) => item.currency}
+              renderItem={({ item }) => {
+                const isActive = item.currency === activeCountry.currency;
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.countryRow,
+                      { borderBottomColor: theme.border },
+                      isActive && { backgroundColor: theme.primary + '12' },
+                    ]}
+                    onPress={async () => {
+                      setShowCountryModal(false);
+                      setSavingCountry(true);
+                      await setCountry(item.country);
+                      try {
+                        await apiClient.patch('/auth/profile', {
+                          country: item.country,
+                          currency: item.currency,
+                        });
+                        await refreshUser();
+                      } catch (e) {
+                        console.warn('Could not save country to profile', e);
+                      } finally {
+                        setSavingCountry(false);
+                      }
+                    }}
+                  >
+                    <Text style={styles.countryRowFlag}>{item.flag}</Text>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={[styles.countryRowName, { color: theme.text }]}>{item.country}</Text>
+                      <Text style={[styles.countryRowCurrency, { color: theme.lightText }]}>
+                        {item.currency} · {item.symbol}
+                      </Text>
+                    </View>
+                    {isActive && (
+                      <Text style={{ color: theme.primary, fontSize: 20, fontWeight: '800' }}>✓</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {savingCountry && (
+        <View style={styles.savingOverlay}>
+          <ActivityIndicator color="#FFF" size="small" />
+          <Text style={{ color: '#FFF', marginLeft: 8, fontWeight: '600' }}>Saving preference…</Text>
+        </View>
+      )}
 
       {/* Security & Biometric Login Card */}
       <View style={[styles.card, { borderColor: theme.border }]}>
@@ -1025,5 +1124,79 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
     maxWidth: 600,
+  },
+  // Country & Currency selector styles
+  countrySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 14,
+  },
+  countryFlag: {
+    fontSize: 28,
+  },
+  countryName: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  currencyTag: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '75%',
+    paddingBottom: 32,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  countryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  countryRowFlag: {
+    fontSize: 26,
+  },
+  countryRowName: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  countryRowCurrency: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  // Saving overlay
+  savingOverlay: {
+    position: 'absolute',
+    bottom: 80,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
 });

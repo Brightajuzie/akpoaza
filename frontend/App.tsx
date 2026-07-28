@@ -1,18 +1,38 @@
 import 'react-native-gesture-handler';
-import React, { useCallback, useEffect } from 'react';
-import { ActivityIndicator, View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
+import React, { useCallback, useContext, useEffect } from 'react';
+import { ActivityIndicator, View, StyleSheet, Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StripeProvider } from '@stripe/stripe-react-native';
 import AppNavigator from './src/navigation/AppNavigator';
-import { AuthProvider } from './src/context/AuthContext';
+import { AuthProvider, AuthContext } from './src/context/AuthContext';
 import { CartProvider } from './src/context/CartContext';
 import { SettingsProvider } from './src/context/SettingsContext';
 import { NetworkProvider } from './src/context/NetworkContext';
+import { CurrencyProvider } from './src/context/CurrencyContext';
 import NetworkBanner from './src/components/NetworkBanner';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Font from 'expo-font';
 import ToastProvider from './src/components/ToastProvider';
+
+/** Inner component so we can read AuthContext for the user's saved country */
+function AppContent() {
+  const { userInfo } = useContext(AuthContext);
+  return (
+    <CurrencyProvider userCountry={userInfo?.country}>
+      <CartProvider>
+        <NetworkProvider>
+          <SafeAreaProvider>
+            <NetworkBanner />
+            <AppNavigator />
+            <ToastProvider />
+          </SafeAreaProvider>
+        </NetworkProvider>
+      </CartProvider>
+    </CurrencyProvider>
+  );
+}
+
 export default function App() {
   const stripeKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || "pk_test_dummy_key";
 
@@ -33,7 +53,6 @@ export default function App() {
   // Inject viewport meta tag and body styles for web
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      // Set viewport meta tag
       let meta = document.querySelector('meta[name="viewport"]');
       if (!meta) {
         meta = document.createElement('meta');
@@ -41,8 +60,6 @@ export default function App() {
         document.head.appendChild(meta);
       }
       meta.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes');
-
-      // Style body/html to center the app
       document.documentElement.style.height = '100%';
       document.documentElement.style.width = '100%';
       document.documentElement.style.overflow = 'hidden';
@@ -70,15 +87,7 @@ export default function App() {
         <StripeProvider publishableKey={stripeKey}>
           <AuthProvider>
             <SettingsProvider>
-              <CartProvider>
-                <NetworkProvider>
-                  <SafeAreaProvider>
-                    <NetworkBanner />
-                    <AppNavigator />
-        <ToastProvider />
-                  </SafeAreaProvider>
-                </NetworkProvider>
-              </CartProvider>
+              <AppContent />
             </SettingsProvider>
           </AuthProvider>
         </StripeProvider>

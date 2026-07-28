@@ -6,6 +6,7 @@ import {
 import { useStripe } from '@stripe/stripe-react-native';
 import apiClient from '../api/client';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
 import PaymentWebView from '../components/PaymentWebView';
 
 interface PaymentMethod {
@@ -68,6 +69,11 @@ export default function CheckoutScreen({ route, navigation }: any) {
 
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const { theme, settings } = useContext(SettingsContext);
+  const { fmt, toLocal, currency } = useCurrency();
+
+  // Compute the displayed/charged amount in the user's local currency
+  const displayAmount = isRemainingPayment ? amount : isSplit ? amount / 2 : amount;
+  const localAmount = toLocal(displayAmount);
 
   // ── Filter gateways based on admin settings ──────────────────────────────
   const availableMethods = useMemo(() => {
@@ -89,6 +95,8 @@ export default function CheckoutScreen({ route, navigation }: any) {
         id,
         provider: 'STRIPE',
         isSplit: isRemainingPayment ? true : isSplit,
+        currency,
+        localAmount,
       });
       const { clientSecret } = response.data;
 
@@ -131,6 +139,8 @@ export default function CheckoutScreen({ route, navigation }: any) {
         id,
         provider,
         isSplit: isRemainingPayment ? true : isSplit,
+        currency,
+        localAmount,
       });
 
       let redirectUrl: string | null = null;
@@ -218,7 +228,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
           {isRemainingPayment ? 'Remaining Amount Due (50%)' : 'Amount Due'}
         </Text>
         <Text style={[styles.amountValue, { color: theme.primary }]}>
-          ₦{(isRemainingPayment ? amount : isSplit ? amount / 2 : amount).toFixed(2)}
+          {fmt(displayAmount)}
         </Text>
         {isRemainingPayment && (
           <View style={[styles.badge, { backgroundColor: '#E8F5E9', marginBottom: 12 }]}>

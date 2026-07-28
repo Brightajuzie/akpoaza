@@ -24,7 +24,9 @@ router.post('/register', async (req, res) => {
     latitude, 
     longitude, 
     identityNumber, 
-    kycReferenceId 
+    kycReferenceId,
+    country,
+    currency,
   } = req.body;
 
   if (!email || !password || !name) {
@@ -78,6 +80,8 @@ router.post('/register', async (req, res) => {
         kycReferenceId: kycReferenceId || null,
         kycSubmittedAt: kycReferenceId ? new Date() : null,
         verificationStatus,
+        country: country || 'United States',
+        currency: currency || 'USD',
       },
     });
 
@@ -299,6 +303,8 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res) => {
         vehicleType: true,
         licensePlate: true,
         riderStatus: true,
+        country: true,
+        currency: true,
         createdAt: true,
       },
     });
@@ -344,6 +350,43 @@ router.patch('/location', authenticateToken, async (req: AuthRequest, res) => {
     res.json(updatedUser);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update location' });
+  }
+});
+
+// Update Current User Profile (name, phone, address, country, currency)
+router.patch('/profile', authenticateToken, async (req: AuthRequest, res) => {
+  const userId = req.user?.userId;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { name, phone, address, country, currency } = req.body;
+
+  try {
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: name || undefined,
+        phone: phone !== undefined ? phone : undefined,
+        address: address !== undefined ? address : undefined,
+        country: country || undefined,
+        currency: currency || undefined,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        phone: true,
+        address: true,
+        profileImage: true,
+        country: true,
+        currency: true,
+        verificationStatus: true,
+      },
+    });
+    res.json(updatedUser);
+  } catch (error) {
+    console.error('PATCH /auth/profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
   }
 });
 

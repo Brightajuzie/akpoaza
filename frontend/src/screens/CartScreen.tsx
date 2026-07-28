@@ -3,12 +3,14 @@ import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, 
 import { CartContext } from '../context/CartContext';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
 import apiClient from '../api/client';
 
 export default function CartScreen({ route, navigation }: any) {
   const { cart, cartTotal, removeFromCart, updateQuantity } = useContext(CartContext);
   const { userToken } = useContext(AuthContext);
   const { theme } = useContext(SettingsContext);
+  const { fmt } = useCurrency();
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
@@ -117,7 +119,7 @@ export default function CartScreen({ route, navigation }: any) {
             <View style={styles.itemInfo}>
               <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.type}>{item.type === 'product' ? 'Product' : 'Service'}</Text>
-              <Text style={[styles.price, { color: theme.primary }]}>${(item.price * item.quantity).toFixed(2)}</Text>
+              <Text style={[styles.price, { color: theme.primary }]}>{fmt(item.price * item.quantity)}</Text>
             </View>
             <View style={styles.actions}>
               <View style={[styles.quantityContainer, { backgroundColor: theme.background }]}>
@@ -139,7 +141,7 @@ export default function CartScreen({ route, navigation }: any) {
       <View style={[styles.footer, { borderTopColor: theme.border }]}>
         <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Total:</Text>
-          <Text style={[styles.totalPrice, { color: theme.primary }]}>${cartTotal.toFixed(2)}</Text>
+          <Text style={[styles.totalPrice, { color: theme.primary }]}>{fmt(cartTotal)}</Text>
         </View>
 
         <TouchableOpacity 

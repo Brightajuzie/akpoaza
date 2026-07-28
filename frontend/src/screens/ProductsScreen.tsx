@@ -13,6 +13,7 @@ import {
 import apiClient from '../api/client';
 import { CartContext } from '../context/CartContext';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
 import AddToCartModal from '../components/AddToCartModal';
 
 export default function ProductsScreen({ navigation }: any) {
@@ -24,6 +25,7 @@ export default function ProductsScreen({ navigation }: any) {
 
   const { cart, addToCart } = useContext(CartContext);
   const { theme } = useContext(SettingsContext);
+  const { fmt } = useCurrency();
   const { width } = useWindowDimensions();
   const numColumns = width > 1024 ? 4 : width > 600 ? 3 : 2;
 
@@ -174,7 +176,7 @@ export default function ProductsScreen({ navigation }: any) {
 
                   <View style={styles.footerRow}>
                     <Text style={[styles.price, { color: theme.primary }]}>
-                      ${item.price.toFixed(2)}
+                      {fmt(item.price)}
                     </Text>
                     <TouchableOpacity
                       style={[styles.addButton, { backgroundColor: theme.primary }]}

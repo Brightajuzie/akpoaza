@@ -11,10 +11,14 @@ import {
   ActivityIndicator,
   Animated,
   useWindowDimensions,
+  Modal,
+  FlatList,
 } from 'react-native';
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
+import { SUPPORTED_COUNTRIES } from '../utils/currency';
 import AddressInput from '../components/AddressInput';
 
 
@@ -52,6 +56,11 @@ export default function SignupScreen({ route, navigation }: any) {
   const [consent, setConsent] = useState(false);
   const [identityVerified, setIdentityVerified] = useState(false);
   const [identityName, setIdentityName] = useState('');
+
+  // Country & Currency
+  const { activeCountry, setCountry, countries } = useCurrency();
+  const [selectedCountry, setSelectedCountry] = useState(activeCountry);
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
 
   // Step 4: Biometric Liveness Simulation
   const [livenessStage, setLivenessStage] = useState<'idle' | 'scanning' | 'blink' | 'smile' | 'processing' | 'done'>('idle');
@@ -150,7 +159,10 @@ export default function SignupScreen({ route, navigation }: any) {
           email,
           password,
           role,
+          country: selectedCountry.country,
+          currency: selectedCountry.currency,
         });
+        await setCountry(selectedCountry.country);
         await login(response.data.token, response.data.user);
         
         if (redirectTo) {
@@ -207,6 +219,8 @@ export default function SignupScreen({ route, navigation }: any) {
         longitude: finalLng,
         vehicleType: role === 'RIDER' ? vehicleType : null,
         licensePlate: role === 'RIDER' ? licensePlate : null,
+        country: selectedCountry.country,
+        currency: selectedCountry.currency,
       });
 
       // Login the user to secure local auth header defaults
@@ -498,6 +512,70 @@ export default function SignupScreen({ route, navigation }: any) {
               secureTextEntry
               placeholderTextColor="#8E8E93"
             />
+
+            {/* Country of Residence Selector */}
+            <Text style={[styles.fieldLabel, { marginTop: 8, marginBottom: 6 }]}>Country of Residence</Text>
+            <TouchableOpacity
+              style={[
+                styles.countryPickerBtn,
+                { borderColor: theme.border },
+              ]}
+              onPress={() => setShowCountryPicker(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={{ fontSize: 22 }}>{selectedCountry.flag}</Text>
+              <Text style={[styles.countryPickerLabel, { color: theme.text }]}>{selectedCountry.country}</Text>
+              <Text style={[styles.countryPickerCurrency, { color: theme.primary }]}>
+                {selectedCountry.currency} {selectedCountry.symbol}
+              </Text>
+              <Text style={{ color: '#8E8E93', marginLeft: 'auto' }}>›</Text>
+            </TouchableOpacity>
+
+            {/* Country Picker Modal */}
+            <Modal
+              visible={showCountryPicker}
+              transparent
+              animationType="slide"
+              onRequestClose={() => setShowCountryPicker(false)}
+            >
+              <View style={styles.modalOverlay}>
+                <View style={[styles.modalSheet, { backgroundColor: theme.card || '#FFF' }]}>
+                  <View style={styles.modalHeaderRow}>
+                    <Text style={[styles.modalSheetTitle, { color: theme.text }]}>Select Country</Text>
+                    <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
+                      <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 15 }}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <FlatList
+                    data={countries}
+                    keyExtractor={(c) => c.currency}
+                    renderItem={({ item }) => {
+                      const isActive = item.currency === selectedCountry.currency;
+                      return (
+                        <TouchableOpacity
+                          style={[
+                            styles.countryModalRow,
+                            { borderBottomColor: theme.border },
+                            isActive && { backgroundColor: theme.primary + '12' },
+                          ]}
+                          onPress={() => {
+                            setSelectedCountry(item);
+                            setShowCountryPicker(false);
+                          }}
+                        >
+                          <Text style={{ fontSize: 22 }}>{item.flag}</Text>
+                          <View style={{ flex: 1, marginLeft: 12 }}>
+                            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }}>{item.country}</Text>
+                            <Text style={{ fontSize: 12, color: '#8E8E93' }}>{item.currency} · {item.symbol}</Text>
+                          </View>
+                          {isActive && <Text style={{ color: theme.primary, fontWeight: '800' }}>✓</Text>}
+                        </TouchableOpacity>
+                      );
+                    }}
+                  />
+                </View>
+              </View>
+            </Modal>
 
             <TouchableOpacity 
               style={[styles.button, { backgroundColor: role === 'CUSTOMER' ? theme.primary : OPAY_GREEN }]} 
@@ -1260,5 +1338,55 @@ const styles = StyleSheet.create({
   cancelLinkText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  // Country picker
+  countryPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+  },
+  countryPickerLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    flex: 1,
+  },
+  countryPickerCurrency: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '72%',
+    paddingBottom: 40,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  modalSheetTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  countryModalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
   },
 });
