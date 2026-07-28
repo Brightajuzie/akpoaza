@@ -170,11 +170,20 @@ export default function HomeScreen({ navigation }: any) {
       <View style={styles.navHeaderContainer}>
         {/* Logo / Brand Name */}
         <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} style={styles.logoContainer}>
-          {logoUrl ? (
-            <Image source={{ uri: logoUrl }} style={styles.logoImage} resizeMode="contain" />
-          ) : (
-            <Text style={[styles.logoText, { color: theme.primary }]}>🛠️ FixMart</Text>
-          )}
+          <Image
+            source={logoUrl ? { uri: logoUrl } : require('../../assets/icon.png')}
+            style={styles.headerLogoImage}
+            resizeMode="contain"
+          />
+          <View style={styles.headerTitleBlock}>
+            <Text style={styles.headerBrandTitle}>
+              <Text style={{ color: '#1B3D6E' }}>Fix</Text>
+              <Text style={{ color: theme.primary || '#22A45D' }}>Mart</Text>
+            </Text>
+            <Text style={styles.headerTagline} numberOfLines={1} ellipsizeMode="tail">
+              The smart way to shop, send items & fix everyday household problems
+            </Text>
+          </View>
         </TouchableOpacity>
 
         {width >= 768 ? (
@@ -1168,6 +1177,28 @@ const styles = StyleSheet.create({
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 1,
+  },
+  headerLogoImage: {
+    width: 36,
+    height: 36,
+    marginRight: 8,
+  },
+  headerTitleBlock: {
+    flexDirection: 'column',
+    justifyContent: 'center',
+    flexShrink: 1,
+  },
+  headerBrandTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  headerTagline: {
+    fontSize: 9.5,
+    color: '#8E8E93',
+    fontWeight: '500',
+    letterSpacing: 0.1,
   },
   desktopNav: {
     flexDirection: 'row',
