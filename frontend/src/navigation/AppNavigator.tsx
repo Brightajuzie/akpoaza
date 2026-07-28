@@ -18,7 +18,9 @@ function FixMartHeader() {
           <Text style={headerStyles.fix}>Fix</Text>
           <Text style={headerStyles.mart}>Mart</Text>
         </Text>
-        <Text style={headerStyles.tagline}>Tools & Services Marketplace</Text>
+        <Text style={headerStyles.tagline} numberOfLines={1} ellipsizeMode="tail">
+          The smart way to shop, send items & fix everyday household problems
+        </Text>
       </View>
     </View>
   );
@@ -29,6 +31,7 @@ const headerStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flexShrink: 1,
   },
   logo: {
     width: 38,
@@ -37,6 +40,7 @@ const headerStyles = StyleSheet.create({
   textBlock: {
     flexDirection: 'column',
     justifyContent: 'center',
+    flexShrink: 1,
   },
   title: {
     fontSize: 20,
@@ -50,10 +54,10 @@ const headerStyles = StyleSheet.create({
     color: '#22A45D',
   },
   tagline: {
-    fontSize: 10,
+    fontSize: 9.5,
     color: '#8E8E93',
     fontWeight: '500',
-    letterSpacing: 0.3,
+    letterSpacing: 0.1,
   },
 });
 
