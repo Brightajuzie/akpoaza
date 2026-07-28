@@ -2,12 +2,18 @@ import React, { useEffect, useState, useContext } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, Image, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
 // ── Branded Home Header ────────────────────────────────────────────────────────
 function FixMartHeader() {
+  const navigation = useNavigation<any>();
   return (
-    <View style={headerStyles.container}>
+    <TouchableOpacity
+      style={headerStyles.container}
+      onPress={() => navigation.navigate('HomeTab')}
+      activeOpacity={0.8}
+    >
       <Image
         source={require('../../assets/icon.png')}
         style={headerStyles.logo}
@@ -22,7 +28,7 @@ function FixMartHeader() {
           The smart way to shop, send items & fix everyday household problems
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 

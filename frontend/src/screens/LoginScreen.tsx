@@ -1,6 +1,6 @@
 import React, { useState, useContext, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  View, Text, TextInput, TouchableOpacity, Image, StyleSheet,
   Alert, ActivityIndicator, Animated, Platform, useWindowDimensions,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -223,7 +223,13 @@ export default function LoginScreen({ route, navigation }: any) {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }, isLargeScreen && styles.containerWeb]}>
       <View style={[styles.card, { borderColor: theme.border }, isLargeScreen && styles.cardWeb]}>
-        <Text style={styles.logoText}>🛠️ FixMart</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Main')} style={{ alignItems: 'center', marginBottom: 12 }}>
+          <Image
+            source={require('../../assets/icon.png')}
+            style={{ width: 64, height: 64 }}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
         <Text style={styles.title}>Welcome Back</Text>
         <Text style={styles.subtitle}>
           {redirectTo

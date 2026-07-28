@@ -501,11 +501,13 @@ export default function HomeScreen({ navigation }: any) {
       <View style={[styles.welcomeBanner, { backgroundColor: theme.primary }]}>
         <View style={styles.bannerOverlay} />
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 12 }}>
-          <Image 
-            source={logoUrl ? { uri: logoUrl } : require('../../assets/icon.png')} 
-            style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: '#FFFFFF', padding: 2 }} 
-            resizeMode="contain" 
-          />
+          <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} activeOpacity={0.8}>
+            <Image 
+              source={logoUrl ? { uri: logoUrl } : require('../../assets/icon.png')} 
+              style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: '#FFFFFF', padding: 2 }} 
+              resizeMode="contain" 
+            />
+          </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={styles.welcomeSubtitle}>Hello, {userInfo?.name || 'Guest User'} 👋</Text>
             <Text style={styles.welcomeTitle}>{heroTitle}</Text>
