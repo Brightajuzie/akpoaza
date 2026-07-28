@@ -500,8 +500,17 @@ export default function HomeScreen({ navigation }: any) {
       {/* Dynamic Welcome Hero Banner */}
       <View style={[styles.welcomeBanner, { backgroundColor: theme.primary }]}>
         <View style={styles.bannerOverlay} />
-        <Text style={styles.welcomeSubtitle}>Hello, {userInfo?.name || 'Guest User'} 👋</Text>
-        <Text style={styles.welcomeTitle}>{heroTitle}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 12 }}>
+          <Image 
+            source={logoUrl ? { uri: logoUrl } : require('../../assets/icon.png')} 
+            style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: '#FFFFFF', padding: 2 }} 
+            resizeMode="contain" 
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.welcomeSubtitle}>Hello, {userInfo?.name || 'Guest User'} 👋</Text>
+            <Text style={styles.welcomeTitle}>{heroTitle}</Text>
+          </View>
+        </View>
         <Text style={styles.bannerDesc}>{heroSubtitle}</Text>
       </View>
 
