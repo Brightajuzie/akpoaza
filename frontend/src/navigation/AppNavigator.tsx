@@ -2,7 +2,60 @@ import React, { useEffect, useState, useContext } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, Image, StyleSheet, useWindowDimensions } from 'react-native';
+
+// ── Branded Home Header ────────────────────────────────────────────────────────
+function FixMartHeader() {
+  return (
+    <View style={headerStyles.container}>
+      <Image
+        source={require('../../assets/icon.png')}
+        style={headerStyles.logo}
+        resizeMode="contain"
+      />
+      <View style={headerStyles.textBlock}>
+        <Text style={headerStyles.title}>
+          <Text style={headerStyles.fix}>Fix</Text>
+          <Text style={headerStyles.mart}>Mart</Text>
+        </Text>
+        <Text style={headerStyles.tagline}>Tools & Services Marketplace</Text>
+      </View>
+    </View>
+  );
+}
+
+const headerStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  logo: {
+    width: 38,
+    height: 38,
+  },
+  textBlock: {
+    flexDirection: 'column',
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  fix: {
+    color: '#1B3D6E',
+  },
+  mart: {
+    color: '#22A45D',
+  },
+  tagline: {
+    fontSize: 10,
+    color: '#8E8E93',
+    fontWeight: '500',
+    letterSpacing: 0.3,
+  },
+});
 
 import HomeScreen from '../screens/HomeScreen';
 import ProductsScreen from '../screens/ProductsScreen';
@@ -77,9 +130,12 @@ function MainTabs() {
         name="HomeTab" 
         component={HomeScreen} 
         options={{ 
-          title: 'Home', 
           tabBarLabel: 'Home',
           tabBarIcon: ({ color }) => <Text style={{ fontSize: 18 }}>🏠</Text>,
+          headerTitle: () => <FixMartHeader />,
+          headerTitleAlign: 'left',
+          headerStyle: { backgroundColor: '#FFFFFF' },
+          headerShadowVisible: true,
         }} 
       />
       <Tab.Screen 
