@@ -11,7 +11,7 @@
     "scheme": "handymanecommerce",
     "version": "2.0.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -29,12 +29,34 @@
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-local-authentication",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FixMart uses your photo library to upload product and profile images.",
+          "cameraPermission": "FixMart uses your camera to take product photos and verify your identity."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FixMart uses your location to show nearby vendors and services."
+        }
+      ]
     ],
     "ios": {
+      "bundleIdentifier": "com.akpoaza.kachlinks",
+      "buildNumber": "2",
       "supportsTablet": true,
       "jsEngine": "hermes",
-      "infoPlist": {}
+      "infoPlist": {
+        "NSCameraUsageDescription": "FixMart uses your camera to take product photos and verify your identity during KYC.",
+        "NSPhotoLibraryUsageDescription": "FixMart accesses your photo library to let you upload product and profile images.",
+        "NSLocationWhenInUseUsageDescription": "FixMart uses your location to show nearby vendors and services.",
+        "NSFaceIDUsageDescription": "FixMart uses Face ID for quick and secure sign-in.",
+        "NSMicrophoneUsageDescription": "FixMart uses your microphone for video consultations with service providers."
+      }
     },
     "android": {
       "jsEngine": "hermes",
@@ -44,6 +66,18 @@
       },
       "package": "com.akpoaza.kachlinks",
       "versionCode": 2,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "RECORD_AUDIO"
+      ],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyAk_7la_GksTZ95Awlp2IIO2_GJyRZlvKQ"
@@ -51,7 +85,8 @@
       }
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {
