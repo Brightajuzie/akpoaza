@@ -203,6 +203,41 @@ function createEscrowForPaidItem(checkoutType, id, paidAmount) {
                 });
                 return escrows;
             }
+            else if (checkoutType === 'parcel') {
+                const parcel = yield tx.parcelDelivery.findUnique({ where: { id } });
+                if (!parcel) {
+                    throw new Error('Parcel delivery not found');
+                }
+                let transactionAmount = paidAmount || parcel.totalAmount;
+                const commissionAmount = transactionAmount * commissionRate;
+                const providerAmount = transactionAmount - commissionAmount;
+                if (parcel.riderId) {
+                    const escrow = yield tx.escrow.create({
+                        data: {
+                            parcelDeliveryId: id,
+                            providerId: parcel.riderId,
+                            amount: transactionAmount,
+                            commissionAmount,
+                            providerAmount,
+                            status: 'HELD',
+                        },
+                    });
+                    yield tx.wallet.upsert({
+                        where: { userId: parcel.riderId },
+                        update: {
+                            pendingBalance: {
+                                increment: providerAmount,
+                            },
+                        },
+                        create: {
+                            userId: parcel.riderId,
+                            balance: 0.0,
+                            pendingBalance: providerAmount,
+                        },
+                    });
+                    return escrow;
+                }
+            }
         }), {
             timeout: 30000
         });

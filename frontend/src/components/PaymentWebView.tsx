@@ -65,8 +65,8 @@ function isSuccessUrl(url: string): boolean {
     (url.includes('paystack') && url.includes('status=success')) ||
     // Flutterwave status=successful
     (url.includes('flutterwave') && url.includes('status=successful')) ||
-    // OPay success indicator
-    (url.includes('opay') && url.includes('status=SUCCESS'))
+    // OPay success indicators
+    (url.includes('opay') && (url.includes('status=SUCCESS') || url.includes('/opay/verify') || url.includes('status=success')))
   );
 }
 

@@ -16,7 +16,7 @@ export async function getOrCreateWallet(userId: string) {
   return wallet;
 }
 
-export async function createEscrowForPaidItem(checkoutType: 'booking' | 'order', id: string, paidAmount?: number) {
+export async function createEscrowForPaidItem(checkoutType: 'booking' | 'order' | 'parcel', id: string, paidAmount?: number) {
   const setting = await prisma.appSetting.findUnique({ where: { key: 'commission_rate' } });
   const commissionRate = setting ? parseFloat(setting.value) : 0.15;
 
@@ -210,6 +210,45 @@ export async function createEscrowForPaidItem(checkoutType: 'booking' | 'order',
       });
 
       return escrows;
+
+    } else if (checkoutType === 'parcel') {
+      const parcel = await tx.parcelDelivery.findUnique({ where: { id } });
+      if (!parcel) {
+        throw new Error('Parcel delivery not found');
+      }
+
+      let transactionAmount = paidAmount || parcel.totalAmount;
+      const commissionAmount = transactionAmount * commissionRate;
+      const providerAmount = transactionAmount - commissionAmount;
+
+      if (parcel.riderId) {
+        const escrow = await tx.escrow.create({
+          data: {
+            parcelDeliveryId: id,
+            providerId: parcel.riderId,
+            amount: transactionAmount,
+            commissionAmount,
+            providerAmount,
+            status: 'HELD',
+          },
+        });
+
+        await tx.wallet.upsert({
+          where: { userId: parcel.riderId },
+          update: {
+            pendingBalance: {
+              increment: providerAmount,
+            },
+          },
+          create: {
+            userId: parcel.riderId,
+            balance: 0.0,
+            pendingBalance: providerAmount,
+          },
+        });
+
+        return escrow;
+      }
     }
   }, {
     timeout: 30000

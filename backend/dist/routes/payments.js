@@ -106,7 +106,11 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
         const settingsList = yield prisma_1.default.appSetting.findMany({
             where: {
                 key: {
-                    in: ['stripe_secret_key', 'paystack_secret_key', 'flutterwave_secret_key', 'opay_merchant_id', 'opay_public_key', 'opay_secret_key']
+                    in: [
+                        'stripe_secret_key', 'paystack_secret_key', 'flutterwave_secret_key',
+                        'opay_merchant_id', 'opay_public_key', 'opay_secret_key',
+                        'stripe_enabled', 'paystack_enabled', 'flutterwave_enabled', 'opay_enabled'
+                    ]
                 }
             }
         });
@@ -121,6 +125,9 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
         const activeOpayPublicKey = settings['opay_public_key'] || process.env.OPAY_PUBLIC_KEY || 'pk_test_dummy_opay_public_key';
         const activeOpaySecretKey = settings['opay_secret_key'] || process.env.OPAY_SECRET_KEY || 'sk_test_dummy_opay_secret_key';
         if (provider === 'STRIPE') {
+            if (settings['stripe_enabled'] === 'false') {
+                return res.status(400).json({ error: 'Stripe payments are currently disabled by system administrator.' });
+            }
             const activeStripe = new stripe_1.default(activeStripeKey, {
                 apiVersion: '2023-10-16',
             });
@@ -135,6 +142,9 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
             });
         }
         if (provider === 'PAYSTACK') {
+            if (settings['paystack_enabled'] === 'false') {
+                return res.status(400).json({ error: 'Paystack payments are currently disabled by system administrator.' });
+            }
             // Paystack initialization
             const response = yield axios_1.default.post(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
                 email: userEmail,
@@ -155,6 +165,9 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
             });
         }
         if (provider === 'FLUTTERWAVE') {
+            if (settings['flutterwave_enabled'] === 'false') {
+                return res.status(400).json({ error: 'Flutterwave payments are currently disabled by system administrator.' });
+            }
             // Flutterwave initialization
             const txRef = `PAY_${id}_${Date.now()}`;
             const response = yield axios_1.default.post(`${FLUTTERWAVE_BASE_URL}/payments`, {
@@ -181,6 +194,9 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
             });
         }
         if (provider === 'OPAY') {
+            if (settings['opay_enabled'] === 'false') {
+                return res.status(400).json({ error: 'OPay payments are currently disabled by system administrator.' });
+            }
             // OPay initialization
             const reference = `PAY_${id}_${Date.now()}`;
             const isDummy = activeOpaySecretKey.includes('dummy') || activeOpayMerchantId.includes('dummy') || activeOpayPublicKey.includes('dummy');
@@ -609,7 +625,7 @@ router.get('/opay/verify/:reference', (req, res, next) => __awaiter(void 0, void
             const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
             yield prisma_1.default.order.update({
                 where: { id },
-                data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: reference },
+                data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: reference, amountPaid: { increment: chargedAmount } },
             });
             yield (0, wallet_1.createEscrowForPaidItem)('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
             // Auto-release only on final split payment installment; regular orders wait for confirm-receipt.
@@ -647,7 +663,7 @@ router.get('/opay/verify/:reference', (req, res, next) => __awaiter(void 0, void
             const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
             yield prisma_1.default.booking.update({
                 where: { id },
-                data: { status: 'ACCEPTED' },
+                data: { status: 'ACCEPTED', amountPaid: { increment: chargedAmount } },
             });
             yield (0, wallet_1.createEscrowForPaidItem)('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
             // Auto-release only on final split payment installment; regular bookings wait for customer confirm-completion.
@@ -679,7 +695,35 @@ router.get('/opay/verify/:reference', (req, res, next) => __awaiter(void 0, void
         </html>
       `);
         }
-        return res.status(404).send('Reference ID was not found or could not match any active booking/order record.');
+        // Try finding parcel delivery
+        const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
+        if (parcel) {
+            yield prisma_1.default.parcelDelivery.update({
+                where: { id },
+                data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: reference },
+            });
+            yield (0, wallet_1.createEscrowForPaidItem)('parcel', id, parcel.totalAmount).catch(err => console.error("Escrow hold failed for parcel:", err));
+            return res.send(`
+        <html>
+          <body style="font-family: -apple-system, sans-serif; text-align: center; padding: 60px 20px; background-color: #f7f9fa;">
+            <div style="background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); max-width: 460px; margin: 0 auto;">
+              <div style="font-size: 64px; margin-bottom: 20px;">✅</div>
+              <h1 style="color: #4CAF50; font-size: 26px; margin-bottom: 8px;">Parcel Delivery Paid Successfully!</h1>
+              <p style="color: #555; font-size: 15px; margin-bottom: 30px;">Your parcel dispatch is now confirmed and a rider is being assigned.</p>
+              <div style="font-size: 12px; color: #aaa; font-family: monospace;">REF: ${reference}</div>
+            </div>
+            <script>
+              setTimeout(() => {
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ status: 'success', reference: "${reference}" }));
+                }
+              }, 1200);
+            </script>
+          </body>
+        </html>
+      `);
+        }
+        return res.status(404).send('Reference ID was not found or could not match any active record.');
     }
     catch (error) {
         next(error);
@@ -694,9 +738,49 @@ router.get('/opay/verify-callback', (req, res, next) => __awaiter(void 0, void 0
 }));
 // Staging OPay Webhook receiver (official OPay API webhooks)
 router.post('/opay/webhook', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    const payload = req.body;
-    console.log('[OPayWebhook] Received notification:', JSON.stringify(payload));
-    res.json({ code: '00000', message: 'SUCCESS' });
+    var _a, _b;
+    try {
+        const payload = req.body;
+        console.log('[OPayWebhook] Received notification:', JSON.stringify(payload));
+        const ref = payload.reference || payload.orderNo || ((_a = payload.data) === null || _a === void 0 ? void 0 : _a.reference) || ((_b = payload.data) === null || _b === void 0 ? void 0 : _b.orderNo);
+        if (ref) {
+            const parts = ref.split('_');
+            const id = parts[1];
+            if (id) {
+                const order = yield prisma_1.default.order.findUnique({ where: { id } });
+                if (order && order.status !== 'PAID') {
+                    const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+                    yield prisma_1.default.order.update({
+                        where: { id },
+                        data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: ref, amountPaid: { increment: chargedAmount } },
+                    });
+                    yield (0, wallet_1.createEscrowForPaidItem)('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
+                }
+                const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
+                if (booking && booking.status !== 'ACCEPTED') {
+                    const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+                    yield prisma_1.default.booking.update({
+                        where: { id },
+                        data: { status: 'ACCEPTED', amountPaid: { increment: chargedAmount } },
+                    });
+                    yield (0, wallet_1.createEscrowForPaidItem)('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
+                }
+                const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
+                if (parcel && parcel.status !== 'PAID') {
+                    yield prisma_1.default.parcelDelivery.update({
+                        where: { id },
+                        data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: ref },
+                    });
+                    yield (0, wallet_1.createEscrowForPaidItem)('parcel', id, parcel.totalAmount).catch(err => console.error("Escrow hold failed for parcel:", err));
+                }
+            }
+        }
+        res.json({ code: '00000', message: 'SUCCESS' });
+    }
+    catch (err) {
+        console.error('[OPayWebhookError]', err);
+        res.json({ code: '00000', message: 'SUCCESS' });
+    }
 }));
 // Internal escrow-release endpoint — guarded by a shared secret.
 // Can be called by admin tooling or future background workers.

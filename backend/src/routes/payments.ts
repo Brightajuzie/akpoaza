@@ -668,7 +668,7 @@ router.get('/opay/verify/:reference', async (req, res, next) => {
       const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
       await prisma.order.update({
         where: { id },
-        data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: reference },
+        data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: reference, amountPaid: { increment: chargedAmount } },
       });
       await createEscrowForPaidItem('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
 
@@ -709,7 +709,7 @@ router.get('/opay/verify/:reference', async (req, res, next) => {
       const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
       await prisma.booking.update({
         where: { id },
-        data: { status: 'ACCEPTED' },
+        data: { status: 'ACCEPTED', amountPaid: { increment: chargedAmount } },
       });
       await createEscrowForPaidItem('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
 
@@ -744,7 +744,37 @@ router.get('/opay/verify/:reference', async (req, res, next) => {
       `);
     }
 
-    return res.status(404).send('Reference ID was not found or could not match any active booking/order record.');
+    // Try finding parcel delivery
+    const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
+    if (parcel) {
+      await prisma.parcelDelivery.update({
+        where: { id },
+        data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: reference },
+      });
+      await createEscrowForPaidItem('parcel', id, parcel.totalAmount).catch(err => console.error("Escrow hold failed for parcel:", err));
+
+      return res.send(`
+        <html>
+          <body style="font-family: -apple-system, sans-serif; text-align: center; padding: 60px 20px; background-color: #f7f9fa;">
+            <div style="background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); max-width: 460px; margin: 0 auto;">
+              <div style="font-size: 64px; margin-bottom: 20px;">✅</div>
+              <h1 style="color: #4CAF50; font-size: 26px; margin-bottom: 8px;">Parcel Delivery Paid Successfully!</h1>
+              <p style="color: #555; font-size: 15px; margin-bottom: 30px;">Your parcel dispatch is now confirmed and a rider is being assigned.</p>
+              <div style="font-size: 12px; color: #aaa; font-family: monospace;">REF: ${reference}</div>
+            </div>
+            <script>
+              setTimeout(() => {
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ status: 'success', reference: "${reference}" }));
+                }
+              }, 1200);
+            </script>
+          </body>
+        </html>
+      `);
+    }
+
+    return res.status(404).send('Reference ID was not found or could not match any active record.');
   } catch (error) {
     next(error);
   }
@@ -759,9 +789,49 @@ router.get('/opay/verify-callback', async (req, res, next) => {
 
 // Staging OPay Webhook receiver (official OPay API webhooks)
 router.post('/opay/webhook', async (req, res, next) => {
-  const payload = req.body;
-  console.log('[OPayWebhook] Received notification:', JSON.stringify(payload));
-  res.json({ code: '00000', message: 'SUCCESS' });
+  try {
+    const payload = req.body;
+    console.log('[OPayWebhook] Received notification:', JSON.stringify(payload));
+    const ref = payload.reference || payload.orderNo || payload.data?.reference || payload.data?.orderNo;
+    if (ref) {
+      const parts = ref.split('_');
+      const id = parts[1];
+      if (id) {
+        const order = await prisma.order.findUnique({ where: { id } });
+        if (order && order.status !== 'PAID') {
+          const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+          await prisma.order.update({
+            where: { id },
+            data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: ref, amountPaid: { increment: chargedAmount } },
+          });
+          await createEscrowForPaidItem('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
+        }
+
+        const booking = await prisma.booking.findUnique({ where: { id } });
+        if (booking && booking.status !== 'ACCEPTED') {
+          const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+          await prisma.booking.update({
+            where: { id },
+            data: { status: 'ACCEPTED', amountPaid: { increment: chargedAmount } },
+          });
+          await createEscrowForPaidItem('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
+        }
+
+        const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
+        if (parcel && parcel.status !== 'PAID') {
+          await prisma.parcelDelivery.update({
+            where: { id },
+            data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: ref },
+          });
+          await createEscrowForPaidItem('parcel', id, parcel.totalAmount).catch(err => console.error("Escrow hold failed for parcel:", err));
+        }
+      }
+    }
+    res.json({ code: '00000', message: 'SUCCESS' });
+  } catch (err) {
+    console.error('[OPayWebhookError]', err);
+    res.json({ code: '00000', message: 'SUCCESS' });
+  }
 });
 
 // Internal escrow-release endpoint — guarded by a shared secret.
