@@ -1,21 +1,82 @@
 {
   "expo": {
-    "name": "handyman-ecommerce",
-    "slug": "handyman-ecommerce",
+    "name": "FixMart",
+    "slug": "fixmart",
     "version": "1.0.0",
     "sdkVersion": "54.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "platforms": [
       "ios",
       "android",
       "web"
     ],
+    "ios": {
+      "bundleIdentifier": "com.brightajuzie.fixmart",
+      "buildNumber": "1",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "FixMart uses your camera to take product photos and verify your identity during KYC.",
+        "NSPhotoLibraryUsageDescription": "FixMart accesses your photo library to let you upload product and profile images.",
+        "NSLocationWhenInUseUsageDescription": "FixMart uses your location to show nearby vendors and services.",
+        "NSFaceIDUsageDescription": "FixMart uses Face ID for quick and secure login.",
+        "NSMicrophoneUsageDescription": "FixMart uses your microphone for video consultations with service providers."
+      }
+    },
+    "android": {
+      "package": "com.brightajuzie.fixmart",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-local-authentication",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FixMart uses your photo library to let you upload product and profile images.",
+          "cameraPermission": "FixMart uses your camera to take product photos and verify identity."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow FixMart to use your location to show nearby vendors and services."
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "8d4405de-245d-4c45-b0c0-5331aeb2e9fe"
       }
-    },
-    "android": {
-      "package": "com.brightajuzie.fixmart"
     }
   }
 }

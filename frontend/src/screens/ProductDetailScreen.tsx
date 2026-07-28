@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator
 import apiClient from '../api/client';
 import { CartContext } from '../context/CartContext';
 import { SettingsContext } from '../context/SettingsContext';
+import AddToCartModal from '../components/AddToCartModal';
 
 interface ChatMessage {
   id: string;
@@ -30,7 +31,8 @@ export default function ProductDetailScreen({ route, navigation }: any) {
   const [typing, setTyping] = useState(false);
   const chatFlatListRef = useRef<FlatList>(null);
 
-  const { addToCart } = useContext(CartContext);
+  const { cart, addToCart } = useContext(CartContext);
+  const [addedModalVisible, setAddedModalVisible] = useState(false);
   const { theme } = useContext(SettingsContext);
 
   const fetchProductAndReviews = async () => {
@@ -110,8 +112,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
         price: product.price,
         type: 'product'
       });
-      Alert.alert('Added to Cart', `${product.name} has been added to your cart.`);
-      navigation.goBack();
+      setAddedModalVisible(true);
     }
   };
 
@@ -441,6 +442,17 @@ export default function ProductDetailScreen({ route, navigation }: any) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+          <AddToCartModal
+        visible={addedModalVisible}
+        item={product}
+        cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
+        themePrimary={theme.primary}
+        onContinueShopping={() => setAddedModalVisible(false)}
+        onProceedToCheckout={() => {
+          setAddedModalVisible(false);
+          navigation.navigate('CartTab');
+        }}
+      />
     </View>
   );
 }

@@ -141,6 +141,7 @@ export default function CartScreen({ route, navigation }: any) {
           <Text style={styles.totalLabel}>Total:</Text>
           <Text style={[styles.totalPrice, { color: theme.primary }]}>${cartTotal.toFixed(2)}</Text>
         </View>
+
         <TouchableOpacity 
           style={[styles.checkoutButton, { backgroundColor: theme.primary }]}
           onPress={handleCheckout}
@@ -151,6 +152,13 @@ export default function CartScreen({ route, navigation }: any) {
           ) : (
             <Text style={styles.checkoutButtonText}>Proceed to Checkout</Text>
           )}
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.continueButton, { borderColor: theme.primary }]}
+          onPress={() => navigation.navigate('HomeTab')}
+        >
+          <Text style={[styles.continueButtonText, { color: theme.primary }]}>🛍️ Continue Shopping</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -342,10 +350,22 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 12,
     alignItems: 'center',
+    marginBottom: 10,
   },
   checkoutButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  continueButton: {
+    padding: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    backgroundColor: '#FFF',
+  },
+  continueButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

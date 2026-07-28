@@ -28,7 +28,7 @@ export default function LoginScreen({ route, navigation }: any) {
   const [googleLoading, setGoogleLoading]           = useState(false);
 
   const { login } = useContext(AuthContext);
-  const { theme } = useContext(SettingsContext);
+  const { theme, settings } = useContext(SettingsContext);
 
   const redirectTo: string | undefined     = route?.params?.redirectTo;
   const redirectParams: any                = route?.params?.redirectParams;
@@ -37,9 +37,9 @@ export default function LoginScreen({ route, navigation }: any) {
   // ── Google Auth ──────────────────────────────────────────────────────────
   // Only enable Google Sign-In when at least one client ID is configured.
   // If none are set the hook would throw — guard it with undefined fallbacks.
-  const ANDROID_ID = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || undefined;
-  const IOS_ID     = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || undefined;
-  const WEB_ID     = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID      || undefined;
+  const ANDROID_ID = settings.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || undefined;
+  const IOS_ID     = settings.google_ios_client_id     || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || undefined;
+  const WEB_ID     = settings.google_web_client_id     || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID      || undefined;
   const googleConfigured = !!(ANDROID_ID || IOS_ID || WEB_ID);
 
   const [request, response, promptAsync] = Google.useAuthRequest(

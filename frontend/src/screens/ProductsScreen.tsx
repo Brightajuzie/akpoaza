@@ -1,15 +1,28 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Image, TouchableOpacity, Alert, TextInput, useWindowDimensions } from 'react-native';
+import {
+  View,
+  Text,
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  Image,
+  TouchableOpacity,
+  TextInput,
+  useWindowDimensions,
+} from 'react-native';
 import apiClient from '../api/client';
 import { CartContext } from '../context/CartContext';
 import { SettingsContext } from '../context/SettingsContext';
+import AddToCartModal from '../components/AddToCartModal';
 
 export default function ProductsScreen({ navigation }: any) {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [locationQuery, setLocationQuery] = useState('');
-  const { addToCart } = useContext(CartContext);
+  const [addedItem, setAddedItem] = useState<any | null>(null);
+
+  const { cart, addToCart } = useContext(CartContext);
   const { theme } = useContext(SettingsContext);
   const { width } = useWindowDimensions();
   const numColumns = width > 1024 ? 4 : width > 600 ? 3 : 2;
@@ -36,17 +49,19 @@ export default function ProductsScreen({ navigation }: any) {
 
   useEffect(() => {
     fetchProducts();
-  }, [locationQuery]); // Refresh automatically when location filter is updated
+  }, [locationQuery]);
 
   const handleAddToCart = (product: any) => {
     addToCart({
       id: product.id,
       name: product.name,
       price: product.price,
-      type: 'product'
+      type: 'product',
     });
-    Alert.alert('Added to Cart', `${product.name} has been added to your cart.`);
+    setAddedItem(product);
   };
+
+  const totalCartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   // Local text search filter
   const filteredProducts = products.filter(product => {
@@ -60,6 +75,19 @@ export default function ProductsScreen({ navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
+      {/* Interactive Add to Cart Modal */}
+      <AddToCartModal
+        visible={addedItem !== null}
+        item={addedItem}
+        cartCount={totalCartCount}
+        themePrimary={theme.primary}
+        onContinueShopping={() => setAddedItem(null)}
+        onProceedToCheckout={() => {
+          setAddedItem(null);
+          navigation.navigate('CartTab');
+        }}
+      />
+
       {/* Search & Location Filter Bar Container */}
       <View style={styles.filterSection}>
         <TextInput
@@ -78,8 +106,8 @@ export default function ProductsScreen({ navigation }: any) {
             placeholderTextColor="#8E8E93"
           />
           {locationQuery.trim() !== '' && (
-            <TouchableOpacity 
-              style={styles.clearBtn} 
+            <TouchableOpacity
+              style={styles.clearBtn}
               onPress={() => setLocationQuery('')}
             >
               <Text style={styles.clearBtnText}>✕</Text>
@@ -103,17 +131,17 @@ export default function ProductsScreen({ navigation }: any) {
           renderItem={({ item }) => {
             const isFeatured = item.featured;
             return (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[
-                  styles.card, 
-                  isFeatured && { 
-                    borderColor: '#FF9500', 
+                  styles.card,
+                  isFeatured && {
+                    borderColor: '#FF9500',
                     borderWidth: 2,
                     shadowColor: '#FF9500',
                     shadowOpacity: 0.15,
-                  }
-                ]} 
-                activeOpacity={0.9} 
+                  },
+                ]}
+                activeOpacity={0.9}
                 onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
               >
                 {item.imageUrl ? (
@@ -123,7 +151,7 @@ export default function ProductsScreen({ navigation }: any) {
                     <Text style={styles.placeholderText}>📦 Product</Text>
                   </View>
                 )}
-                
+
                 {isFeatured && (
                   <View style={styles.promotedTag}>
                     <Text style={styles.promotedTagText}>🔥 Promoted ad</Text>
@@ -132,7 +160,7 @@ export default function ProductsScreen({ navigation }: any) {
 
                 <View style={styles.cardContent}>
                   <Text style={styles.name}>{item.name}</Text>
-                  
+
                   {item.vendor && (
                     <View style={styles.vendorRow}>
                       <Text style={styles.vendorText}>👤 Seller: {item.vendor.name}</Text>
@@ -141,15 +169,15 @@ export default function ProductsScreen({ navigation }: any) {
                       )}
                     </View>
                   )}
-                  
+
                   <Text style={styles.desc} numberOfLines={2}>{item.description}</Text>
-                  
+
                   <View style={styles.footerRow}>
                     <Text style={[styles.price, { color: theme.primary }]}>
                       ${item.price.toFixed(2)}
                     </Text>
-                    <TouchableOpacity 
-                      style={[styles.addButton, { backgroundColor: theme.primary }]} 
+                    <TouchableOpacity
+                      style={[styles.addButton, { backgroundColor: theme.primary }]}
                       onPress={() => handleAddToCart(item)}
                     >
                       <Text style={styles.addButtonText}>Add to Cart</Text>

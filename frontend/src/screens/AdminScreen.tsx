@@ -86,6 +86,9 @@ export default function AdminScreen() {
   const [opayMerchantId, setOpayMerchantId]           = useState('');
   const [opayPublicKey, setOpayPublicKey]             = useState('');
   const [opaySecretKey, setOpaySecretKey]             = useState('');
+  const [googleWebClientId, setGoogleWebClientId]         = useState('');
+  const [googleIosClientId, setGoogleIosClientId]         = useState('');
+  const [googleAndroidClientId, setGoogleAndroidClientId] = useState('');
   // Gateway enable/disable toggles
   const [stripeEnabled, setStripeEnabled]             = useState(true);
   const [paystackEnabled, setPaystackEnabled]         = useState(true);
@@ -567,6 +570,9 @@ export default function AdminScreen() {
       setOpayMerchantId(settings.opay_merchant_id || '');
       setOpayPublicKey(settings.opay_public_key || '');
       setOpaySecretKey(settings.opay_secret_key || '');
+      setGoogleWebClientId(settings.google_web_client_id || '');
+      setGoogleIosClientId(settings.google_ios_client_id || '');
+      setGoogleAndroidClientId(settings.google_android_client_id || '');
       // Gateway enabled toggles
       setStripeEnabled(settings.stripe_enabled !== 'false');
       setPaystackEnabled(settings.paystack_enabled !== 'false');
@@ -869,6 +875,9 @@ export default function AdminScreen() {
         opay_merchant_id:         opayMerchantId,
         opay_public_key:          opayPublicKey,
         opay_secret_key:          opaySecretKey,
+        google_web_client_id:     googleWebClientId,
+        google_ios_client_id:     googleIosClientId,
+        google_android_client_id: googleAndroidClientId,
         stripe_enabled:           stripeEnabled ? 'true' : 'false',
         paystack_enabled:         paystackEnabled ? 'true' : 'false',
         flutterwave_enabled:      flutterwaveEnabled ? 'true' : 'false',
@@ -1770,6 +1779,44 @@ export default function AdminScreen() {
                     <Text style={{ fontSize: 12, fontWeight: '700', color: '#3A3A3C' }}>{row.value}</Text>
                   </View>
                 ))}
+              </View>
+
+                            <Text style={styles.sectionHeading}>4. Google OAuth API Keys & Credentials</Text>
+              <View style={styles.subSettingsCard}>
+                <Text style={styles.subCardTitle}>🔑 Google Client IDs</Text>
+                <Text style={styles.subCardNote}>
+                  Enter your Google Cloud Console OAuth 2.0 Client IDs below to enable "Continue with Google" sign-in across Web, iOS, and Android platforms.
+                </Text>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Google Web Client ID</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={googleWebClientId}
+                    onChangeText={setGoogleWebClientId}
+                    placeholder="e.g. 123456789-abc.apps.googleusercontent.com"
+                    autoCapitalize="none"
+                  />
+                </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Google iOS Client ID</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={googleIosClientId}
+                    onChangeText={setGoogleIosClientId}
+                    placeholder="e.g. 123456789-ios.apps.googleusercontent.com"
+                    autoCapitalize="none"
+                  />
+                </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Google Android Client ID</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={googleAndroidClientId}
+                    onChangeText={setGoogleAndroidClientId}
+                    placeholder="e.g. 123456789-android.apps.googleusercontent.com"
+                    autoCapitalize="none"
+                  />
+                </View>
               </View>
 
               <TouchableOpacity
