@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
+import Toast from 'react-native-toast-message';
 import * as SecureStore from '../utils/storage';
 import apiClient, { setUnauthorizedHandler } from '../api/client';
 
@@ -50,6 +51,7 @@ export const AuthProvider = ({ children }: any) => {
     await SecureStore.setItemAsync('userInfo', JSON.stringify(user));
     apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     setIsLoading(false);
+    Toast.show({ type: 'success', text1: 'Login successful' });
   };
 
 

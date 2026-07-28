@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   Alert, ActivityIndicator, ScrollView
@@ -14,15 +14,18 @@ interface PaymentMethod {
   icon: string;
   color: string;
   subtitle: string;
+  /** Key in settings that toggles this gateway on/off */
+  enabledKey: string;
 }
 
-const PAYMENT_METHODS: PaymentMethod[] = [
+const ALL_PAYMENT_METHODS: PaymentMethod[] = [
   {
     id: 'STRIPE',
     label: 'Pay with Stripe',
     icon: '💳',
     color: '#635BFF',
     subtitle: 'Visa, Mastercard, American Express',
+    enabledKey: 'stripe_enabled',
   },
   {
     id: 'PAYSTACK',
@@ -30,6 +33,7 @@ const PAYMENT_METHODS: PaymentMethod[] = [
     icon: '🏦',
     color: '#0BA4DB',
     subtitle: 'Cards, Bank Transfer, USSD',
+    enabledKey: 'paystack_enabled',
   },
   {
     id: 'FLUTTERWAVE',
@@ -37,6 +41,7 @@ const PAYMENT_METHODS: PaymentMethod[] = [
     icon: '⚡',
     color: '#F5A623',
     subtitle: 'Cards, Mobile Money, Bank',
+    enabledKey: 'flutterwave_enabled',
   },
   {
     id: 'OPAY',
@@ -44,20 +49,38 @@ const PAYMENT_METHODS: PaymentMethod[] = [
     icon: '🔵',
     color: '#03A9F4',
     subtitle: 'OPay Wallet, Bank Transfer',
+    enabledKey: 'opay_enabled',
   },
 ];
 
 export default function CheckoutScreen({ route, navigation }: any) {
-  const { checkoutType = 'order', id = 'dummy-id', amount = 100, isRemainingPayment = false } = route.params || {};
+  const {
+    checkoutType = 'order',
+    id = 'dummy-id',
+    amount = 100,
+    isRemainingPayment = false,
+  } = route.params || {};
+
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const [isSplit, setIsSplit] = useState(false);
 
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
-  const { theme } = useContext(SettingsContext);
+  const { theme, settings } = useContext(SettingsContext);
 
-  // ── Stripe (native SDK) ───────────────────────────────────────────────────
+  // ── Filter gateways based on admin settings ──────────────────────────────
+  const availableMethods = useMemo(() => {
+    // If settings haven't loaded yet (empty object), show all methods
+    if (!settings || Object.keys(settings).length === 0) {
+      return ALL_PAYMENT_METHODS;
+    }
+    return ALL_PAYMENT_METHODS.filter(
+      method => settings[method.enabledKey] !== 'false'
+    );
+  }, [settings]);
+
+  // ── Stripe (native SDK) ──────────────────────────────────────────────────
   const handleStripePayment = async () => {
     setLoadingProvider('STRIPE');
     try {
@@ -137,13 +160,14 @@ export default function CheckoutScreen({ route, navigation }: any) {
   };
 
   // ── WebView success/cancel ────────────────────────────────────────────────
-  const handlePaymentSuccess = () => {
+  const handlePaymentSuccess = (reference: string) => {
     setPaymentUrl(null);
     setLoadingProvider(null);
+    const providerName = activeProvider;
     setActiveProvider(null);
     Alert.alert(
       '✅ Payment Successful',
-      `Your ${activeProvider} payment was completed successfully!`,
+      `Your ${providerName} payment was completed successfully!\nReference: ${reference}`,
       [{ text: 'Continue', onPress: () => navigation.navigate('HomeTab') }]
     );
   };
@@ -160,6 +184,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
     return (
       <PaymentWebView
         url={paymentUrl}
+        provider={activeProvider as any}
         onPaymentSuccess={handlePaymentSuccess}
         onPaymentCancel={handlePaymentCancel}
       />
@@ -179,7 +204,11 @@ export default function CheckoutScreen({ route, navigation }: any) {
         <Text style={styles.headerIcon}>🛒</Text>
         <Text style={[styles.title, { color: theme.text }]}>Secure Checkout</Text>
         <Text style={[styles.subtitle, { color: theme.lightText }]}>
-          {checkoutType === 'booking' ? 'Booking Payment' : checkoutType === 'parcel' ? 'Parcel Delivery Payment' : 'Order Payment'}
+          {checkoutType === 'booking'
+            ? 'Booking Payment'
+            : checkoutType === 'parcel'
+            ? 'Parcel Delivery Payment'
+            : 'Order Payment'}
         </Text>
       </View>
 
@@ -189,11 +218,13 @@ export default function CheckoutScreen({ route, navigation }: any) {
           {isRemainingPayment ? 'Remaining Amount Due (50%)' : 'Amount Due'}
         </Text>
         <Text style={[styles.amountValue, { color: theme.primary }]}>
-          ₦{(isRemainingPayment ? amount : (isSplit ? amount / 2 : amount)).toFixed(2)}
+          ₦{(isRemainingPayment ? amount : isSplit ? amount / 2 : amount).toFixed(2)}
         </Text>
         {isRemainingPayment && (
           <View style={[styles.badge, { backgroundColor: '#E8F5E9', marginBottom: 12 }]}>
-            <Text style={{ color: '#34C759', fontWeight: '800', fontSize: 10 }}>REMAINING BALANCE SETTLEMENT</Text>
+            <Text style={{ color: '#34C759', fontWeight: '800', fontSize: 10 }}>
+              REMAINING BALANCE SETTLEMENT
+            </Text>
           </View>
         )}
         <View style={styles.securedRow}>
@@ -206,7 +237,10 @@ export default function CheckoutScreen({ route, navigation }: any) {
       {/* Disclaimer Card */}
       <View style={styles.disclaimerCard}>
         <Text style={styles.disclaimerText}>
-          ⚠️ <Text style={{ fontWeight: '700' }}>Payment Warning:</Text> Always complete payments through this app to keep your funds secured in escrow. The company is not liable for any payments made outside this platform.
+          ⚠️{' '}
+          <Text style={{ fontWeight: '700' }}>Payment Warning:</Text> Always complete payments
+          through this app to keep your funds secured in escrow. The company is not liable for any
+          payments made outside this platform.
         </Text>
       </View>
 
@@ -217,88 +251,104 @@ export default function CheckoutScreen({ route, navigation }: any) {
             PAYMENT SCHEME
           </Text>
           <View style={styles.splitOptionsRow}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.splitOptionCard, 
-                !isSplit && styles.splitOptionActive, 
-                !isSplit && { borderColor: theme.primary }
+                styles.splitOptionCard,
+                !isSplit && styles.splitOptionActive,
+                !isSplit && { borderColor: theme.primary },
               ]}
               onPress={() => setIsSplit(false)}
             >
-              <Text style={[styles.splitOptionTitle, !isSplit && { color: theme.primary }]}>Full Payment</Text>
-              <Text style={styles.splitOptionDesc}>Pay 100% upfront (₦{amount.toFixed(2)})</Text>
+              <Text style={[styles.splitOptionTitle, !isSplit && { color: theme.primary }]}>
+                Full Payment
+              </Text>
+              <Text style={styles.splitOptionDesc}>
+                Pay 100% upfront (₦{amount.toFixed(2)})
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.splitOptionCard, 
-                isSplit && styles.splitOptionActive, 
-                isSplit && { borderColor: theme.primary }
+                styles.splitOptionCard,
+                isSplit && styles.splitOptionActive,
+                isSplit && { borderColor: theme.primary },
               ]}
               onPress={() => setIsSplit(true)}
             >
-              <Text style={[styles.splitOptionTitle, isSplit && { color: theme.primary }]}>Split 50/50</Text>
-              <Text style={styles.splitOptionDesc}>Pay 50% deposit now (₦{(amount / 2).toFixed(2)})</Text>
+              <Text style={[styles.splitOptionTitle, isSplit && { color: theme.primary }]}>
+                Split 50/50
+              </Text>
+              <Text style={styles.splitOptionDesc}>
+                Pay 50% deposit now (₦{(amount / 2).toFixed(2)})
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
       )}
 
       {/* Payment Methods */}
-      <Text style={[styles.methodsLabel, { color: theme.lightText }]}>
-        SELECT PAYMENT METHOD
-      </Text>
+      <Text style={[styles.methodsLabel, { color: theme.lightText }]}>SELECT PAYMENT METHOD</Text>
 
-      {PAYMENT_METHODS.map(method => {
-        const isLoading = loadingProvider === method.id;
+      {availableMethods.length === 0 ? (
+        <View style={styles.noGatewayCard}>
+          <Text style={styles.noGatewayIcon}>⚙️</Text>
+          <Text style={[styles.noGatewayTitle, { color: theme.text }]}>No Payment Gateways</Text>
+          <Text style={[styles.noGatewaySubtitle, { color: theme.lightText }]}>
+            No payment gateways are currently enabled. Please contact the administrator.
+          </Text>
+        </View>
+      ) : (
+        availableMethods.map(method => {
+          const isLoading = loadingProvider === method.id;
+          return (
+            <TouchableOpacity
+              key={method.id}
+              style={[
+                styles.methodCard,
+                { borderColor: theme.border },
+                isLoading && { opacity: 0.85 },
+              ]}
+              onPress={() => {
+                if (method.id === 'STRIPE') {
+                  handleStripePayment();
+                } else {
+                  handleWebViewPayment(method.id);
+                }
+              }}
+              disabled={isAnyLoading}
+              activeOpacity={0.75}
+            >
+              {/* Color accent bar */}
+              <View style={[styles.methodAccent, { backgroundColor: method.color }]} />
 
-        return (
-          <TouchableOpacity
-            key={method.id}
-            style={[
-              styles.methodCard,
-              { borderColor: theme.border },
-              isLoading && { opacity: 0.85 },
-            ]}
-            onPress={() => {
-              if (method.id === 'STRIPE') {
-                handleStripePayment();
-              } else {
-                handleWebViewPayment(method.id);
-              }
-            }}
-            disabled={isAnyLoading}
-            activeOpacity={0.75}
-          >
-            {/* Color accent bar */}
-            <View style={[styles.methodAccent, { backgroundColor: method.color }]} />
+              <View style={styles.methodContent}>
+                <View style={[styles.methodIconWrap, { backgroundColor: method.color + '18' }]}>
+                  <Text style={styles.methodIcon}>{method.icon}</Text>
+                </View>
 
-            <View style={styles.methodContent}>
-              <View style={[styles.methodIconWrap, { backgroundColor: method.color + '18' }]}>
-                <Text style={styles.methodIcon}>{method.icon}</Text>
+                <View style={styles.methodInfo}>
+                  <Text style={[styles.methodLabel, { color: theme.text }]}>{method.label}</Text>
+                  <Text style={[styles.methodSubtitle, { color: theme.lightText }]}>
+                    {method.subtitle}
+                  </Text>
+                </View>
+
+                {isLoading ? (
+                  <ActivityIndicator color={method.color} size="small" />
+                ) : (
+                  <Text style={[styles.methodArrow, { color: theme.lightText }]}>›</Text>
+                )}
               </View>
-
-              <View style={styles.methodInfo}>
-                <Text style={[styles.methodLabel, { color: theme.text }]}>{method.label}</Text>
-                <Text style={[styles.methodSubtitle, { color: theme.lightText }]}>
-                  {method.subtitle}
-                </Text>
-              </View>
-
-              {isLoading ? (
-                <ActivityIndicator color={method.color} size="small" />
-              ) : (
-                <Text style={[styles.methodArrow, { color: theme.lightText }]}>›</Text>
-              )}
-            </View>
-          </TouchableOpacity>
-        );
-      })}
+            </TouchableOpacity>
+          );
+        })
+      )}
 
       {/* Footer note */}
       <View style={styles.footer}>
         <Text style={[styles.footerText, { color: theme.lightText }]}>
-          All payment gateways are PCI-DSS compliant. Your card details are never stored on our servers.
+          All payment gateways are PCI-DSS compliant. Your card details are never stored on our
+          servers.
         </Text>
       </View>
     </ScrollView>
@@ -327,7 +377,13 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 2,
   },
-  amountLabel: { fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
+  amountLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 8,
+  },
   amountValue: { fontSize: 42, fontWeight: '900', marginBottom: 12 },
   securedRow: { flexDirection: 'row', alignItems: 'center' },
   securedText: { fontSize: 12, fontWeight: '500' },
@@ -371,6 +427,20 @@ const styles = StyleSheet.create({
   methodLabel: { fontSize: 15, fontWeight: '700', marginBottom: 3 },
   methodSubtitle: { fontSize: 12, fontWeight: '500' },
   methodArrow: { fontSize: 24, fontWeight: '300', marginLeft: 8 },
+
+  noGatewayCard: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    borderStyle: 'dashed',
+    marginBottom: 20,
+  },
+  noGatewayIcon: { fontSize: 40, marginBottom: 12 },
+  noGatewayTitle: { fontSize: 17, fontWeight: '700', marginBottom: 6 },
+  noGatewaySubtitle: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
 
   footer: { marginTop: 24, alignItems: 'center' },
   footerText: { fontSize: 11, textAlign: 'center', lineHeight: 16, maxWidth: '85%' },

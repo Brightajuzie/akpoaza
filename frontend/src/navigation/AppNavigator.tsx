@@ -28,6 +28,7 @@ import RiderEarningsScreen from '../screens/RiderEarningsScreen';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
+import CartBadge from '../components/CartBadge';
 import * as SecureStore from '../utils/storage';
 
 const Stack = createNativeStackNavigator();
@@ -87,7 +88,7 @@ function MainTabs() {
         options={{ 
           title: 'Cart', 
           tabBarLabel: 'Cart',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 18 }}>🛒</Text>,
+          tabBarIcon: () => <CartBadge />,
         }} 
       />
       <Tab.Screen 

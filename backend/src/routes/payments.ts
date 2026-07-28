@@ -102,7 +102,11 @@ router.post('/checkout', async (req, res, next) => {
     const settingsList = await prisma.appSetting.findMany({
       where: {
         key: {
-          in: ['stripe_secret_key', 'paystack_secret_key', 'flutterwave_secret_key', 'opay_merchant_id', 'opay_public_key', 'opay_secret_key']
+          in: [
+            'stripe_secret_key', 'paystack_secret_key', 'flutterwave_secret_key',
+            'opay_merchant_id', 'opay_public_key', 'opay_secret_key',
+            'stripe_enabled', 'paystack_enabled', 'flutterwave_enabled', 'opay_enabled'
+          ]
         }
       }
     });
@@ -119,6 +123,9 @@ router.post('/checkout', async (req, res, next) => {
     const activeOpaySecretKey = settings['opay_secret_key'] || process.env.OPAY_SECRET_KEY || 'sk_test_dummy_opay_secret_key';
 
     if (provider === 'STRIPE') {
+      if (settings['stripe_enabled'] === 'false') {
+        return res.status(400).json({ error: 'Stripe payments are currently disabled by system administrator.' });
+      }
       const activeStripe = new Stripe(activeStripeKey, {
         apiVersion: '2023-10-16' as any,
       });
@@ -136,6 +143,9 @@ router.post('/checkout', async (req, res, next) => {
     }
 
     if (provider === 'PAYSTACK') {
+      if (settings['paystack_enabled'] === 'false') {
+        return res.status(400).json({ error: 'Paystack payments are currently disabled by system administrator.' });
+      }
       // Paystack initialization
       const response = await axios.post(
         `${PAYSTACK_BASE_URL}/transaction/initialize`,
@@ -162,6 +172,9 @@ router.post('/checkout', async (req, res, next) => {
     }
 
     if (provider === 'FLUTTERWAVE') {
+      if (settings['flutterwave_enabled'] === 'false') {
+        return res.status(400).json({ error: 'Flutterwave payments are currently disabled by system administrator.' });
+      }
       // Flutterwave initialization
       const txRef = `PAY_${id}_${Date.now()}`;
       const response = await axios.post(
@@ -194,6 +207,9 @@ router.post('/checkout', async (req, res, next) => {
     }
 
     if (provider === 'OPAY') {
+      if (settings['opay_enabled'] === 'false') {
+        return res.status(400).json({ error: 'OPay payments are currently disabled by system administrator.' });
+      }
       // OPay initialization
       const reference = `PAY_${id}_${Date.now()}`;
       const isDummy = activeOpaySecretKey.includes('dummy') || activeOpayMerchantId.includes('dummy') || activeOpayPublicKey.includes('dummy');

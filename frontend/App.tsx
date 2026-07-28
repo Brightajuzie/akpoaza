@@ -12,7 +12,7 @@ import NetworkBanner from './src/components/NetworkBanner';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Font from 'expo-font';
-
+import ToastProvider from './src/components/ToastProvider';
 export default function App() {
   const stripeKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || "pk_test_dummy_key";
 
@@ -75,6 +75,7 @@ export default function App() {
                   <SafeAreaProvider>
                     <NetworkBanner />
                     <AppNavigator />
+        <ToastProvider />
                   </SafeAreaProvider>
                 </NetworkProvider>
               </CartProvider>

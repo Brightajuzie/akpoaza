@@ -86,6 +86,11 @@ export default function AdminScreen() {
   const [opayMerchantId, setOpayMerchantId]           = useState('');
   const [opayPublicKey, setOpayPublicKey]             = useState('');
   const [opaySecretKey, setOpaySecretKey]             = useState('');
+  // Gateway enable/disable toggles
+  const [stripeEnabled, setStripeEnabled]             = useState(true);
+  const [paystackEnabled, setPaystackEnabled]         = useState(true);
+  const [flutterwaveEnabled, setFlutterwaveEnabled]   = useState(true);
+  const [opayEnabled, setOpayEnabled]                 = useState(true);
 
   // Rider Delivery Pricing (Admin only)
   const [riderBaseFare, setRiderBaseFare]           = useState('1000');
@@ -562,6 +567,11 @@ export default function AdminScreen() {
       setOpayMerchantId(settings.opay_merchant_id || '');
       setOpayPublicKey(settings.opay_public_key || '');
       setOpaySecretKey(settings.opay_secret_key || '');
+      // Gateway enabled toggles
+      setStripeEnabled(settings.stripe_enabled !== 'false');
+      setPaystackEnabled(settings.paystack_enabled !== 'false');
+      setFlutterwaveEnabled(settings.flutterwave_enabled !== 'false');
+      setOpayEnabled(settings.opay_enabled !== 'false');
       // Rider pricing
       setRiderBaseFare(settings.rider_base_fare || '1000');
       setRiderPricePerKm(settings.rider_price_per_km || '200');
@@ -859,6 +869,10 @@ export default function AdminScreen() {
         opay_merchant_id:         opayMerchantId,
         opay_public_key:          opayPublicKey,
         opay_secret_key:          opaySecretKey,
+        stripe_enabled:           stripeEnabled ? 'true' : 'false',
+        paystack_enabled:         paystackEnabled ? 'true' : 'false',
+        flutterwave_enabled:      flutterwaveEnabled ? 'true' : 'false',
+        opay_enabled:             opayEnabled ? 'true' : 'false',
       };
       await updateSettings(updates);
       Alert.alert('Branding Updated', 'System configurations updated successfully across all client devices.');
