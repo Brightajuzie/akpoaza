@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npx expo export -p web",
-  "outputDirectory": "dist",
+  "buildCommand": "cd frontend && npx expo export -p web",
+  "outputDirectory": "frontend/dist",
   "headers": [
     {
       "source": "/(.*)",
