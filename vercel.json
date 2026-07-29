@@ -1,6 +1,8 @@
 {
+  "version": 2,
   "buildCommand": "cd frontend && npx expo export -p web",
   "outputDirectory": "frontend/dist",
+  "framework": null,
   "headers": [
     {
       "source": "/(.*)",

@@ -6,6 +6,7 @@
     "backend"
   ],
   "scripts": {
+    "build": "cd frontend && npx expo export -p web",
     "start": "npm run start:frontend",
     "start:frontend": "cd frontend && npx expo start --port 8082",
     "start:backend": "cd backend && npm run dev",
