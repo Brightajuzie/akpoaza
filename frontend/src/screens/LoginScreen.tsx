@@ -225,8 +225,8 @@ export default function LoginScreen({ route, navigation }: any) {
       <View style={[styles.card, { borderColor: theme.border }, isLargeScreen && styles.cardWeb]}>
         <TouchableOpacity onPress={() => navigation.navigate('Main')} style={{ alignItems: 'center', marginBottom: 12 }}>
           <Image
-            source={require('../../assets/icon.png')}
-            style={{ width: 64, height: 64 }}
+            source={require('../../assets/logo_transparent.png')}
+            style={{ width: 72, height: 72 }}
             resizeMode="contain"
           />
         </TouchableOpacity>

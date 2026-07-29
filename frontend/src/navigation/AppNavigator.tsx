@@ -15,7 +15,7 @@ function FixMartHeader() {
       activeOpacity={0.8}
     >
       <Image
-        source={require('../../assets/icon.png')}
+        source={require('../../assets/logo_transparent.png')}
         style={headerStyles.logo}
         resizeMode="contain"
       />

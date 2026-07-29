@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, TextInput, useWindowDimensions, Platform, Linking, Alert } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
@@ -53,15 +54,20 @@ export default function HomeScreen({ navigation }: any) {
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const slideScrollViewRef = useRef<ScrollView>(null);
 
-  // Fetch Slides
+  // Fetch Slides (with fallback to rich PROMO_SLIDES if empty)
   useEffect(() => {
     const fetchSlides = async () => {
       try {
         setSlidesLoading(true);
         const res = await apiClient.get('/slides');
-        setSlides(res.data || []);
+        if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+          setSlides(res.data);
+        } else {
+          setSlides(PROMO_SLIDES);
+        }
       } catch (e) {
         console.error('Failed to load slides', e);
+        setSlides(PROMO_SLIDES);
       } finally {
         setSlidesLoading(false);
       }
@@ -171,7 +177,7 @@ export default function HomeScreen({ navigation }: any) {
         {/* Logo / Brand Name */}
         <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} style={styles.logoContainer}>
           <Image
-            source={logoUrl ? { uri: logoUrl } : require('../../assets/icon.png')}
+            source={logoUrl ? { uri: logoUrl } : require('../../assets/logo_transparent.png')}
             style={styles.headerLogoImage}
             resizeMode="contain"
           />
@@ -449,7 +455,7 @@ export default function HomeScreen({ navigation }: any) {
       )}
 
       {/* 🚀 Dynamic Slides Carousel */}
-      {!slidesLoading && slides.length > 0 && (
+      {(!slidesLoading || slides.length > 0) && (
         <View style={styles.sliderWrapper}>
           <ScrollView
             ref={slideScrollViewRef}
@@ -460,35 +466,65 @@ export default function HomeScreen({ navigation }: any) {
             scrollEventThrottle={16}
             style={[styles.sliderScroll, { width: Math.min(width, 1200) - 40 }]}
           >
-            {slides.map((slide) => (
-              <View 
-                key={slide.id} 
-                style={[styles.slideCard, { width: Math.min(width, 1200) - 40 }]}
-              >
-                {slide.imageUrl ? (
-                  <Image source={{ uri: slide.imageUrl }} style={styles.slideImage} resizeMode="cover" />
-                ) : (
-                  <View style={styles.slidePlaceholder} />
-                )}
-                <View style={styles.slideOverlay} />
-                {slide.caption && (
-                  <View style={styles.slideCaptionContainer}>
-                    <Text style={styles.slideCaptionText}>{slide.caption}</Text>
+            {(slides.length > 0 ? slides : PROMO_SLIDES).map((slide: any) => {
+              const slideWidth = Math.min(width, 1200) - 40;
+
+              // If slide has an image URL (admin uploaded slide)
+              if (slide.imageUrl) {
+                return (
+                  <View key={slide.id} style={[styles.slideCard, { width: slideWidth }]}>
+                    <Image source={{ uri: slide.imageUrl }} style={styles.slideImage} resizeMode="cover" />
+                    <View style={styles.slideOverlay} />
+                    {slide.caption && (
+                      <View style={styles.slideCaptionContainer}>
+                        <Text style={styles.slideCaptionText}>{slide.caption}</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
-            ))}
+                );
+              }
+
+              // Built-in promo card (gradient + icon + CTA)
+              const colors = slide.gradient || ['#0f2027', '#203a43'];
+              return (
+                <TouchableOpacity
+                  key={slide.id}
+                  activeOpacity={0.9}
+                  style={[styles.slideCard, { width: slideWidth }]}
+                  onPress={() => {
+                    if (slide.action) {
+                      if (slide.action === 'Products') navigation.navigate('Products');
+                      else if (slide.action === 'Services') navigation.navigate('Services');
+                      else navigation.navigate(slide.action);
+                    }
+                  }}
+                >
+                  <LinearGradient colors={colors} style={styles.promoSlideGradient}>
+                    <View style={styles.promoSlideContent}>
+                      <Text style={styles.promoSlideIcon}>{slide.icon || '🛍️'}</Text>
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={styles.promoSlideTitle}>{slide.title}</Text>
+                        <Text style={styles.promoSlideSub}>{slide.subtitle}</Text>
+                      </View>
+                      <View style={[styles.promoSlideCtaBtn, { backgroundColor: slide.accent || '#FFF' }]}>
+                        <Text style={styles.promoSlideCtaText}>{slide.cta || 'Explore'} →</Text>
+                      </View>
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
           {/* Dots Indicator */}
-          {slides.length > 1 && (
+          {(slides.length > 1 || PROMO_SLIDES.length > 1) && (
             <View style={styles.indicatorContainer}>
-              {slides.map((_, i) => (
+              {(slides.length > 0 ? slides : PROMO_SLIDES).map((_, i) => (
                 <View
                   key={i}
                   style={[
                     styles.indicatorDot,
-                    { backgroundColor: activeSlideIndex === i ? theme.primary : '#D1D1D6' }
+                    { backgroundColor: activeSlideIndex === i ? theme.primary : '#FFFFFF99' }
                   ]}
                 />
               ))}
@@ -503,7 +539,7 @@ export default function HomeScreen({ navigation }: any) {
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 12 }}>
           <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} activeOpacity={0.8}>
             <Image 
-              source={logoUrl ? { uri: logoUrl } : require('../../assets/icon.png')} 
+              source={logoUrl ? { uri: logoUrl } : require('../../assets/logo_transparent.png')} 
               style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: '#FFFFFF', padding: 2 }} 
               resizeMode="contain" 
             />
@@ -1130,6 +1166,48 @@ const styles = StyleSheet.create({
     height: 180,
     position: 'relative',
     overflow: 'hidden',
+  },
+  promoSlideGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  promoSlideContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  promoSlideIcon: {
+    fontSize: 42,
+  },
+  promoSlideTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  promoSlideSub: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+  promoSlideCtaBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+    marginLeft: 12,
+  },
+  promoSlideCtaText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F2027',
   },
   slideImage: {
     width: '100%',
