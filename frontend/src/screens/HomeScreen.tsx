@@ -175,7 +175,16 @@ export default function HomeScreen({ navigation }: any) {
     ]}>
       <View style={styles.navHeaderContainer}>
         {/* Logo / Brand Name */}
-        <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} style={styles.logoContainer}>
+        <TouchableOpacity 
+          onPress={() => {
+            try {
+              navigation.navigate('Main', { screen: 'HomeTab' });
+            } catch {
+              navigation.navigate('HomeTab');
+            }
+          }} 
+          style={styles.logoContainer}
+        >
           <Image
             source={logoUrl ? { uri: logoUrl } : require('../../assets/logo_transparent.png')}
             style={styles.headerLogoImage}

@@ -9,10 +9,19 @@ import { useNavigation } from '@react-navigation/native';
 function FixMartHeader() {
   const navigation = useNavigation<any>();
   const { logoUrl, theme } = useContext(SettingsContext);
+
+  const handleGoHome = () => {
+    try {
+      navigation.navigate('Main', { screen: 'HomeTab' });
+    } catch {
+      navigation.navigate('HomeTab');
+    }
+  };
+
   return (
     <TouchableOpacity
       style={headerStyles.container}
-      onPress={() => navigation.navigate('HomeTab')}
+      onPress={handleGoHome}
       activeOpacity={0.8}
     >
       <Image
@@ -32,6 +41,7 @@ function FixMartHeader() {
     </TouchableOpacity>
   );
 }
+
 
 
 const headerStyles = StyleSheet.create({
