@@ -34,7 +34,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
     try {
       const response = await apiClient.get('/settings');
       setSettings(response.data);
-      applyFavicon(response.data.favicon_url);
+      applyFavicon(response.data.favicon_url || response.data.logo_url);
     } catch (error) {
       console.error('Failed to load settings', error);
     } finally {
@@ -64,7 +64,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
     try {
       const response = await apiClient.put('/settings', updates);
       setSettings(prev => ({ ...prev, ...updates }));
-      applyFavicon(updates.favicon_url || settings.favicon_url);
+      applyFavicon(updates.favicon_url || updates.logo_url || settings.favicon_url || settings.logo_url);
       return response.data;
     } catch (error) {
       console.error('Failed to update settings', error);

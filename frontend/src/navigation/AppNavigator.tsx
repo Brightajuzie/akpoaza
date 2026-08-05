@@ -8,6 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 // ── Branded Home Header ────────────────────────────────────────────────────────
 function FixMartHeader() {
   const navigation = useNavigation<any>();
+  const { logoUrl, theme } = useContext(SettingsContext);
   return (
     <TouchableOpacity
       style={headerStyles.container}
@@ -15,14 +16,14 @@ function FixMartHeader() {
       activeOpacity={0.8}
     >
       <Image
-        source={require('../../assets/logo_transparent.png')}
+        source={logoUrl ? { uri: logoUrl } : require('../../assets/logo_transparent.png')}
         style={headerStyles.logo}
         resizeMode="contain"
       />
       <View style={headerStyles.textBlock}>
         <Text style={headerStyles.title}>
           <Text style={headerStyles.fix}>Fix</Text>
-          <Text style={headerStyles.mart}>Mart</Text>
+          <Text style={[headerStyles.mart, { color: theme?.primary || '#22A45D' }]}>Mart</Text>
         </Text>
         <Text style={headerStyles.tagline} numberOfLines={1} ellipsizeMode="tail">
           The smart way to shop, send items & fix everyday household problems
@@ -31,6 +32,7 @@ function FixMartHeader() {
     </TouchableOpacity>
   );
 }
+
 
 const headerStyles = StyleSheet.create({
   container: {
