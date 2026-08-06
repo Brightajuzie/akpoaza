@@ -2,8 +2,10 @@ import React, { useEffect, useState, useContext } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, Image, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import SafeLogo from '../components/SafeLogo';
+import ThemeToggle from '../components/ThemeToggle';
 
 // ── Branded Home Header ────────────────────────────────────────────────────────
 function FixMartHeader() {
@@ -19,32 +21,42 @@ function FixMartHeader() {
   };
 
   return (
-    <TouchableOpacity
-      style={headerStyles.container}
-      onPress={handleGoHome}
-      activeOpacity={0.8}
-    >
-      <Image
-        source={logoUrl ? { uri: logoUrl } : require('../../assets/logo_transparent.png')}
-        style={headerStyles.logo}
-        resizeMode="contain"
-      />
-      <View style={headerStyles.textBlock}>
-        <Text style={headerStyles.title}>
-          <Text style={headerStyles.fix}>Fix</Text>
-          <Text style={[headerStyles.mart, { color: theme?.primary || '#22A45D' }]}>Mart</Text>
-        </Text>
-        <Text style={headerStyles.tagline} numberOfLines={1} ellipsizeMode="tail">
-          The smart way to shop, send items & fix everyday household problems
-        </Text>
-      </View>
-    </TouchableOpacity>
+    <View style={headerStyles.outerRow}>
+      <TouchableOpacity
+        style={headerStyles.container}
+        onPress={handleGoHome}
+        activeOpacity={0.8}
+      >
+        <SafeLogo
+          logoUrl={logoUrl}
+          style={headerStyles.logo}
+          resizeMode="contain"
+        />
+        <View style={headerStyles.textBlock}>
+          <Text style={headerStyles.title}>
+            <Text style={headerStyles.fix}>Fix</Text>
+            <Text style={[headerStyles.mart, { color: theme?.primary || '#22A45D' }]}>Mart</Text>
+          </Text>
+          <Text style={headerStyles.tagline} numberOfLines={1} ellipsizeMode="tail">
+            The smart way to shop, send items & fix everyday household problems
+          </Text>
+        </View>
+      </TouchableOpacity>
+      <ThemeToggle compact />
+    </View>
   );
 }
 
 
 
 const headerStyles = StyleSheet.create({
+  outerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flex: 1,
+    gap: 8,
+  },
   container: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -138,9 +150,13 @@ function MainTabs() {
       screenOptions={{ 
         headerTitleAlign: 'center', 
         tabBarActiveTintColor: theme.primary,
+        tabBarInactiveTintColor: theme.lightText || '#8E8E93',
         headerShown: !isLargeScreen,
+        headerStyle: { backgroundColor: theme.card },
+        headerTintColor: theme.text,
         tabBarStyle: { 
-          borderTopColor: '#E5E5EA',
+          backgroundColor: theme.card,
+          borderTopColor: theme.border,
           maxWidth: 600,
           alignSelf: 'center',
           width: '100%',
@@ -151,14 +167,15 @@ function MainTabs() {
       <Tab.Screen 
         name="HomeTab" 
         component={HomeScreen} 
-        options={{ 
+        options={({ }) => ({
           tabBarLabel: 'Home',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 18 }}>🏠</Text>,
+          tabBarIcon: ({ color }: any) => <Text style={{ fontSize: 18 }}>🏠</Text>,
           headerTitle: () => <FixMartHeader />,
           headerTitleAlign: 'left',
-          headerStyle: { backgroundColor: '#FFFFFF' },
+          headerStyle: { backgroundColor: theme.card },
+          headerTintColor: theme.text,
           headerShadowVisible: true,
-        }} 
+        })} 
       />
       <Tab.Screen 
         name="CartTab" 
@@ -223,6 +240,7 @@ const navStyles = StyleSheet.create({
 
 export default function AppNavigator() {
   const { isLoading, userInfo } = React.useContext(AuthContext);
+  const { theme } = React.useContext(SettingsContext);
   const isAdmin = userInfo?.role === 'ADMIN';
   const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
 
@@ -248,7 +266,15 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName={isFirstLaunch ? 'Onboarding' : 'Main'}>
+      <Stack.Navigator 
+        initialRouteName={isFirstLaunch ? 'Onboarding' : 'Main'}
+        screenOptions={{
+          headerStyle: { backgroundColor: theme.card },
+          headerTintColor: theme.text,
+          headerTitleStyle: { fontWeight: '700' },
+          contentStyle: { backgroundColor: theme.background },
+        }}
+      >
         <Stack.Screen 
           name="Onboarding" 
           component={OnboardingScreen} 

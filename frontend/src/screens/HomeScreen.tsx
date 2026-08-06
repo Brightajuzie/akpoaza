@@ -5,6 +5,8 @@ import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
 import ResponsiveContainer from '../components/ResponsiveContainer';
+import SafeLogo from '../components/SafeLogo';
+import ThemeToggle from '../components/ThemeToggle';
 
 const PROMO_SLIDES = [
   {
@@ -41,7 +43,7 @@ const PROMO_SLIDES = [
 
 export default function HomeScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
-  const { theme, logoUrl, heroTitle, heroSubtitle, footerText } = useContext(SettingsContext);
+  const { theme, logoUrl, heroTitle, heroSubtitle, footerText, apkUrl } = useContext(SettingsContext);
   const { width } = useWindowDimensions();
 
   const [promotedListings, setPromotedListings] = useState<any[]>([]);
@@ -185,20 +187,6 @@ export default function HomeScreen({ navigation }: any) {
           }} 
           style={styles.logoContainer}
         >
-          <Image
-            source={logoUrl ? { uri: logoUrl } : require('../../assets/logo_transparent.png')}
-            style={styles.headerLogoImage}
-            resizeMode="contain"
-          />
-          <View style={styles.headerTitleBlock}>
-            <Text style={styles.headerBrandTitle}>
-              <Text style={{ color: '#1B3D6E' }}>Fix</Text>
-              <Text style={{ color: theme.primary || '#22A45D' }}>Mart</Text>
-            </Text>
-            <Text style={styles.headerTagline} numberOfLines={1} ellipsizeMode="tail">
-              The smart way to shop, send items & fix everyday household problems
-            </Text>
-          </View>
         </TouchableOpacity>
 
         {width >= 768 ? (
@@ -230,9 +218,13 @@ export default function HomeScreen({ navigation }: any) {
                 <Text style={[styles.navLinkLabel, { color: '#34C759', fontWeight: '800' }]}>🚚 Rider Hub</Text>
               </TouchableOpacity>
             )}
+            {/* Theme Toggle */}
+            <View style={{ marginLeft: 12 }}>
+              <ThemeToggle compact />
+            </View>
             {/* User Avatar */}
             <TouchableOpacity 
-              style={[styles.profileIndicator, { borderColor: theme.primary, marginLeft: 16 }]}
+              style={[styles.profileIndicator, { borderColor: theme.primary, marginLeft: 12 }]}
               onPress={() => navigation.navigate('ProfileTab')}
             >
               <Text style={styles.profileIndicatorText}>
@@ -277,7 +269,7 @@ export default function HomeScreen({ navigation }: any) {
             style={styles.mobileMenuItem} 
             onPress={() => { setMenuOpen(false); navigation.navigate('Products'); }}
           >
-            <Text style={styles.mobileMenuText}>📦 Products</Text>
+            <Text style={[styles.mobileMenuText]}>📦 Products</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.mobileMenuItem} 
@@ -547,10 +539,10 @@ export default function HomeScreen({ navigation }: any) {
         <View style={styles.bannerOverlay} />
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 12 }}>
           <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} activeOpacity={0.8}>
-            <Image 
-              source={logoUrl ? { uri: logoUrl } : require('../../assets/logo_transparent.png')} 
-              style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: '#FFFFFF', padding: 2 }} 
-              resizeMode="contain" 
+            <SafeLogo
+              logoUrl={logoUrl}
+              style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: '#FFFFFF', padding: 2 }}
+              resizeMode="contain"
             />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
@@ -690,23 +682,60 @@ export default function HomeScreen({ navigation }: any) {
         </TouchableOpacity>
       )}
 
-      {/* Dynamic brand footer with App Download section */}
+      {/* ── App Download Banner (all platforms) ── */}
+      <LinearGradient
+        colors={['#0F172A', '#1E3A5F']}
+        style={styles.mobileDownloadBanner}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <View style={styles.mobileDownloadLeft}>
+          <View style={styles.appVersionBadge}>
+            <Text style={styles.appVersionText}>v2.0 · NEW</Text>
+          </View>
+          <Text style={styles.mobileDownloadTitle}>📱 FixMart Mobile App</Text>
+          <Text style={styles.mobileDownloadDesc}>
+            Book handymen, track riders & shop tools — all on Android.
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.apkMainBtn}
+          activeOpacity={0.85}
+          accessibilityLabel="Download FixMart APK"
+          onPress={() => {
+            if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
+              const link = document.createElement('a');
+              link.href = apkUrl;
+              link.target = '_blank';
+              link.download = 'fixmart-app.apk';
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            } else {
+              Linking.openURL(apkUrl);
+            }
+          }}
+        >
+          <Text style={styles.apkMainBtnIcon}>📥</Text>
+          <Text style={styles.apkMainBtnText}>Download APK</Text>
+        </TouchableOpacity>
+      </LinearGradient>
+
+      {/* Dynamic brand footer */}
       <View style={styles.footerContainer}>
         {Platform.OS === 'web' && (
           <View style={[styles.downloadAppCard, { backgroundColor: theme.card || '#FFFFFF', borderColor: theme.border, width: '100%' }]}>
             <View style={styles.downloadAppContent}>
-              <Text style={[styles.downloadAppTitle, { color: theme.text }]}>📱 Get the FixMart App</Text>
+              <Text style={[styles.downloadAppTitle, { color: theme.text }]}>🌐 More Ways to Get the App</Text>
               <Text style={styles.downloadAppDesc}>
-                Book verified handymen, track delivery riders live on the map, and shop power tools anywhere.
+                Shop, book & track anywhere. Available on Android.
               </Text>
-
               <View style={styles.downloadBtnRow}>
-                {/* Direct Android APK Download Button */}
+                {/* Direct Android APK Download */}
                 <TouchableOpacity
                   style={[styles.storeBadgeBtn, styles.apkDownloadBtn]}
                   onPress={() => {
-                    const apkUrl = 'https://expo.dev/artifacts/eas/JKOsVz9wIz0Y15_d4EaJHYXgmEJMW5Z1zLBHGSo68FA.apk';
-                    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
+                    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
                       const link = document.createElement('a');
                       link.href = apkUrl;
                       link.target = '_blank';
@@ -728,16 +757,12 @@ export default function HomeScreen({ navigation }: any) {
                   </View>
                 </TouchableOpacity>
 
-                {/* Google Play (Android) Button */}
+                {/* Google Play */}
                 <TouchableOpacity
                   style={styles.storeBadgeBtn}
                   onPress={() => {
-                    const apkUrl = 'https://expo.dev/artifacts/eas/JKOsVz9wIz0Y15_d4EaJHYXgmEJMW5Z1zLBHGSo68FA.apk';
-                    if (Platform.OS === 'web' && typeof window !== 'undefined') {
-                      window.open(apkUrl, '_blank');
-                    } else {
-                      Linking.openURL(apkUrl);
-                    }
+                    if (typeof window !== 'undefined') window.open(apkUrl, '_blank');
+                    else Linking.openURL(apkUrl);
                   }}
                   activeOpacity={0.85}
                   accessibilityLabel="Download on Google Play"
@@ -749,14 +774,13 @@ export default function HomeScreen({ navigation }: any) {
                   </View>
                 </TouchableOpacity>
 
-                {/* App Store (iOS) Button */}
+                {/* App Store */}
                 <TouchableOpacity
                   style={[styles.storeBadgeBtn, styles.appStoreBtn]}
                   onPress={() => {
-                    const apkUrl = 'https://expo.dev/artifacts/eas/JKOsVz9wIz0Y15_d4EaJHYXgmEJMW5Z1zLBHGSo68FA.apk';
                     Alert.alert(
                       '📱 FixMart Mobile App',
-                      'Direct Android APK download will start. iOS App Store package is available upon request.',
+                      'Direct Android APK download will start. iOS App Store coming soon!',
                       [
                         { text: 'Download APK', onPress: () => Linking.openURL(apkUrl) },
                         { text: 'Cancel', style: 'cancel' }
@@ -1483,5 +1507,75 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
     fontSize: 13,
+  },
+
+  // ── Mobile/Universal Download Banner ─────────────────────────────────────
+  mobileDownloadBanner: {
+    borderRadius: 20,
+    padding: 20,
+    marginVertical: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  mobileDownloadLeft: {
+    flex: 1,
+  },
+  appVersionBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#22D3EE33',
+    borderColor: '#22D3EE66',
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    marginBottom: 8,
+  },
+  appVersionText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#22D3EE',
+    letterSpacing: 0.5,
+  },
+  mobileDownloadTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  mobileDownloadDesc: {
+    fontSize: 12,
+    color: '#94A3B8',
+    lineHeight: 17,
+  },
+  apkMainBtn: {
+    backgroundColor: '#22C55E',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 110,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  apkMainBtnIcon: {
+    fontSize: 22,
+    marginBottom: 4,
+  },
+  apkMainBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    textAlign: 'center',
   },
 });

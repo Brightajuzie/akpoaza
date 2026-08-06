@@ -4,10 +4,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as SecureStore from '../utils/storage';
 import { SettingsContext } from '../context/SettingsContext';
 
+import SafeLogo from '../components/SafeLogo';
+
 const { width, height } = Dimensions.get('window');
 
 export default function OnboardingScreen({ navigation }: any) {
-  const { theme } = useContext(SettingsContext);
+  const { theme, logoUrl } = useContext(SettingsContext);
 
   const handleGetStarted = async () => {
     try {
@@ -27,8 +29,8 @@ export default function OnboardingScreen({ navigation }: any) {
       >
         <View style={styles.content}>
           <View style={styles.logoContainer}>
-            <Image 
-              source={require('../../assets/logo_transparent.png')} 
+            <SafeLogo 
+              logoUrl={logoUrl} 
               style={styles.logoImage} 
               resizeMode="contain"
             />

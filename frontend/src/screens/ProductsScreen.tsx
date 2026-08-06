@@ -127,6 +127,7 @@ export default function ProductsScreen({ navigation }: any) {
           key={`grid-${numColumns}`}
           data={filteredProducts}
           keyExtractor={(item) => item.id}
+          key={`products-grid-${numColumns}`}
           contentContainerStyle={styles.listContainer}
           numColumns={numColumns}
           showsVerticalScrollIndicator={false}

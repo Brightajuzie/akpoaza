@@ -11,6 +11,8 @@ import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 
+import SafeLogo from '../components/SafeLogo';
+
 // Required for Google OAuth to work on mobile
 WebBrowser.maybeCompleteAuthSession();
 
@@ -28,7 +30,7 @@ export default function LoginScreen({ route, navigation }: any) {
   const [googleLoading, setGoogleLoading]           = useState(false);
 
   const { login } = useContext(AuthContext);
-  const { theme, settings } = useContext(SettingsContext);
+  const { theme, settings, logoUrl } = useContext(SettingsContext);
 
   const redirectTo: string | undefined     = route?.params?.redirectTo;
   const redirectParams: any                = route?.params?.redirectParams;
@@ -224,8 +226,8 @@ export default function LoginScreen({ route, navigation }: any) {
     <View style={[styles.container, { backgroundColor: theme.background }, isLargeScreen && styles.containerWeb]}>
       <View style={[styles.card, { borderColor: theme.border }, isLargeScreen && styles.cardWeb]}>
         <TouchableOpacity onPress={() => navigation.navigate('Main')} style={{ alignItems: 'center', marginBottom: 12 }}>
-          <Image
-            source={require('../../assets/logo_transparent.png')}
+          <SafeLogo
+            logoUrl={logoUrl}
             style={{ width: 72, height: 72 }}
             resizeMode="contain"
           />

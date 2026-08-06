@@ -15,14 +15,25 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Font from 'expo-font';
 import ToastProvider from './src/components/ToastProvider';
 
-/** Inner component so we can read AuthContext for the user's saved country */
+import { StatusBar } from 'expo-status-bar';
+
+/** Inner component so we can read AuthContext for the user's saved country and SettingsContext for theme */
 function AppContent() {
   const { userInfo } = useContext(AuthContext);
+  const { theme, colorMode } = useContext(SettingsContext);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.body.style.backgroundColor = theme.background;
+    }
+  }, [theme.background]);
+
   return (
     <CurrencyProvider userCountry={userInfo?.country}>
       <CartProvider>
         <NetworkProvider>
-          <SafeAreaProvider>
+          <SafeAreaProvider style={{ backgroundColor: theme.background }}>
+            <StatusBar style={colorMode === 'dark' ? 'light' : 'dark'} />
             <NetworkBanner />
             <AppNavigator />
             <ToastProvider />

@@ -7,6 +7,7 @@ import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { SUPPORTED_COUNTRIES } from '../utils/currency';
 import apiClient from '../api/client';
+import ThemeToggle from '../components/ThemeToggle';
 
 const BIOMETRIC_TOKEN_KEY = 'biometric_auth_token';
 const BIOMETRIC_ENABLED_KEY = 'biometric_enabled';
@@ -518,6 +519,15 @@ export default function ProfileScreen({ navigation }: any) {
         ) : (
           <Text style={styles.subLabel}>Set your location address during sign-up to enable distance matchmaking.</Text>
         )}
+      </View>
+
+      {/* Theme & Appearance Preference Card */}
+      <View style={[styles.card, { borderColor: theme.border }]}>
+        <Text style={styles.cardTitle}>🎨 App Theme & Appearance</Text>
+        <Text style={[styles.subLabel, { marginBottom: 8 }]}>
+          Choose between Light and Dark mode appearance for comfortable viewing.
+        </Text>
+        <ThemeToggle />
       </View>
 
       {/* Country & Currency Preference Card */}
