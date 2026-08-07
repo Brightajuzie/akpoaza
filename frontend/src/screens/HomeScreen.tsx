@@ -682,44 +682,6 @@ export default function HomeScreen({ navigation }: any) {
         </TouchableOpacity>
       )}
 
-      {/* ── App Download Banner (all platforms) ── */}
-      <LinearGradient
-        colors={['#0F172A', '#1E3A5F']}
-        style={styles.mobileDownloadBanner}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <View style={styles.mobileDownloadLeft}>
-          <View style={styles.appVersionBadge}>
-            <Text style={styles.appVersionText}>v2.0 · NEW</Text>
-          </View>
-          <Text style={styles.mobileDownloadTitle}>📱 FixMart Mobile App</Text>
-          <Text style={styles.mobileDownloadDesc}>
-            Book handymen, track riders & shop tools — all on Android.
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={styles.apkMainBtn}
-          activeOpacity={0.85}
-          accessibilityLabel="Download FixMart APK"
-          onPress={() => {
-            if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
-              const link = document.createElement('a');
-              link.href = apkUrl;
-              link.target = '_blank';
-              link.download = 'fixmart-app.apk';
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-            } else {
-              Linking.openURL(apkUrl);
-            }
-          }}
-        >
-          <Text style={styles.apkMainBtnIcon}>📥</Text>
-          <Text style={styles.apkMainBtnText}>Download APK</Text>
-        </TouchableOpacity>
-      </LinearGradient>
 
       {/* Dynamic brand footer */}
       <View style={styles.footerContainer}>
@@ -735,16 +697,17 @@ export default function HomeScreen({ navigation }: any) {
                 <TouchableOpacity
                   style={[styles.storeBadgeBtn, styles.apkDownloadBtn]}
                   onPress={() => {
+                    const directApkUrl = 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
                     if (typeof window !== 'undefined' && typeof document !== 'undefined') {
                       const link = document.createElement('a');
-                      link.href = apkUrl;
+                      link.href = directApkUrl;
                       link.target = '_blank';
-                      link.download = 'fixmart-app.apk';
+                      link.download = 'fixmart-latest.apk';
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);
                     } else {
-                      Linking.openURL(apkUrl);
+                      Linking.openURL(directApkUrl);
                     }
                   }}
                   activeOpacity={0.85}
@@ -761,8 +724,9 @@ export default function HomeScreen({ navigation }: any) {
                 <TouchableOpacity
                   style={styles.storeBadgeBtn}
                   onPress={() => {
-                    if (typeof window !== 'undefined') window.open(apkUrl, '_blank');
-                    else Linking.openURL(apkUrl);
+                    const directApkUrl = 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
+                    if (typeof window !== 'undefined') window.open(directApkUrl, '_blank');
+                    else Linking.openURL(directApkUrl);
                   }}
                   activeOpacity={0.85}
                   accessibilityLabel="Download on Google Play"
@@ -782,7 +746,7 @@ export default function HomeScreen({ navigation }: any) {
                       '📱 FixMart Mobile App',
                       'Direct Android APK download will start. iOS App Store coming soon!',
                       [
-                        { text: 'Download APK', onPress: () => Linking.openURL(apkUrl) },
+                        { text: 'Download APK', onPress: () => Linking.openURL('https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk') },
                         { text: 'Cancel', style: 'cancel' }
                       ]
                     );

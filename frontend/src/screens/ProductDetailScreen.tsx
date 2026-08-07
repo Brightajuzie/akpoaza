@@ -1,5 +1,20 @@
 import React, { useContext, useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image, TextInput, Alert, Modal, FlatList, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Image,
+  TextInput,
+  Alert,
+  Modal,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  useWindowDimensions,
+} from 'react-native';
 import apiClient from '../api/client';
 import { CartContext } from '../context/CartContext';
 import { SettingsContext } from '../context/SettingsContext';
@@ -19,7 +34,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
   const [reviews, setReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [averageRating, setAverageRating] = useState<number | null>(null);
-  
+
   // Review form
   const [rating, setRating] = useState('5');
   const [comment, setComment] = useState('');
@@ -36,6 +51,13 @@ export default function ProductDetailScreen({ route, navigation }: any) {
   const [addedModalVisible, setAddedModalVisible] = useState(false);
   const { theme } = useContext(SettingsContext);
   const { fmt } = useCurrency();
+
+  // Responsive layout
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 1024;
+  const isTablet = width >= 600 && width < 1024;
+  const contentMaxWidth = isDesktop ? 1200 : isTablet ? 800 : undefined;
+  const imageHeight = isDesktop ? 400 : isTablet ? 320 : 250;
 
   const fetchProductAndReviews = async () => {
     try {
@@ -156,7 +178,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
     setTyping(true);
     setTimeout(() => {
       setTyping(false);
-      
+
       // Smart context replies
       let replyText = `Thanks for writing! Yes, the "${product.name}" is completely in stock and available for delivery. Let me know if you would like to arrange it!`;
       const lowercaseUser = userMsg.toLowerCase();
@@ -200,17 +222,21 @@ export default function ProductDetailScreen({ route, navigation }: any) {
     );
   }
 
-  return (
-    <View style={[styles.mainContainer, { backgroundColor: theme.background }]}>
-      <ScrollView 
-        style={styles.container}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.productHeader}>
+  // ── Main product layout: two-column on desktop ──────────────────────────────
+  const mainContent = (
+    <>
+      {/* Desktop two-column layout: image left, info right */}
+      <View style={[styles.productHeader, isDesktop && styles.productHeaderDesktop]}>
+        {/* Image column */}
+        <View style={[styles.imageColumn, isDesktop && styles.imageColumnDesktop]}>
           {product.imageUrl ? (
-            <Image source={{ uri: product.imageUrl }} style={styles.image} resizeMode="cover" />
+            <Image
+              source={{ uri: product.imageUrl }}
+              style={[styles.image, { height: imageHeight }]}
+              resizeMode="cover"
+            />
           ) : (
-            <View style={styles.placeholderImage}>
+            <View style={[styles.placeholderImage, { height: imageHeight }]}>
               <Text style={styles.placeholderText}>No Image Available</Text>
             </View>
           )}
@@ -220,9 +246,17 @@ export default function ProductDetailScreen({ route, navigation }: any) {
               <Text style={styles.promotedBadgeText}>🔥 Promoted Listing</Text>
             </View>
           )}
+        </View>
 
-          <Text style={styles.name}>{product.name}</Text>
-          
+        {/* Info column */}
+        <View style={[styles.infoColumn, isDesktop && styles.infoColumnDesktop]}>
+          <Text style={[styles.name, isDesktop && styles.nameDesktop]}>{product.name}</Text>
+          <Text style={[styles.price, { color: theme.primary }, isDesktop && styles.priceDesktop]}>
+            {fmt(product.price)}
+          </Text>
+          <Text style={styles.description}>{product.description}</Text>
+          {product.category && <Text style={styles.category}>Category: {product.category}</Text>}
+
           {product.vendor && (
             <View style={styles.vendorBox}>
               <View style={styles.vendorHeaderRow}>
@@ -242,19 +276,19 @@ export default function ProductDetailScreen({ route, navigation }: any) {
 
               {/* Direct Communication Buttons Tray */}
               <View style={styles.communicationTray}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.commButton, { borderColor: theme.primary }]}
                   onPress={handleCallSimulate}
                 >
                   <Text style={[styles.commButtonText, { color: theme.primary }]}>📞 Simulated Call</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.commButton, { borderColor: '#25D366' }]}
                   onPress={handleWhatsAppSimulate}
                 >
                   <Text style={[styles.commButtonText, { color: '#25D366' }]}>💬 WhatsApp</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.commButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}
                   onPress={() => setChatVisible(true)}
                 >
@@ -264,98 +298,128 @@ export default function ProductDetailScreen({ route, navigation }: any) {
             </View>
           )}
 
-          <Text style={[styles.price, { color: theme.primary }]}>{fmt(product.price)}</Text>
-          <Text style={styles.description}>{product.description}</Text>
-          {product.category && <Text style={styles.category}>Category: {product.category}</Text>}
-        </View>
-
-        {/* Reviews Section */}
-        <View style={styles.reviewsSection}>
-          <Text style={styles.sectionTitle}>Customer Reviews</Text>
-
-          {/* Aggregated Rating Summary */}
-          {reviews.length > 0 && averageRating !== null && (
-            <View style={styles.ratingsSummary}>
-              <View style={styles.ratingsBigNum}>
-                <Text style={[styles.ratingsBigValue, { color: theme.primary }]}>
-                  {averageRating.toFixed(1)}
-                </Text>
-                <Text style={styles.ratingsOutOf}>/ 5</Text>
-              </View>
-              <View style={styles.ratingsRight}>
-                <View style={styles.ratingsStarsRow}>
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <Text
-                      key={s}
-                      style={[
-                        styles.ratingsStarChar,
-                        s <= Math.round(averageRating) ? { color: '#FFD700' } : { color: '#E5E5EA' },
-                      ]}
-                    >
-                      ★
-                    </Text>
-                  ))}
-                </View>
-                <Text style={styles.ratingsCount}>
-                  Based on {reviews.length} review{reviews.length !== 1 ? 's' : ''}
-                </Text>
-              </View>
-            </View>
-          )}
-          
-          <View style={styles.addReviewBox}>
-            <Text style={styles.label}>Write a Review</Text>
-            <TextInput 
-              style={styles.input} 
-              placeholder="Rating (1-5)" 
-              keyboardType="numeric" 
-              value={rating} 
-              onChangeText={setRating} 
-              maxLength={1}
-            />
-            <TextInput 
-              style={[styles.input, styles.textArea]} 
-              placeholder="Share your thoughts about this product..." 
-              value={comment} 
-              onChangeText={setComment} 
-              multiline 
-              numberOfLines={3} 
-            />
-            <TouchableOpacity 
-              style={[styles.submitBtn, { backgroundColor: theme.primary }]} 
-              onPress={handleSubmitReview} 
-              disabled={submittingReview}
+          {/* Add to Cart button on desktop shows inline */}
+          {isDesktop && (
+            <TouchableOpacity
+              style={[styles.addToCartBtnInline, { backgroundColor: theme.primary }]}
+              onPress={handleAddToCart}
             >
-              {submittingReview ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Publish Review</Text>}
+              <Text style={styles.addToCartBtnText}>🛒 Add to Cart</Text>
             </TouchableOpacity>
-          </View>
-
-          {reviews.length === 0 ? (
-            <Text style={styles.noReviews}>No reviews yet. Be the first to share your experience!</Text>
-          ) : (
-            reviews.map((review) => (
-              <View key={review.id} style={styles.reviewCard}>
-                <View style={styles.reviewHeader}>
-                  <Text style={styles.reviewerName}>{review.author?.name || 'Anonymous User'}</Text>
-                  <Text style={styles.ratingStars}>{'⭐'.repeat(review.rating)}</Text>
-                </View>
-                {review.comment && <Text style={styles.reviewComment}>{review.comment}</Text>}
-                <Text style={styles.reviewDate}>{new Date(review.createdAt).toLocaleDateString()}</Text>
-              </View>
-            ))
           )}
         </View>
+      </View>
+
+      {/* Reviews Section */}
+      <View style={styles.reviewsSection}>
+        <Text style={styles.sectionTitle}>Customer Reviews</Text>
+
+        {/* Aggregated Rating Summary */}
+        {reviews.length > 0 && averageRating !== null && (
+          <View style={styles.ratingsSummary}>
+            <View style={styles.ratingsBigNum}>
+              <Text style={[styles.ratingsBigValue, { color: theme.primary }]}>
+                {averageRating.toFixed(1)}
+              </Text>
+              <Text style={styles.ratingsOutOf}>/ 5</Text>
+            </View>
+            <View style={styles.ratingsRight}>
+              <View style={styles.ratingsStarsRow}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Text
+                    key={s}
+                    style={[
+                      styles.ratingsStarChar,
+                      s <= Math.round(averageRating) ? { color: '#FFD700' } : { color: '#E5E5EA' },
+                    ]}
+                  >
+                    ★
+                  </Text>
+                ))}
+              </View>
+              <Text style={styles.ratingsCount}>
+                Based on {reviews.length} review{reviews.length !== 1 ? 's' : ''}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <View style={styles.addReviewBox}>
+          <Text style={styles.label}>Write a Review</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Rating (1-5)"
+            keyboardType="numeric"
+            value={rating}
+            onChangeText={setRating}
+            maxLength={1}
+          />
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="Share your thoughts about this product..."
+            value={comment}
+            onChangeText={setComment}
+            multiline
+            numberOfLines={3}
+          />
+          <TouchableOpacity
+            style={[styles.submitBtn, { backgroundColor: theme.primary }]}
+            onPress={handleSubmitReview}
+            disabled={submittingReview}
+          >
+            {submittingReview ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Publish Review</Text>}
+          </TouchableOpacity>
+        </View>
+
+        {reviews.length === 0 ? (
+          <Text style={styles.noReviews}>No reviews yet. Be the first to share your experience!</Text>
+        ) : (
+          reviews.map((review) => (
+            <View key={review.id} style={styles.reviewCard}>
+              <View style={styles.reviewHeader}>
+                <Text style={styles.reviewerName}>{review.author?.name || 'Anonymous User'}</Text>
+                <Text style={styles.ratingStars}>{'⭐'.repeat(review.rating)}</Text>
+              </View>
+              {review.comment && <Text style={styles.reviewComment}>{review.comment}</Text>}
+              <Text style={styles.reviewDate}>{new Date(review.createdAt).toLocaleDateString()}</Text>
+            </View>
+          ))
+        )}
+      </View>
+    </>
+  );
+
+  return (
+    <View style={[styles.mainContainer, { backgroundColor: theme.background }]}>
+      <ScrollView
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.scrollContent,
+          !isDesktop && { paddingBottom: 80 }, // room for fixed footer on mobile/tablet
+        ]}
+      >
+        {/* Centered max-width wrapper for desktop */}
+        {contentMaxWidth ? (
+          <View style={[styles.centeredContent, { maxWidth: contentMaxWidth }]}>
+            {mainContent}
+          </View>
+        ) : (
+          mainContent
+        )}
       </ScrollView>
 
-      {/* FIXED PURCHASE FOOTER */}
-      <View style={styles.fixedFooter}>
-        <TouchableOpacity 
-          style={[styles.addToCartBtn, { backgroundColor: theme.primary }]} 
-          onPress={handleAddToCart}
-        >
-          <Text style={styles.addToCartBtnText}>🛒 Add to Cart</Text>
-        </TouchableOpacity>
-      </View>
+      {/* FIXED PURCHASE FOOTER – only on mobile/tablet */}
+      {!isDesktop && (
+        <View style={[styles.fixedFooter, { borderTopColor: theme.border }]}>
+          <TouchableOpacity
+            style={[styles.addToCartBtn, { backgroundColor: theme.primary }]}
+            onPress={handleAddToCart}
+          >
+            <Text style={styles.addToCartBtnText}>🛒 Add to Cart</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* DYNAMIC FULL SCREEN IN-APP LIVE CHAT SIMULATOR */}
       <Modal
@@ -363,8 +427,8 @@ export default function ProductDetailScreen({ route, navigation }: any) {
         animationType="slide"
         onRequestClose={() => setChatVisible(false)}
       >
-        <KeyboardAvoidingView 
-          style={styles.chatContainer} 
+        <KeyboardAvoidingView
+          style={styles.chatContainer}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
         >
@@ -397,11 +461,11 @@ export default function ProductDetailScreen({ route, navigation }: any) {
               const isMe = item.sender === 'customer';
               return (
                 <View style={[styles.msgWrapper, isMe ? styles.msgRight : styles.msgLeft]}>
-                  <View 
+                  <View
                     style={[
-                      styles.msgBubble, 
-                      isMe 
-                        ? { backgroundColor: theme.primary } 
+                      styles.msgBubble,
+                      isMe
+                        ? { backgroundColor: theme.primary }
                         : styles.msgBubbleVendor
                     ]}
                   >
@@ -435,7 +499,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
               onChangeText={setTypeMessage}
               placeholderTextColor="#8E8E93"
             />
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[styles.chatSendBtn, { backgroundColor: theme.primary }]}
               onPress={handleSendChatMessage}
             >
@@ -444,7 +508,8 @@ export default function ProductDetailScreen({ route, navigation }: any) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-          <AddToCartModal
+
+      <AddToCartModal
         visible={addedModalVisible}
         item={product}
         cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
@@ -466,6 +531,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  scrollContent: {
+    alignItems: 'center',
+  },
+  centeredContent: {
+    width: '100%',
+    alignSelf: 'center',
+  },
   centered: {
     flex: 1,
     justifyContent: 'center',
@@ -475,23 +547,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#888',
   },
+
+  // ── Product Header ──────────────────────────────────────────────────────────
   productHeader: {
     backgroundColor: '#FFFFFF',
     padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5EA',
     marginBottom: 10,
+    width: '100%',
+  },
+  productHeaderDesktop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 32,
+  },
+
+  // ── Image ───────────────────────────────────────────────────────────────────
+  imageColumn: {
     position: 'relative',
+  },
+  imageColumnDesktop: {
+    flex: 1,
+    minWidth: 0,
   },
   image: {
     width: '100%',
-    height: 250,
     borderRadius: 12,
     marginBottom: 16,
   },
   placeholderImage: {
     width: '100%',
-    height: 250,
     backgroundColor: '#E9ECEF',
     borderRadius: 12,
     justifyContent: 'center',
@@ -505,8 +591,8 @@ const styles = StyleSheet.create({
   },
   promotedBadge: {
     position: 'absolute',
-    top: 32,
-    left: 32,
+    top: 12,
+    left: 12,
     backgroundColor: '#FF9500',
     paddingHorizontal: 12,
     paddingVertical: 5,
@@ -518,16 +604,29 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textTransform: 'uppercase',
   },
+
+  // ── Info Column ─────────────────────────────────────────────────────────────
+  infoColumn: {},
+  infoColumnDesktop: {
+    flex: 1,
+    minWidth: 0,
+  },
   name: {
     fontSize: 22,
     fontWeight: '800',
     color: '#1C1C1E',
     marginBottom: 8,
   },
+  nameDesktop: {
+    fontSize: 28,
+  },
   price: {
     fontSize: 24,
     fontWeight: '800',
     marginBottom: 16,
+  },
+  priceDesktop: {
+    fontSize: 32,
   },
   description: {
     fontSize: 15,
@@ -539,7 +638,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8E8E93',
     fontStyle: 'italic',
+    marginBottom: 8,
   },
+
+  // ── Vendor Box ──────────────────────────────────────────────────────────────
   vendorBox: {
     backgroundColor: '#F8F9FA',
     padding: 16,
@@ -613,10 +715,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+
+  // ── Inline Add to Cart (desktop only) ───────────────────────────────────────
+  addToCartBtnInline: {
+    height: 52,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+
+  // ── Reviews Section ─────────────────────────────────────────────────────────
   reviewsSection: {
     backgroundColor: '#FFFFFF',
     padding: 20,
-    paddingBottom: 100, // Make room for fixed footer
+    paddingBottom: 32,
+    width: '100%',
   },
   sectionTitle: {
     fontSize: 18,
@@ -697,6 +816,8 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#AEAEB2',
   },
+
+  // ── Fixed Footer (mobile/tablet only) ──────────────────────────────────────
   fixedFooter: {
     position: 'absolute',
     bottom: 0,
@@ -705,9 +826,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: '#E5E5EA',
+    ...Platform.select({
+      ios: { paddingBottom: 28 },
+      default: {},
+    }),
   },
-  // Aggregated ratings summary
+  addToCartBtn: {
+    height: 52,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  addToCartBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  // ── Ratings Summary ─────────────────────────────────────────────────────────
   ratingsSummary: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -749,23 +890,8 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontWeight: '500',
   },
-  addToCartBtn: {
-    height: 52,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  addToCartBtnText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  // Chat Simulator overlay styles
+
+  // ── Chat Simulator ──────────────────────────────────────────────────────────
   chatContainer: {
     flex: 1,
     backgroundColor: '#F8F9FA',

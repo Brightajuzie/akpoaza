@@ -27,7 +27,8 @@ export default function ProductsScreen({ navigation }: any) {
   const { theme } = useContext(SettingsContext);
   const { fmt } = useCurrency();
   const { width } = useWindowDimensions();
-  const numColumns = width > 1024 ? 4 : width > 600 ? 3 : 2;
+  const numColumns = width >= 1024 ? 4 : width >= 600 ? 3 : 2;
+  const imageHeight = width >= 1024 ? 160 : width >= 600 ? 140 : 180;
 
   const fetchProducts = async () => {
     try {
@@ -124,10 +125,9 @@ export default function ProductsScreen({ navigation }: any) {
         </View>
       ) : (
         <FlatList
-          key={`grid-${numColumns}`}
+          key={`products-grid-${numColumns}`}
           data={filteredProducts}
           keyExtractor={(item) => item.id}
-          key={`products-grid-${numColumns}`}
           contentContainerStyle={styles.listContainer}
           numColumns={numColumns}
           showsVerticalScrollIndicator={false}
@@ -148,9 +148,9 @@ export default function ProductsScreen({ navigation }: any) {
                 onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
               >
                 {item.imageUrl ? (
-                  <Image source={{ uri: item.imageUrl }} style={styles.image} resizeMode="cover" />
+                  <Image source={{ uri: item.imageUrl }} style={[styles.image, { height: imageHeight }]} resizeMode="cover" />
                 ) : (
-                  <View style={styles.placeholderImage}>
+                  <View style={[styles.placeholderImage, { height: imageHeight }]}>
                     <Text style={styles.placeholderText}>📦 Product</Text>
                   </View>
                 )}
@@ -272,11 +272,9 @@ const styles = StyleSheet.create({
   },
   image: {
     width: '100%',
-    height: 180,
   },
   placeholderImage: {
     width: '100%',
-    height: 180,
     backgroundColor: '#E9ECEF',
     justifyContent: 'center',
     alignItems: 'center',

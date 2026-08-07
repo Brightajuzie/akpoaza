@@ -8,3 +8,5 @@ web-build/
 .env
 /android
 /ios
+*.apk
+backend/uploads/*.apk

@@ -155,7 +155,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
   const heroTitle    = settings.hero_title    || 'Find the Best Services & E-Commerce on FixMart';
   const heroSubtitle = settings.hero_subtitle || 'Professional services and premium equipment at your fingertips.';
   const footerText   = settings.footer_text   || '© 2026 FixMart. All rights reserved.';
-  const apkUrl       = settings.apk_url       || '/fixmart-latest.apk';
+  const apkUrl       = settings.apk_url       || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
 
   return (
     <SettingsContext.Provider

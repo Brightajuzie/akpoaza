@@ -1,0 +1,8 @@
+node_modules
+android
+.expo
+patches
+download_log.js
+remove_bg.py
+build_log.txt
+clean_build_log.txt
