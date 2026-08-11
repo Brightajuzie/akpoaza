@@ -98,6 +98,46 @@ export default function HomeScreen({ navigation }: any) {
     }
   };
 
+  const triggerDirectApkDownload = (targetUrl?: string | null) => {
+    let url = targetUrl || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
+    if (url.startsWith('/')) {
+      const apiBase = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
+      const origin = apiBase.replace(/\/api\/?$/, '');
+      url = `${origin}${url}`;
+    }
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.download = 'fixmart-latest.apk';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      Linking.openURL(url);
+    }
+  };
+
+  const triggerDirectAabDownload = (targetUrl?: string | null) => {
+    let url = targetUrl || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.aab';
+    if (url.startsWith('/')) {
+      const apiBase = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
+      const origin = apiBase.replace(/\/api\/?$/, '');
+      url = `${origin}${url}`;
+    }
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.download = 'fixmart-latest.aab';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      Linking.openURL(url);
+    }
+  };
+
   const [promotedListings, setPromotedListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -781,20 +821,7 @@ export default function HomeScreen({ navigation }: any) {
                 {/* Direct Android APK Download */}
                 <TouchableOpacity
                   style={[styles.storeBadgeBtn, styles.apkDownloadBtn]}
-                  onPress={() => {
-                    const directApkUrl = apkUrl || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
-                    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-                      const link = document.createElement('a');
-                      link.href = directApkUrl;
-                      link.target = '_blank';
-                      link.download = 'fixmart-latest.apk';
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    } else {
-                      Linking.openURL(directApkUrl);
-                    }
-                  }}
+                  onPress={() => triggerDirectApkDownload(apkUrl)}
                   activeOpacity={0.85}
                   accessibilityLabel="Download Android APK File"
                 >
@@ -805,21 +832,17 @@ export default function HomeScreen({ navigation }: any) {
                   </View>
                 </TouchableOpacity>
 
-                {/* Google Play */}
+                {/* Direct Android AAB Download */}
                 <TouchableOpacity
                   style={styles.storeBadgeBtn}
-                  onPress={() => {
-                    const directApkUrl = apkUrl || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
-                    if (typeof window !== 'undefined') window.open(directApkUrl, '_blank');
-                    else Linking.openURL(directApkUrl);
-                  }}
+                  onPress={() => triggerDirectAabDownload(aabUrl)}
                   activeOpacity={0.85}
-                  accessibilityLabel="Download on Google Play"
+                  accessibilityLabel="Download Android AAB Bundle"
                 >
-                  <Text style={styles.storeIcon}>🤖</Text>
+                  <Text style={styles.storeIcon}>📦</Text>
                   <View style={styles.storeTextCol}>
-                    <Text style={styles.storeSubtext}>GET IT ON</Text>
-                    <Text style={styles.storeTitle}>Google Play</Text>
+                    <Text style={styles.storeSubtext}>BUNDLE FILE</Text>
+                    <Text style={styles.storeTitle}>Android AAB</Text>
                   </View>
                 </TouchableOpacity>
 
@@ -829,9 +852,10 @@ export default function HomeScreen({ navigation }: any) {
                   onPress={() => {
                     Alert.alert(
                       '📱 FixMart Mobile App',
-                      'Direct Android APK download will start. iOS App Store coming soon!',
+                      'Direct Android APK & AAB download will start. iOS App Store coming soon!',
                       [
-                        { text: 'Download APK', onPress: () => Linking.openURL(apkUrl || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk') },
+                        { text: 'Download APK', onPress: () => triggerDirectApkDownload(apkUrl) },
+                        { text: 'Download AAB', onPress: () => triggerDirectAabDownload(aabUrl) },
                         { text: 'Cancel', style: 'cancel' }
                       ]
                     );

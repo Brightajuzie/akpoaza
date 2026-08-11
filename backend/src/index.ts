@@ -67,6 +67,20 @@ app.get('/uploads/fixmart-latest.apk', (req, res) => {
   });
 });
 
+// Explicit AAB download route
+app.get('/uploads/fixmart-latest.aab', (req, res) => {
+  const filePath = path.resolve(__dirname, '../uploads/fixmart-latest.aab');
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'application/x-authoritative-aab');
+    res.setHeader('Content-Disposition', 'attachment; filename="fixmart-latest.aab"');
+    return res.sendFile(filePath);
+  }
+  return res.status(404).json({
+    error: 'Not Found',
+    message: 'AAB file not found on server. Please try again later.'
+  });
+});
+
 // Serve static uploads folder
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
