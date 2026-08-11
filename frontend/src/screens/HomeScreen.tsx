@@ -50,14 +50,10 @@ export default function HomeScreen({ navigation }: any) {
   const handleSellPress = () => {
     if (!userInfo) {
       Alert.alert(
-        '🔐 Vendor Login Required',
-        'To list and sell products on FixMart, please log in or register as a Vendor.',
+        '🏪 Vendor Registration Required',
+        'You must register as a vendor before you can sell in the app.',
         [
           { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Log In',
-            onPress: () => navigation.navigate('Login'),
-          },
           {
             text: 'Register as Vendor',
             onPress: () => navigation.navigate('Signup', { role: 'VENDOR', initialRole: 'VENDOR' }),
@@ -86,7 +82,7 @@ export default function HomeScreen({ navigation }: any) {
     } else {
       Alert.alert(
         '🏪 Vendor Registration Required',
-        'To upload and sell products on FixMart, you must complete registration as a Vendor.\n\nWould you like to register as a Vendor now?',
+        'You must register as a vendor before you can sell in the app.',
         [
           { text: 'Cancel', style: 'cancel' },
           {
