@@ -25,6 +25,7 @@ export default function AdminScreen() {
   const { userInfo } = useContext(AuthContext);
   const { theme, settings, updateSettings } = useContext(SettingsContext);
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
   const { width } = useWindowDimensions();
 
   const isVendor = userInfo?.role === 'VENDOR';
