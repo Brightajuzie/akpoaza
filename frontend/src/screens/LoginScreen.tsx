@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Image, StyleSheet,
-  Alert, ActivityIndicator, Animated, Platform, useWindowDimensions,
+  Alert, ActivityIndicator, Animated, Platform, useWindowDimensions, ScrollView,
 } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from '../utils/storage';
@@ -223,8 +223,12 @@ export default function LoginScreen({ route, navigation }: any) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }, isLargeScreen && styles.containerWeb]}>
-      <View style={[styles.card, { borderColor: theme.border }, isLargeScreen && styles.cardWeb]}>
+    <ScrollView
+      contentContainerStyle={[styles.container, { backgroundColor: theme.background }, isLargeScreen && styles.containerWeb]}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }, isLargeScreen && styles.cardWeb]}>
         <TouchableOpacity onPress={() => navigation.navigate('Main')} style={{ alignItems: 'center', marginBottom: 12 }}>
           <SafeLogo
             logoUrl={logoUrl}
@@ -325,7 +329,7 @@ export default function LoginScreen({ route, navigation }: any) {
           <Text style={[styles.cancelLinkText, { color: theme.lightText }]}>Cancel</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
