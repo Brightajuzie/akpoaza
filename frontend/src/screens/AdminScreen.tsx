@@ -3,7 +3,7 @@ import {
   View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView,
   Alert, ActivityIndicator, Modal, Image, Platform, Linking, useWindowDimensions
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
