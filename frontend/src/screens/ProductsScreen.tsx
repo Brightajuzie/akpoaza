@@ -131,6 +131,7 @@ export default function ProductsScreen({ navigation }: any) {
           contentContainerStyle={styles.listContainer}
           numColumns={numColumns}
           showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => {
             const isFeatured = item.featured;
             const createdTime = item.createdAt ? new Date(item.createdAt).getTime() : 0;
             const isNewItem = item.isNew || item.new || (createdTime > 0 && (Date.now() - createdTime) < 14 * 24 * 60 * 60 * 1000);
