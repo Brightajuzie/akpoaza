@@ -28,7 +28,20 @@ export default function ProductsScreen({ navigation }: any) {
   const { fmt } = useCurrency();
   const { width } = useWindowDimensions();
   const numColumns = width >= 1024 ? 4 : width >= 600 ? 3 : 2;
-  const imageHeight = width >= 1024 ? 160 : width >= 600 ? 140 : 180;
+
+  // Responsive sizing helpers
+  const isTwoCol = numColumns === 2;
+  const isNarrow = numColumns >= 3;
+  const imageHeight = width >= 1024 ? 140 : width >= 600 ? 120 : 110;
+  const cardPadding = isTwoCol ? 10 : 12;
+  const nameFontSize = isTwoCol ? 13 : isNarrow ? 13 : 15;
+  const descFontSize = isTwoCol ? 11 : 12;
+  const priceFontSize = isTwoCol ? 14 : 16;
+  const btnFontSize = isTwoCol ? 10 : 12;
+  const btnPaddingH = isTwoCol ? 8 : 12;
+  const btnPaddingV = isTwoCol ? 6 : 8;
+  const vendorFontSize = isTwoCol ? 10 : 11;
+  const locationFontSize = isTwoCol ? 9 : 10;
 
   const fetchProducts = async () => {
     try {
@@ -66,7 +79,6 @@ export default function ProductsScreen({ navigation }: any) {
 
   const totalCartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // Local text search filter
   const filteredProducts = products.filter(product => {
     const query = searchQuery.toLowerCase();
     return (
@@ -78,7 +90,6 @@ export default function ProductsScreen({ navigation }: any) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Interactive Add to Cart Modal */}
       <AddToCartModal
         visible={addedItem !== null}
         item={addedItem}
@@ -91,28 +102,25 @@ export default function ProductsScreen({ navigation }: any) {
         }}
       />
 
-      {/* Search & Location Filter Bar Container */}
-      <View style={styles.filterSection}>
+      {/* Filter Bar */}
+      <View style={[styles.filterSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <TextInput
-          style={styles.searchBar}
+          style={[styles.searchBar, { backgroundColor: theme.background, color: theme.text, borderColor: theme.border }]}
           placeholder="🔍 Search products, tools, apparel..."
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholderTextColor="#8E8E93"
         />
-        <View style={styles.locationContainer}>
+        <View style={[styles.locationContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
           <TextInput
-            style={styles.locationInput}
-            placeholder="📍 Filter by City / State (e.g. New York)"
+            style={[styles.locationInput, { color: theme.text }]}
+            placeholder="📍 Filter by City / State"
             value={locationQuery}
             onChangeText={setLocationQuery}
             placeholderTextColor="#8E8E93"
           />
           {locationQuery.trim() !== '' && (
-            <TouchableOpacity
-              style={styles.clearBtn}
-              onPress={() => setLocationQuery('')}
-            >
+            <TouchableOpacity style={styles.clearBtn} onPress={() => setLocationQuery('')}>
               <Text style={styles.clearBtnText}>✕</Text>
             </TouchableOpacity>
           )}
@@ -134,33 +142,42 @@ export default function ProductsScreen({ navigation }: any) {
           renderItem={({ item }) => {
             const isFeatured = item.featured;
             const createdTime = item.createdAt ? new Date(item.createdAt).getTime() : 0;
-            const isNewItem = item.isNew || item.new || (createdTime > 0 && (Date.now() - createdTime) < 14 * 24 * 60 * 60 * 1000);
+            const isNewItem =
+              item.isNew ||
+              item.new ||
+              (createdTime > 0 && Date.now() - createdTime < 14 * 24 * 60 * 60 * 1000);
 
             return (
               <TouchableOpacity
                 style={[
                   styles.card,
-                  isFeatured && {
-                    borderColor: '#FF9500',
-                    borderWidth: 2,
-                    shadowColor: '#FF9500',
-                    shadowOpacity: 0.15,
+                  {
+                    backgroundColor: theme.card,
+                    borderColor: isFeatured ? '#FF9500' : theme.border,
+                    borderWidth: isFeatured ? 2 : 1,
                   },
+                  isFeatured && { shadowColor: '#FF9500', shadowOpacity: 0.18 },
                 ]}
                 activeOpacity={0.9}
                 onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
               >
+                {/* Image */}
                 {item.imageUrl ? (
-                  <Image source={{ uri: item.imageUrl }} style={[styles.image, { height: imageHeight }]} resizeMode="cover" />
+                  <Image
+                    source={{ uri: item.imageUrl }}
+                    style={[styles.image, { height: imageHeight }]}
+                    resizeMode="cover"
+                  />
                 ) : (
-                  <View style={[styles.placeholderImage, { height: imageHeight }]}>
-                    <Text style={styles.placeholderText}>📦 Product</Text>
+                  <View style={[styles.placeholderImage, { height: imageHeight, backgroundColor: theme.border }]}>
+                    <Text style={styles.placeholderText}>📦</Text>
                   </View>
                 )}
 
+                {/* Badge */}
                 {isFeatured ? (
                   <View style={styles.promotedTag}>
-                    <Text style={styles.promotedTagText}>🔥 Promoted ad</Text>
+                    <Text style={styles.promotedTagText}>🔥 Promoted</Text>
                   </View>
                 ) : isNewItem ? (
                   <View style={styles.newTag}>
@@ -168,29 +185,69 @@ export default function ProductsScreen({ navigation }: any) {
                   </View>
                 ) : null}
 
-                <View style={styles.cardContent}>
-                  <Text style={styles.name}>{item.name}</Text>
+                {/* Content */}
+                <View style={{ padding: cardPadding }}>
+                  <Text
+                    style={[styles.name, { fontSize: nameFontSize, color: theme.text }]}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    {item.name}
+                  </Text>
 
                   {item.vendor && (
                     <View style={styles.vendorRow}>
-                      <Text style={styles.vendorText}>👤 Seller: {item.vendor.name}</Text>
+                      <Text
+                        style={[styles.vendorText, { fontSize: vendorFontSize }]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
+                        👤 {item.vendor.name}
+                      </Text>
                       {item.vendor.address && (
-                        <Text style={styles.locationText}>📍 {item.vendor.address}</Text>
+                        <Text
+                          style={[styles.locationText, { fontSize: locationFontSize }]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          📍 {item.vendor.address}
+                        </Text>
                       )}
                     </View>
                   )}
 
-                  <Text style={styles.desc} numberOfLines={2}>{item.description}</Text>
+                  <Text
+                    style={[styles.desc, { fontSize: descFontSize }]}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    {item.description}
+                  </Text>
 
+                  {/* Price + Button */}
                   <View style={styles.footerRow}>
-                    <Text style={[styles.price, { color: theme.primary }]}>
+                    <Text
+                      style={[styles.price, { fontSize: priceFontSize, color: theme.primary }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
                       {fmt(item.price)}
                     </Text>
                     <TouchableOpacity
-                      style={[styles.addButton, { backgroundColor: theme.primary }]}
+                      style={[
+                        styles.addButton,
+                        {
+                          backgroundColor: theme.primary,
+                          paddingHorizontal: btnPaddingH,
+                          paddingVertical: btnPaddingV,
+                        },
+                      ]}
                       onPress={() => handleAddToCart(item)}
                     >
-                      <Text style={styles.addButtonText}>Add to Cart</Text>
+                      <Text style={[styles.addButtonText, { fontSize: btnFontSize }]}>
+                        {isTwoCol ? '+ Cart' : 'Add to Cart'}
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -199,7 +256,9 @@ export default function ProductsScreen({ navigation }: any) {
           }}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No products match your filters.</Text>
+              <Text style={[styles.emptyText, { color: theme.text }]}>
+                No products match your filters.
+              </Text>
             </View>
           }
         />
@@ -209,183 +268,106 @@ export default function ProductsScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  container: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   filterSection: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
+    padding: 12,
     borderBottomWidth: 1,
-    borderColor: '#E5E5EA',
   },
   searchBar: {
-    backgroundColor: '#F2F2F7',
-    height: 44,
+    height: 42,
     borderRadius: 10,
     paddingHorizontal: 12,
-    fontSize: 15,
-    color: '#1C1C1E',
-    marginBottom: 10,
+    fontSize: 14,
+    marginBottom: 8,
+    borderWidth: 1,
   },
   locationContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
     borderRadius: 10,
-    height: 44,
+    height: 40,
     paddingHorizontal: 12,
+    borderWidth: 1,
   },
-  locationInput: {
-    flex: 1,
-    fontSize: 14,
-    color: '#1C1C1E',
-  },
+  locationInput: { flex: 1, fontSize: 13 },
   clearBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: '#AEAEB2',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 6,
   },
-  clearBtnText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  listContainer: {
-    padding: 16,
-  },
+  clearBtnText: { color: '#FFFFFF', fontSize: 9, fontWeight: '700' },
+  listContainer: { padding: 6 },
   card: {
     flex: 1,
-    margin: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    margin: 5,
+    borderRadius: 14,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07,
+    shadowRadius: 8,
     elevation: 3,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
+    minWidth: 0,        // critical: prevents flex children from overflowing
     position: 'relative',
   },
-  image: {
-    width: '100%',
-  },
-  placeholderImage: {
-    width: '100%',
-    backgroundColor: '#E9ECEF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  placeholderText: {
-    color: '#ADB5BD',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  image: { width: '100%' },
+  placeholderImage: { width: '100%', justifyContent: 'center', alignItems: 'center' },
+  placeholderText: { fontSize: 24 },
   promotedTag: {
     position: 'absolute',
-    top: 12,
-    left: 12,
+    top: 8,
+    left: 8,
     backgroundColor: '#FF9500',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 5,
     elevation: 2,
+    zIndex: 10,
   },
-  promotedTagText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  cardContent: {
-    padding: 16,
-  },
-  name: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    marginBottom: 6,
-  },
-  vendorRow: {
-    marginBottom: 8,
-  },
-  vendorText: {
-    fontSize: 12,
-    color: '#5856D6',
-    fontWeight: '600',
-  },
-  locationText: {
-    fontSize: 11,
-    color: '#8E8E93',
-    marginTop: 2,
-  },
-  desc: {
-    color: '#8E8E93',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 16,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  price: {
-    fontSize: 22,
-    fontWeight: '800',
-  },
-  addButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 8,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingTop: 40,
-  },
-  emptyText: {
-    fontSize: 15,
-    color: '#8E8E93',
-    textAlign: 'center',
-  },
+  promotedTagText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
   newTag: {
     position: 'absolute',
     top: 8,
     left: 8,
     backgroundColor: '#22C55E',
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 5,
     zIndex: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
     elevation: 3,
   },
-  newTagText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+  newTagText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  name: {
+    fontWeight: '700',
+    marginBottom: 4,
+    lineHeight: 18,
   },
+  vendorRow: { marginBottom: 4 },
+  vendorText: { color: '#5856D6', fontWeight: '600' },
+  locationText: { color: '#8E8E93', marginTop: 1 },
+  desc: { color: '#8E8E93', lineHeight: 16, marginBottom: 8 },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+    flexWrap: 'nowrap',
+  },
+  price: {
+    fontWeight: '800',
+    flexShrink: 1,
+    flexGrow: 0,
+  },
+  addButton: {
+    borderRadius: 7,
+    flexShrink: 0,
+  },
+  addButtonText: { color: '#FFFFFF', fontWeight: '700' },
+  emptyContainer: { alignItems: 'center', paddingTop: 40 },
+  emptyText: { fontSize: 15, textAlign: 'center' },
 });
