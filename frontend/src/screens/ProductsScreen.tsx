@@ -131,8 +131,10 @@ export default function ProductsScreen({ navigation }: any) {
           contentContainerStyle={styles.listContainer}
           numColumns={numColumns}
           showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => {
             const isFeatured = item.featured;
+            const createdTime = item.createdAt ? new Date(item.createdAt).getTime() : 0;
+            const isNewItem = item.isNew || item.new || (createdTime > 0 && (Date.now() - createdTime) < 14 * 24 * 60 * 60 * 1000);
+
             return (
               <TouchableOpacity
                 style={[
@@ -155,11 +157,15 @@ export default function ProductsScreen({ navigation }: any) {
                   </View>
                 )}
 
-                {isFeatured && (
+                {isFeatured ? (
                   <View style={styles.promotedTag}>
                     <Text style={styles.promotedTagText}>🔥 Promoted ad</Text>
                   </View>
-                )}
+                ) : isNewItem ? (
+                  <View style={styles.newTag}>
+                    <Text style={styles.newTagText}>✨ NEW</Text>
+                  </View>
+                ) : null}
 
                 <View style={styles.cardContent}>
                   <Text style={styles.name}>{item.name}</Text>
@@ -359,5 +365,26 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#8E8E93',
     textAlign: 'center',
+  },
+  newTag: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#22C55E',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  newTagText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
 });

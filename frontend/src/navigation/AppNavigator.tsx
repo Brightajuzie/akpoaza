@@ -42,7 +42,6 @@ function FixMartHeader() {
           </Text>
         </View>
       </TouchableOpacity>
-      <ThemeToggle compact />
     </View>
   );
 }
@@ -245,7 +244,7 @@ const navStyles = StyleSheet.create({
 export default function AppNavigator() {
   const { isLoading, userInfo } = React.useContext(AuthContext);
   const { theme } = React.useContext(SettingsContext);
-  const isAdmin = userInfo?.role === 'ADMIN';
+  const isVendorOrAdmin = userInfo?.role === 'ADMIN' || userInfo?.role === 'VENDOR';
   const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -314,11 +313,11 @@ export default function AppNavigator() {
           component={CheckoutScreen} 
           options={{ title: 'Checkout' }}
         />
-        {isAdmin && (
+        {isVendorOrAdmin && (
           <Stack.Screen 
             name="Admin" 
             component={AdminScreen} 
-            options={{ title: 'Admin Panel', headerShown: false }}
+            options={{ title: 'Vendor & Admin Hub', headerShown: false }}
           />
         )}
         <Stack.Screen 

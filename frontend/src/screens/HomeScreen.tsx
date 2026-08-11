@@ -48,51 +48,50 @@ export default function HomeScreen({ navigation }: any) {
   const isLargeScreen = width >= 768;
 
   const handleSellPress = () => {
-    if (userInfo?.role === 'VENDOR') {
-      navigation.navigate('Products');
+    if (!userInfo) {
+      Alert.alert(
+        '🔐 Vendor Login Required',
+        'To list and sell products on FixMart, please log in or register as a Vendor.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Log In',
+            onPress: () => navigation.navigate('Login'),
+          },
+          {
+            text: 'Register as Vendor',
+            onPress: () => navigation.navigate('Signup', { role: 'VENDOR', initialRole: 'VENDOR' }),
+          },
+        ]
+      );
+      return;
+    }
+
+    if (userInfo.role === 'VENDOR' || userInfo.role === 'ADMIN') {
+      if (userInfo.role === 'VENDOR' && userInfo.kycStatus && userInfo.kycStatus !== 'VERIFIED' && userInfo.kycStatus !== 'APPROVED') {
+        Alert.alert(
+          '⏳ Complete Vendor Verification',
+          'Your vendor profile is incomplete or pending verification. Please complete registration before uploading products.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Complete Verification',
+              onPress: () => navigation.navigate('KYCVerification', { role: 'VENDOR' }),
+            },
+          ]
+        );
+        return;
+      }
+      navigation.navigate('Admin', { activeTab: 'products', action: 'add' });
     } else {
       Alert.alert(
-        '🏪 Register as a Vendor',
-        'To sell items on FixMart, you need to register as a Vendor.\n\nWould you like to register now?',
+        '🏪 Vendor Registration Required',
+        'To upload and sell products on FixMart, you must complete registration as a Vendor.\n\nWould you like to register as a Vendor now?',
         [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Register as Vendor',
-            onPress: () => {
-              if (userInfo) {
-                navigation.navigate('KYCVerification', { role: 'VENDOR' });
-              } else {
-                navigation.navigate('Signup', { role: 'VENDOR', initialRole: 'VENDOR' });
-              }
-            },
-          },
-        ]
-      );
-    }
-  };
-
-  const handleEscrowPress = () => {
-    if (userInfo) {
-      Alert.alert(
-        '🛡️ FixMart Escrow Protection',
-        'All purchases & service bookings are 100% protected by FixMart Escrow.\n\nFunds are released to vendors/providers only when you verify delivery.\n\nWould you like to view your Escrow & Wallet balance?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'View Wallet & Escrow',
-            onPress: () => navigation.navigate('Wallet'),
-          },
-        ]
-      );
-    } else {
-      Alert.alert(
-        '🛡️ FixMart Escrow Protection',
-        'FixMart Escrow protects 100% of your payments until delivery is verified.\n\nSign in to view your Escrow Wallet.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Sign In',
-            onPress: () => navigation.navigate('Login'),
+            onPress: () => navigation.navigate('KYCVerification', { role: 'VENDOR' }),
           },
         ]
       );
@@ -280,10 +279,6 @@ export default function HomeScreen({ navigation }: any) {
                 <Text style={[styles.navLinkLabel, { color: '#34C759', fontWeight: '800' }]}>🚚 Rider Hub</Text>
               </TouchableOpacity>
             )}
-            {/* Theme Toggle */}
-            <View style={{ marginLeft: 12 }}>
-              <ThemeToggle compact />
-            </View>
             {/* User Avatar */}
             <TouchableOpacity 
               style={[styles.profileIndicator, { borderColor: theme.primary, marginLeft: 12 }]}
@@ -293,12 +288,16 @@ export default function HomeScreen({ navigation }: any) {
                 {userInfo?.name ? userInfo.name.charAt(0).toUpperCase() : 'G'}
               </Text>
             </TouchableOpacity>
+            {/* Theme Toggle at extreme right of nav items */}
+            <View style={{ marginLeft: 12 }}>
+              <ThemeToggle compact />
+            </View>
           </View>
         ) : (
           /* 📱 MOBILE HAMBURGER BUTTON */
           <View style={styles.mobileNavHeaderRight}>
             <TouchableOpacity 
-              style={[styles.profileIndicator, { borderColor: theme.primary, marginRight: 12 }]}
+              style={[styles.profileIndicator, { borderColor: theme.primary, marginRight: 8 }]}
               onPress={() => navigation.navigate('ProfileTab')}
             >
               <Text style={styles.profileIndicatorText}>
@@ -306,6 +305,11 @@ export default function HomeScreen({ navigation }: any) {
               </Text>
             </TouchableOpacity>
             
+            {/* Theme Toggle close to hamburger on mobile */}
+            <View style={{ marginRight: 8 }}>
+              <ThemeToggle compact />
+            </View>
+
             <TouchableOpacity 
               style={[styles.hamburgerButton, { backgroundColor: theme.primary + '15' }]} 
               onPress={() => setMenuOpen(!menuOpen)}
@@ -525,18 +529,6 @@ export default function HomeScreen({ navigation }: any) {
                   <Text style={styles.actionEmoji}>🏷️</Text>
                 </View>
                 <Text style={styles.actionLabel}>Sell</Text>
-              </TouchableOpacity>
-
-              {/* Escrow Pay */}
-              <TouchableOpacity
-                style={[styles.actionTile, isLargeScreen && styles.actionTileHorizontal]}
-                onPress={handleEscrowPress}
-                activeOpacity={0.82}
-              >
-                <View style={[styles.actionIconCircle, { backgroundColor: '#F3E5F5' }]}>
-                  <Text style={styles.actionEmoji}>🛡️</Text>
-                </View>
-                <Text style={styles.actionLabel}>Escrow</Text>
               </TouchableOpacity>
 
               {/* Request a Service */}
@@ -958,6 +950,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 4,
     marginBottom: 16,
+    width: '92%',
+    maxWidth: 480,
+    alignSelf: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -987,6 +982,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     marginBottom: 16,
+    width: '92%',
+    maxWidth: 480,
+    alignSelf: 'center',
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },

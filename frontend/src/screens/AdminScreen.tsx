@@ -32,7 +32,7 @@ export default function AdminScreen() {
 
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders' | 'slides'>(
-    'products'
+    route?.params?.activeTab || 'products'
   );
   // Track which tabs have been loaded to avoid redundant fetches
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
