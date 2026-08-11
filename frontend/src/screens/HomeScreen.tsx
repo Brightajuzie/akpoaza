@@ -43,7 +43,7 @@ const PROMO_SLIDES = [
 
 export default function HomeScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
-  const { theme, logoUrl, heroTitle, heroSubtitle, footerText, apkUrl, aabUrl } = useContext(SettingsContext);
+  const { theme, logoUrl, heroTitle, heroSubtitle, footerText, apkUrl, aabUrl, colorMode } = useContext(SettingsContext);
   const { width } = useWindowDimensions();
   const isLargeScreen = width >= 768;
 
@@ -257,22 +257,22 @@ export default function HomeScreen({ navigation }: any) {
               <Text style={[styles.navLinkLabel, styles.activeNavLink, { color: theme.primary }]}>Home</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('Products')} style={styles.navLink}>
-              <Text style={styles.navLinkLabel}>Products</Text>
+              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Products</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('Services')} style={styles.navLink}>
-              <Text style={styles.navLinkLabel}>Services</Text>
+              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Services</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('BookParcel')} style={styles.navLink}>
-              <Text style={styles.navLinkLabel}>Book Rider</Text>
+              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Book Rider</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={styles.navLink}>
-              <Text style={styles.navLinkLabel}>Wallet</Text>
+              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Wallet</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('CartTab')} style={styles.navLink}>
-              <Text style={styles.navLinkLabel}>Cart 🛒</Text>
+              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Cart 🛒</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => navigation.navigate('NotificationsTab')} style={styles.navLink}>
-              <Text style={styles.navLinkLabel}>Alerts 🔔</Text>
+              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Alerts 🔔</Text>
             </TouchableOpacity>
             {userInfo?.role === 'RIDER' && (
               <TouchableOpacity onPress={() => navigation.navigate('History', { type: 'orders', role: 'RIDER' })} style={styles.navLink}>
@@ -322,67 +322,67 @@ export default function HomeScreen({ navigation }: any) {
         )}
       </View>
 
-      {/* 📱 MOBILE DROP-DOWN DRAWER MENU */}
-      {width < 768 && menuOpen && (
-        <View style={[styles.mobileMenuDropdown, { borderColor: theme.border }]}>
-          <TouchableOpacity 
-            style={styles.mobileMenuItem} 
-            onPress={() => { setMenuOpen(false); navigation.navigate('HomeTab'); }}
-          >
-            <Text style={[styles.mobileMenuText, { color: theme.primary, fontWeight: '700' }]}>🏠 Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.mobileMenuItem} 
-            onPress={() => { setMenuOpen(false); navigation.navigate('Products'); }}
-          >
-            <Text style={[styles.mobileMenuText]}>📦 Products</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.mobileMenuItem} 
-            onPress={() => { setMenuOpen(false); navigation.navigate('Services'); }}
-          >
-            <Text style={styles.mobileMenuText}>⚡ Services</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.mobileMenuItem} 
-            onPress={() => { setMenuOpen(false); navigation.navigate('BookParcel'); }}
-          >
-            <Text style={styles.mobileMenuText}>🚚 Book Rider</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.mobileMenuItem} 
-            onPress={() => { setMenuOpen(false); navigation.navigate('Wallet'); }}
-          >
-            <Text style={styles.mobileMenuText}>💳 Wallet</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.mobileMenuItem} 
-            onPress={() => { setMenuOpen(false); navigation.navigate('CartTab'); }}
-          >
-            <Text style={styles.mobileMenuText}>🛒 Cart</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.mobileMenuItem} 
-            onPress={() => { setMenuOpen(false); navigation.navigate('NotificationsTab'); }}
-          >
-            <Text style={styles.mobileMenuText}>🔔 Alerts</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.mobileMenuItem} 
-            onPress={() => { setMenuOpen(false); navigation.navigate('ProfileTab'); }}
-          >
-            <Text style={styles.mobileMenuText}>👤 Profile</Text>
-          </TouchableOpacity>
-          {userInfo?.role === 'RIDER' && (
-            <TouchableOpacity 
-              style={[styles.mobileMenuItem, { backgroundColor: '#34C75915' }]} 
-              onPress={() => { setMenuOpen(false); navigation.navigate('History', { type: 'orders', role: 'RIDER' }); }}
-            >
-              <Text style={[styles.mobileMenuText, { color: '#34C759', fontWeight: '800' }]}>🚚 Rider Dashboard</Text>
-            </TouchableOpacity>
+          {/* 📱 MOBILE DROP-DOWN DRAWER MENU */}
+          {width < 768 && menuOpen && (
+            <View style={[styles.mobileMenuDropdown, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <TouchableOpacity 
+                style={styles.mobileMenuItem} 
+                onPress={() => { setMenuOpen(false); navigation.navigate('HomeTab'); }}
+              >
+                <Text style={[styles.mobileMenuText, { color: theme.primary, fontWeight: '700' }]}>🏠 Home</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.mobileMenuItem} 
+                onPress={() => { setMenuOpen(false); navigation.navigate('Products'); }}
+              >
+                <Text style={[styles.mobileMenuText, { color: theme.text }]}>📦 Products</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.mobileMenuItem} 
+                onPress={() => { setMenuOpen(false); navigation.navigate('Services'); }}
+              >
+                <Text style={[styles.mobileMenuText, { color: theme.text }]}>⚡ Services</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.mobileMenuItem} 
+                onPress={() => { setMenuOpen(false); navigation.navigate('BookParcel'); }}
+              >
+                <Text style={[styles.mobileMenuText, { color: theme.text }]}>🚚 Book Rider</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.mobileMenuItem} 
+                onPress={() => { setMenuOpen(false); navigation.navigate('Wallet'); }}
+              >
+                <Text style={[styles.mobileMenuText, { color: theme.text }]}>💳 Wallet</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.mobileMenuItem} 
+                onPress={() => { setMenuOpen(false); navigation.navigate('CartTab'); }}
+              >
+                <Text style={[styles.mobileMenuText, { color: theme.text }]}>🛒 Cart</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.mobileMenuItem} 
+                onPress={() => { setMenuOpen(false); navigation.navigate('NotificationsTab'); }}
+              >
+                <Text style={[styles.mobileMenuText, { color: theme.text }]}>🔔 Alerts</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.mobileMenuItem} 
+                onPress={() => { setMenuOpen(false); navigation.navigate('ProfileTab'); }}
+              >
+                <Text style={[styles.mobileMenuText, { color: theme.text }]}>👤 Profile</Text>
+              </TouchableOpacity>
+              {userInfo?.role === 'RIDER' && (
+                <TouchableOpacity 
+                  style={[styles.mobileMenuItem, { backgroundColor: '#34C75915' }]} 
+                  onPress={() => { setMenuOpen(false); navigation.navigate('History', { type: 'orders', role: 'RIDER' }); }}
+                >
+                  <Text style={[styles.mobileMenuText, { color: '#34C759', fontWeight: '800' }]}>🚚 Rider Dashboard</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           )}
-        </View>
-      )}
     </View>
   );
 
@@ -406,12 +406,12 @@ export default function HomeScreen({ navigation }: any) {
       >
         <ResponsiveContainer>
           {/* 🔍 Unified Smart Search Bar */}
-          <View style={[styles.searchContainer, { borderColor: searchQuery ? theme.primary : '#E5E5EA' }]}>
+          <View style={[styles.searchContainer, { backgroundColor: theme.card, borderColor: searchQuery ? theme.primary : theme.border }]}>
             <Text style={styles.searchIcon}>🔍</Text>
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: theme.text }]}
               placeholder="Search services, products, categories..."
-              placeholderTextColor="#AEAEB2"
+              placeholderTextColor={colorMode === 'dark' ? '#8E8E93' : '#AEAEB2'}
               value={searchQuery}
               onChangeText={handleSearchChange}
               returnKeyType="search"
@@ -428,7 +428,7 @@ export default function HomeScreen({ navigation }: any) {
 
           {/* Search Results Panel */}
           {(searchQuery.length > 0) && (
-            <View style={[styles.searchResultsPanel, { borderColor: theme.border }]}>
+            <View style={[styles.searchResultsPanel, { backgroundColor: theme.card, borderColor: theme.border }]}>
               {searchLoading ? (
                 <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 16 }} />
               ) : searchResults && (searchResults.products.length > 0 || searchResults.services.length > 0) ? (
@@ -450,8 +450,8 @@ export default function HomeScreen({ navigation }: any) {
                             <Text style={{ fontSize: 14 }}>⚡</Text>
                           </View>
                           <View style={styles.resultInfo}>
-                            <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
-                            <Text style={styles.resultMeta}>{item.category} · ${item.basePrice.toFixed(0)}/hr</Text>
+                            <Text style={[styles.resultName, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
+                            <Text style={[styles.resultMeta, { color: colorMode === 'dark' ? '#A1A1A6' : '#8E8E93' }]}>{item.category} · ${item.basePrice.toFixed(0)}/hr</Text>
                           </View>
                           <Text style={[styles.resultArrow, { color: theme.primary }]}>→</Text>
                         </TouchableOpacity>
@@ -475,8 +475,8 @@ export default function HomeScreen({ navigation }: any) {
                             <Text style={{ fontSize: 14 }}>📦</Text>
                           </View>
                           <View style={styles.resultInfo}>
-                            <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
-                            <Text style={styles.resultMeta}>{item.category || 'Product'} · ${item.price.toFixed(2)}</Text>
+                            <Text style={[styles.resultName, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
+                            <Text style={[styles.resultMeta, { color: colorMode === 'dark' ? '#A1A1A6' : '#8E8E93' }]}>{item.category || 'Product'} · ${item.price.toFixed(2)}</Text>
                           </View>
                           <Text style={[styles.resultArrow, { color: '#FF9500' }]}>→</Text>
                         </TouchableOpacity>
@@ -491,7 +491,7 @@ export default function HomeScreen({ navigation }: any) {
           )}
 
           {/* ─── HERO: Logo + Action Grid + Tagline ─── */}
-          <View style={styles.heroSection}>
+          <View style={[styles.heroSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
             {/* FIXMART Logo */}
             <View style={styles.heroLogoRow}>
               <SafeLogo
@@ -500,8 +500,8 @@ export default function HomeScreen({ navigation }: any) {
                 resizeMode="contain"
               />
               <Text style={styles.heroLogoText}>
-                <Text style={styles.heroLogoFix}>FIX</Text>
-                <Text style={styles.heroLogoMart}>MART</Text>
+                <Text style={[styles.heroLogoFix, { color: colorMode === 'dark' ? '#60A5FA' : '#1B3D6E' }]}>FIX</Text>
+                <Text style={[styles.heroLogoMart, { color: theme.primary }]}>MART</Text>
               </Text>
             </View>
 
@@ -509,57 +509,73 @@ export default function HomeScreen({ navigation }: any) {
             <View style={[styles.actionGrid, isLargeScreen && styles.actionGridHorizontal]}>
               {/* Buy */}
               <TouchableOpacity
-                style={[styles.actionTile, isLargeScreen && styles.actionTileHorizontal]}
+                style={[
+                  styles.actionTile,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                  isLargeScreen && styles.actionTileHorizontal
+                ]}
                 onPress={() => navigation.navigate('Products')}
                 activeOpacity={0.82}
               >
-                <View style={[styles.actionIconCircle, { backgroundColor: '#E8F5E9' }]}>
+                <View style={[styles.actionIconCircle, { backgroundColor: colorMode === 'dark' ? '#1B3E2B' : '#E8F5E9' }]}>
                   <Text style={styles.actionEmoji}>🛍️</Text>
                 </View>
-                <Text style={styles.actionLabel}>Buy</Text>
+                <Text style={[styles.actionLabel, { color: theme.text }]}>Buy</Text>
               </TouchableOpacity>
 
               {/* Sell */}
               <TouchableOpacity
-                style={[styles.actionTile, isLargeScreen && styles.actionTileHorizontal]}
+                style={[
+                  styles.actionTile,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                  isLargeScreen && styles.actionTileHorizontal
+                ]}
                 onPress={handleSellPress}
                 activeOpacity={0.82}
               >
-                <View style={[styles.actionIconCircle, { backgroundColor: '#FFFDE7' }]}>
+                <View style={[styles.actionIconCircle, { backgroundColor: colorMode === 'dark' ? '#3D381B' : '#FFFDE7' }]}>
                   <Text style={styles.actionEmoji}>🏷️</Text>
                 </View>
-                <Text style={styles.actionLabel}>Sell</Text>
+                <Text style={[styles.actionLabel, { color: theme.text }]}>Sell</Text>
               </TouchableOpacity>
 
               {/* Request a Service */}
               <TouchableOpacity
-                style={[styles.actionTile, isLargeScreen && styles.actionTileHorizontal]}
+                style={[
+                  styles.actionTile,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                  isLargeScreen && styles.actionTileHorizontal
+                ]}
                 onPress={() => navigation.navigate('Services')}
                 activeOpacity={0.82}
               >
-                <View style={[styles.actionIconCircle, { backgroundColor: '#E3F2FD' }]}>
-                  <Text style={styles.actionEmoji}>⚙️</Text>
+                <View style={[styles.actionIconCircle, { backgroundColor: colorMode === 'dark' ? '#1B2D3E' : '#E3F2FD' }]}>
+                  <Text style={styles.actionEmoji}>🛠️</Text>
                 </View>
-                <Text style={styles.actionLabel}>{'Request\na Service'}</Text>
+                <Text style={[styles.actionLabel, { color: theme.text }]}>{'Request\na Service'}</Text>
               </TouchableOpacity>
 
               {/* Request a Rider */}
               <TouchableOpacity
-                style={[styles.actionTile, isLargeScreen && styles.actionTileHorizontal]}
+                style={[
+                  styles.actionTile,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                  isLargeScreen && styles.actionTileHorizontal
+                ]}
                 onPress={() => navigation.navigate('BookParcel')}
                 activeOpacity={0.82}
               >
-                <View style={[styles.actionIconCircle, { backgroundColor: '#E8F5E9' }]}>
+                <View style={[styles.actionIconCircle, { backgroundColor: colorMode === 'dark' ? '#1B3E2B' : '#E8F5E9' }]}>
                   <Text style={styles.actionEmoji}>🛵</Text>
                 </View>
-                <Text style={styles.actionLabel}>{'Request\na Rider'}</Text>
+                <Text style={[styles.actionLabel, { color: theme.text }]}>{'Request\na Rider'}</Text>
               </TouchableOpacity>
             </View>
 
             {/* Tagline */}
             <View style={styles.taglineBlock}>
-              <Text style={styles.taglinePrimary}>Everything you need.</Text>
-              <Text style={styles.taglineGreen}>One platform.</Text>
+              <Text style={[styles.taglinePrimary, { color: theme.text }]}>Everything you need.</Text>
+              <Text style={[styles.taglineGreen, { color: theme.primary }]}>One platform.</Text>
             </View>
           </View>
 
