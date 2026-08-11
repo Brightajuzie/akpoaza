@@ -25,6 +25,7 @@ interface SettingsContextType {
   heroSubtitle: string;
   footerText: string;
   apkUrl: string;
+  aabUrl: string;
   loading: boolean;
   refreshSettings: () => Promise<void>;
   updateSettings: (updates: Record<string, string>) => Promise<void>;
@@ -78,25 +79,25 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
   useEffect(() => {
     (async () => {
       try {
-        const saved = await Storage.getItemAsync(COLOR_MODE_KEY);
-        if (saved === 'dark' || saved === 'light') {
-          setColorMode(saved);
+        const stored = await Storage.getItemAsync(COLOR_MODE_KEY);
+        if (stored === 'light' || stored === 'dark') {
+          setColorMode(stored);
         }
-      } catch {
-        // Silently ignore — system default already applied
+      } catch (err) {
+        console.warn('[SettingsContext] Failed to load saved color mode:', err);
       }
     })();
   }, []);
 
   const toggleColorMode = useCallback(async () => {
-    const next: ColorMode = colorMode === 'light' ? 'dark' : 'light';
-    setColorMode(next);
-    try {
-      await Storage.setItemAsync(COLOR_MODE_KEY, next);
-    } catch {
-      // ignore storage errors
-    }
-  }, [colorMode]);
+    setColorMode(prev => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      Storage.setItemAsync(COLOR_MODE_KEY, next).catch(err =>
+        console.warn('[SettingsContext] Failed to save color mode:', err)
+      );
+      return next;
+    });
+  }, []);
 
   // ── Settings fetch ──────────────────────────────────────────────────────────
   const fetchSettings = async () => {
@@ -156,6 +157,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
   const heroSubtitle = settings.hero_subtitle || 'Professional services and premium equipment at your fingertips.';
   const footerText   = settings.footer_text   || '© 2026 FixMart. All rights reserved.';
   const apkUrl       = settings.apk_url       || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
+  const aabUrl       = settings.aab_url       || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.aab';
 
   return (
     <SettingsContext.Provider
@@ -169,6 +171,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
         heroSubtitle,
         footerText,
         apkUrl,
+        aabUrl,
         loading,
         refreshSettings,
         updateSettings,

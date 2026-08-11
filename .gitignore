@@ -9,4 +9,5 @@ web-build/
 /android
 /ios
 *.apk
-backend/uploads/*.apk
+*.aab
+backend/uploads/

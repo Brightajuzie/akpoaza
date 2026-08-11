@@ -169,7 +169,9 @@ function MainTabs() {
         component={HomeScreen} 
         options={({ }) => ({
           tabBarLabel: 'Home',
-          tabBarIcon: ({ color }: any) => <Text style={{ fontSize: 18 }}>🏠</Text>,
+          tabBarIcon: ({ color, focused }: any) => (
+            <Text style={{ fontSize: 20 }}>{focused ? '🏠' : '🏡'}</Text>
+          ),
           headerTitle: () => <FixMartHeader />,
           headerTitleAlign: 'left',
           headerStyle: { backgroundColor: theme.card },
@@ -192,9 +194,9 @@ function MainTabs() {
         options={{ 
           title: 'Alerts',
           tabBarLabel: 'Alerts',
-          tabBarIcon: ({ color }) => (
+          tabBarIcon: ({ color }: any) => (
             <View>
-              <Text style={{ fontSize: 18 }}>🔔</Text>
+              <Text style={{ fontSize: 20 }}>🔔</Text>
               {unreadCount > 0 && (
                 <View style={[navStyles.badge, { backgroundColor: theme.primary }]}>
                   <Text style={navStyles.badgeText}>
@@ -212,7 +214,9 @@ function MainTabs() {
         options={{ 
           title: 'Profile', 
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 18 }}>👤</Text>,
+          tabBarIcon: ({ focused }: any) => (
+            <Text style={{ fontSize: 20 }}>{focused ? '👤' : '🧑'}</Text>
+          ),
         }} 
       />
     </Tab.Navigator>

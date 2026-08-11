@@ -35,7 +35,7 @@ export default function SignupScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(false);
 
   // Step 1: Account setup
-  const [role, setRole] = useState('CUSTOMER'); // CUSTOMER, HANDYMAN, VENDOR, RIDER
+  const [role, setRole] = useState(route?.params?.role || route?.params?.initialRole || 'CUSTOMER'); // CUSTOMER, HANDYMAN, VENDOR, RIDER
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

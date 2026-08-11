@@ -43,8 +43,61 @@ const PROMO_SLIDES = [
 
 export default function HomeScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
-  const { theme, logoUrl, heroTitle, heroSubtitle, footerText, apkUrl } = useContext(SettingsContext);
+  const { theme, logoUrl, heroTitle, heroSubtitle, footerText, apkUrl, aabUrl } = useContext(SettingsContext);
   const { width } = useWindowDimensions();
+  const isLargeScreen = width >= 768;
+
+  const handleSellPress = () => {
+    if (userInfo?.role === 'VENDOR') {
+      navigation.navigate('Products');
+    } else {
+      Alert.alert(
+        '🏪 Register as a Vendor',
+        'To sell items on FixMart, you need to register as a Vendor.\n\nWould you like to register now?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Register as Vendor',
+            onPress: () => {
+              if (userInfo) {
+                navigation.navigate('KYCVerification', { role: 'VENDOR' });
+              } else {
+                navigation.navigate('Signup', { role: 'VENDOR', initialRole: 'VENDOR' });
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
+
+  const handleEscrowPress = () => {
+    if (userInfo) {
+      Alert.alert(
+        '🛡️ FixMart Escrow Protection',
+        'All purchases & service bookings are 100% protected by FixMart Escrow.\n\nFunds are released to vendors/providers only when you verify delivery.\n\nWould you like to view your Escrow & Wallet balance?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'View Wallet & Escrow',
+            onPress: () => navigation.navigate('Wallet'),
+          },
+        ]
+      );
+    } else {
+      Alert.alert(
+        '🛡️ FixMart Escrow Protection',
+        'FixMart Escrow protects 100% of your payments until delivery is verified.\n\nSign in to view your Escrow Wallet.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Sign In',
+            onPress: () => navigation.navigate('Login'),
+          },
+        ]
+      );
+    }
+  };
 
   const [promotedListings, setPromotedListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,6 +240,15 @@ export default function HomeScreen({ navigation }: any) {
           }} 
           style={styles.logoContainer}
         >
+          <SafeLogo
+            logoUrl={logoUrl}
+            style={{ width: 34, height: 34 }}
+            resizeMode="contain"
+          />
+          <Text style={{ fontSize: 18, fontWeight: '800', marginLeft: 6 }}>
+            <Text style={{ color: '#1B3D6E' }}>Fix</Text>
+            <Text style={{ color: theme?.primary || '#22A45D' }}>Mart</Text>
+          </Text>
         </TouchableOpacity>
 
         {width >= 768 ? (
@@ -339,7 +401,175 @@ export default function HomeScreen({ navigation }: any) {
         keyboardShouldPersistTaps="handled"
       >
         <ResponsiveContainer>
-          {Platform.OS !== 'web' && renderHeader()}
+          {/* 🔍 Unified Smart Search Bar */}
+          <View style={[styles.searchContainer, { borderColor: searchQuery ? theme.primary : '#E5E5EA' }]}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search services, products, categories..."
+              placeholderTextColor="#AEAEB2"
+              value={searchQuery}
+              onChangeText={handleSearchChange}
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity
+                onPress={() => { setSearchQuery(''); setSearchResults(null); }}
+                style={styles.clearBtn}
+              >
+                <Text style={styles.clearBtnText}>✕</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Search Results Panel */}
+          {(searchQuery.length > 0) && (
+            <View style={[styles.searchResultsPanel, { borderColor: theme.border }]}>
+              {searchLoading ? (
+                <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 16 }} />
+              ) : searchResults && (searchResults.products.length > 0 || searchResults.services.length > 0) ? (
+                <>
+                  {searchResults.services.length > 0 && (
+                    <View>
+                      <Text style={styles.resultGroupLabel}>⚡ Services</Text>
+                      {searchResults.services.map(item => (
+                        <TouchableOpacity
+                          key={item.id}
+                          style={styles.resultRow}
+                          onPress={() => {
+                            setSearchQuery('');
+                            setSearchResults(null);
+                            navigation.navigate('Services');
+                          }}
+                        >
+                          <View style={[styles.resultIcon, { backgroundColor: theme.primary + '15' }]}>
+                            <Text style={{ fontSize: 14 }}>⚡</Text>
+                          </View>
+                          <View style={styles.resultInfo}>
+                            <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
+                            <Text style={styles.resultMeta}>{item.category} · ${item.basePrice.toFixed(0)}/hr</Text>
+                          </View>
+                          <Text style={[styles.resultArrow, { color: theme.primary }]}>→</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                  {searchResults.products.length > 0 && (
+                    <View>
+                      <Text style={styles.resultGroupLabel}>📦 Products</Text>
+                      {searchResults.products.map(item => (
+                        <TouchableOpacity
+                          key={item.id}
+                          style={styles.resultRow}
+                          onPress={() => {
+                            setSearchQuery('');
+                            setSearchResults(null);
+                            navigation.navigate('ProductDetail', { productId: item.id });
+                          }}
+                        >
+                          <View style={[styles.resultIcon, { backgroundColor: '#FF950015' }]}>
+                            <Text style={{ fontSize: 14 }}>📦</Text>
+                          </View>
+                          <View style={styles.resultInfo}>
+                            <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
+                            <Text style={styles.resultMeta}>{item.category || 'Product'} · ${item.price.toFixed(2)}</Text>
+                          </View>
+                          <Text style={[styles.resultArrow, { color: '#FF9500' }]}>→</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.noResultsText}>No results found for "{searchQuery}"</Text>
+              )}
+            </View>
+          )}
+
+          {/* ─── HERO: Logo + Action Grid + Tagline ─── */}
+          <View style={styles.heroSection}>
+            {/* FIXMART Logo */}
+            <View style={styles.heroLogoRow}>
+              <SafeLogo
+                logoUrl={logoUrl}
+                style={styles.heroLogoImg}
+                resizeMode="contain"
+              />
+              <Text style={styles.heroLogoText}>
+                <Text style={styles.heroLogoFix}>FIX</Text>
+                <Text style={styles.heroLogoMart}>MART</Text>
+              </Text>
+            </View>
+
+            {/* Action Grid (Smaller & Horizontally aligned on large screen) */}
+            <View style={[styles.actionGrid, isLargeScreen && styles.actionGridHorizontal]}>
+              {/* Buy */}
+              <TouchableOpacity
+                style={[styles.actionTile, isLargeScreen && styles.actionTileHorizontal]}
+                onPress={() => navigation.navigate('Products')}
+                activeOpacity={0.82}
+              >
+                <View style={[styles.actionIconCircle, { backgroundColor: '#E8F5E9' }]}>
+                  <Text style={styles.actionEmoji}>🛍️</Text>
+                </View>
+                <Text style={styles.actionLabel}>Buy</Text>
+              </TouchableOpacity>
+
+              {/* Sell */}
+              <TouchableOpacity
+                style={[styles.actionTile, isLargeScreen && styles.actionTileHorizontal]}
+                onPress={handleSellPress}
+                activeOpacity={0.82}
+              >
+                <View style={[styles.actionIconCircle, { backgroundColor: '#FFFDE7' }]}>
+                  <Text style={styles.actionEmoji}>🏷️</Text>
+                </View>
+                <Text style={styles.actionLabel}>Sell</Text>
+              </TouchableOpacity>
+
+              {/* Escrow Pay */}
+              <TouchableOpacity
+                style={[styles.actionTile, isLargeScreen && styles.actionTileHorizontal]}
+                onPress={handleEscrowPress}
+                activeOpacity={0.82}
+              >
+                <View style={[styles.actionIconCircle, { backgroundColor: '#F3E5F5' }]}>
+                  <Text style={styles.actionEmoji}>🛡️</Text>
+                </View>
+                <Text style={styles.actionLabel}>Escrow</Text>
+              </TouchableOpacity>
+
+              {/* Request a Service */}
+              <TouchableOpacity
+                style={[styles.actionTile, isLargeScreen && styles.actionTileHorizontal]}
+                onPress={() => navigation.navigate('Services')}
+                activeOpacity={0.82}
+              >
+                <View style={[styles.actionIconCircle, { backgroundColor: '#E3F2FD' }]}>
+                  <Text style={styles.actionEmoji}>⚙️</Text>
+                </View>
+                <Text style={styles.actionLabel}>{'Request\na Service'}</Text>
+              </TouchableOpacity>
+
+              {/* Request a Rider */}
+              <TouchableOpacity
+                style={[styles.actionTile, isLargeScreen && styles.actionTileHorizontal]}
+                onPress={() => navigation.navigate('BookParcel')}
+                activeOpacity={0.82}
+              >
+                <View style={[styles.actionIconCircle, { backgroundColor: '#E8F5E9' }]}>
+                  <Text style={styles.actionEmoji}>🛵</Text>
+                </View>
+                <Text style={styles.actionLabel}>{'Request\na Rider'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Tagline */}
+            <View style={styles.taglineBlock}>
+              <Text style={styles.taglinePrimary}>Everything you need.</Text>
+              <Text style={styles.taglineGreen}>One platform.</Text>
+            </View>
+          </View>
 
           {/* 🚚 Dedicated Rider Control Banner (When Logged in as RIDER) */}
           {userInfo?.role === 'RIDER' && (
@@ -370,90 +600,7 @@ export default function HomeScreen({ navigation }: any) {
             </View>
           )}
 
-      {/* 🔍 Unified Smart Search Bar */}
-      <View style={[styles.searchContainer, { borderColor: searchQuery ? theme.primary : '#E5E5EA' }]}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search services, products, categories..."
-          placeholderTextColor="#AEAEB2"
-          value={searchQuery}
-          onChangeText={handleSearchChange}
-          returnKeyType="search"
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity
-            onPress={() => { setSearchQuery(''); setSearchResults(null); }}
-            style={styles.clearBtn}
-          >
-            <Text style={styles.clearBtnText}>✕</Text>
-          </TouchableOpacity>
-        )}
-      </View>
 
-      {/* Search Results Panel */}
-      {(searchQuery.length > 0) && (
-        <View style={[styles.searchResultsPanel, { borderColor: theme.border }]}>
-          {searchLoading ? (
-            <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 16 }} />
-          ) : searchResults && (searchResults.products.length > 0 || searchResults.services.length > 0) ? (
-            <>
-              {searchResults.services.length > 0 && (
-                <View>
-                  <Text style={styles.resultGroupLabel}>⚡ Services</Text>
-                  {searchResults.services.map(item => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.resultRow}
-                      onPress={() => {
-                        setSearchQuery('');
-                        setSearchResults(null);
-                        navigation.navigate('Services');
-                      }}
-                    >
-                      <View style={[styles.resultIcon, { backgroundColor: theme.primary + '15' }]}>
-                        <Text style={{ fontSize: 14 }}>⚡</Text>
-                      </View>
-                      <View style={styles.resultInfo}>
-                        <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
-                        <Text style={styles.resultMeta}>{item.category} · ${item.basePrice.toFixed(0)}/hr</Text>
-                      </View>
-                      <Text style={[styles.resultArrow, { color: theme.primary }]}>→</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-              {searchResults.products.length > 0 && (
-                <View>
-                  <Text style={styles.resultGroupLabel}>📦 Products</Text>
-                  {searchResults.products.map(item => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.resultRow}
-                      onPress={() => {
-                        setSearchQuery('');
-                        setSearchResults(null);
-                        navigation.navigate('ProductDetail', { productId: item.id });
-                      }}
-                    >
-                      <View style={[styles.resultIcon, { backgroundColor: '#FF950015' }]}>
-                        <Text style={{ fontSize: 14 }}>📦</Text>
-                      </View>
-                      <View style={styles.resultInfo}>
-                        <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
-                        <Text style={styles.resultMeta}>{item.category || 'Product'} · ${item.price.toFixed(2)}</Text>
-                      </View>
-                      <Text style={[styles.resultArrow, { color: '#FF9500' }]}>→</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </>
-          ) : (
-            <Text style={styles.noResultsText}>No results found for "{searchQuery}"</Text>
-          )}
-        </View>
-      )}
 
       {/* 🚀 Dynamic Slides Carousel */}
       {(!slidesLoading || slides.length > 0) && (
@@ -534,38 +681,6 @@ export default function HomeScreen({ navigation }: any) {
         </View>
       )}
 
-      {/* Dynamic Welcome Hero Banner */}
-      <View style={[styles.welcomeBanner, { backgroundColor: theme.primary }]}>
-        <View style={styles.bannerOverlay} />
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 12 }}>
-          <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} activeOpacity={0.8}>
-            <SafeLogo
-              logoUrl={logoUrl}
-              style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: '#FFFFFF', padding: 2 }}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.welcomeSubtitle}>Hello, {userInfo?.name || 'Guest User'} 👋</Text>
-            <Text style={styles.welcomeTitle}>{heroTitle}</Text>
-          </View>
-        </View>
-        <Text style={styles.bannerDesc}>{heroSubtitle}</Text>
-      </View>
-
-      {/* Dynamic Statistics Cards */}
-      <View style={[styles.statsCard, { borderColor: theme.border }]}>
-        <View style={styles.statsCol}>
-          <Text style={[styles.statsVal, { color: theme.secondary }]}>Active</Text>
-          <Text style={styles.statsLabel}>Ready to Serve</Text>
-        </View>
-        <View style={[styles.statsDivider, { backgroundColor: theme.border }]} />
-        <View style={styles.statsCol}>
-          <Text style={[styles.statsVal, { color: theme.primary }]}>24/7</Text>
-          <Text style={styles.statsLabel}>Customer Care</Text>
-        </View>
-      </View>
-
       {/* Jiji Premium Spotlights Section */}
       <View style={styles.spotlightHeader}>
         <Text style={[styles.sectionTitle, { color: theme.text }]}>🔥 Premium Spotlight</Text>
@@ -625,44 +740,6 @@ export default function HomeScreen({ navigation }: any) {
         </ScrollView>
       )}
 
-      {/* Grid Menu Actions */}
-      <Text style={[styles.sectionTitle, { color: theme.text, marginTop: 10 }]}>Explore Services & Shop</Text>
-      
-      <TouchableOpacity 
-        style={[styles.card, { borderLeftColor: '#FF9500', borderColor: theme.border }]} 
-        onPress={() => navigation.navigate('Products')}
-        activeOpacity={0.8}
-      >
-        <View style={styles.cardInfo}>
-          <Text style={[styles.cardTitle, { color: '#FF9500' }]}>🛒 Shop</Text>
-          <Text style={styles.cardDesc}>Order high-end tools, hardware supplies, and appliances.</Text>
-        </View>
-        <View style={styles.chevron}><Text style={styles.chevronText}>→</Text></View>
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={[styles.card, { borderLeftColor: '#34C759', borderColor: theme.border }]} 
-        onPress={() => navigation.navigate('Services')}
-        activeOpacity={0.8}
-      >
-        <View style={styles.cardInfo}>
-          <Text style={[styles.cardTitle, { color: '#34C759' }]}>⚡ Book Services</Text>
-          <Text style={styles.cardDesc}>Hire verified technicians for plumbing, wiring, and repairs.</Text>
-        </View>
-        <View style={styles.chevron}><Text style={styles.chevronText}>→</Text></View>
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={[styles.card, { borderLeftColor: '#5856D6', borderColor: theme.border }]} 
-        onPress={() => navigation.navigate('BookParcel')}
-        activeOpacity={0.8}
-      >
-        <View style={styles.cardInfo}>
-          <Text style={[styles.cardTitle, { color: '#5856D6' }]}>🚚 Book a Rider</Text>
-          <Text style={styles.cardDesc}>Instant parcel pickup and delivery across the city.</Text>
-        </View>
-        <View style={styles.chevron}><Text style={styles.chevronText}>→</Text></View>
-      </TouchableOpacity>
 
       {(userInfo?.role === 'ADMIN' || userInfo?.role === 'HANDYMAN') && (
         <TouchableOpacity 
@@ -697,7 +774,7 @@ export default function HomeScreen({ navigation }: any) {
                 <TouchableOpacity
                   style={[styles.storeBadgeBtn, styles.apkDownloadBtn]}
                   onPress={() => {
-                    const directApkUrl = 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
+                    const directApkUrl = apkUrl || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
                     if (typeof window !== 'undefined' && typeof document !== 'undefined') {
                       const link = document.createElement('a');
                       link.href = directApkUrl;
@@ -724,7 +801,7 @@ export default function HomeScreen({ navigation }: any) {
                 <TouchableOpacity
                   style={styles.storeBadgeBtn}
                   onPress={() => {
-                    const directApkUrl = 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
+                    const directApkUrl = apkUrl || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
                     if (typeof window !== 'undefined') window.open(directApkUrl, '_blank');
                     else Linking.openURL(directApkUrl);
                   }}
@@ -746,7 +823,7 @@ export default function HomeScreen({ navigation }: any) {
                       '📱 FixMart Mobile App',
                       'Direct Android APK download will start. iOS App Store coming soon!',
                       [
-                        { text: 'Download APK', onPress: () => Linking.openURL('https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk') },
+                        { text: 'Download APK', onPress: () => Linking.openURL(apkUrl || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk') },
                         { text: 'Cancel', style: 'cancel' }
                       ]
                     );
@@ -774,6 +851,104 @@ export default function HomeScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
+  // ── Hero Grid Section ────────────────────────────────────────────────────
+  heroSection: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  heroLogoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 8,
+  },
+  heroLogoImg: {
+    width: 44,
+    height: 44,
+  },
+  heroLogoText: {
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  heroLogoFix: {
+    color: '#1B3D6E',
+  },
+  heroLogoMart: {
+    color: '#22A45D',
+  },
+  actionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    width: '100%',
+    paddingHorizontal: 4,
+    marginBottom: 20,
+  },
+  actionGridHorizontal: {
+    flexWrap: 'nowrap',
+    maxWidth: 580,
+    alignSelf: 'center',
+  },
+  actionTile: {
+    width: '44%',
+    maxWidth: 125,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  actionTileHorizontal: {
+    flex: 1,
+    width: 'auto',
+  },
+  actionIconCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  actionEmoji: {
+    fontSize: 20,
+  },
+  actionLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+  taglineBlock: {
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  taglinePrimary: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    textAlign: 'center',
+  },
+  taglineGreen: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#22A45D',
+    textAlign: 'center',
+  },
+  // ── Search ───────────────────────────────────────────────────────────────
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',

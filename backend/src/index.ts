@@ -2,6 +2,7 @@ import './lib/env';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import http from 'http';
 import { Server } from 'socket.io';
 
@@ -50,6 +51,21 @@ app.use(cors({
 // Webhook route must be parsed as raw body for Stripe signature verification
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
+
+// Explicit APK download route — sets proper Content-Disposition so browsers
+// download the file instead of rendering it as JSON / triggering a 404.
+app.get('/uploads/fixmart-latest.apk', (req, res) => {
+  const filePath = path.resolve(__dirname, '../uploads/fixmart-latest.apk');
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="fixmart-latest.apk"');
+    return res.sendFile(filePath);
+  }
+  return res.status(404).json({
+    error: 'Not Found',
+    message: 'APK file not found on server. Please try again later.'
+  });
+});
 
 // Serve static uploads folder
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
