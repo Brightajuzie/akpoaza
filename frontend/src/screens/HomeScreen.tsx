@@ -320,21 +320,26 @@ export default function HomeScreen({ navigation }: any) {
 
   const renderMobileNavbar = () => (
     <View style={[styles.mobileNavbar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-      <TouchableOpacity
-        style={styles.navBrand}
-        onPress={() => { try { navigation.navigate('Main', { screen: 'HomeTab' }); } catch { navigation.navigate('HomeTab'); } }}
-      >
-        <SafeLogo logoUrl={logoUrl} style={{ width: 30, height: 30 }} resizeMode="contain" />
-        <Text style={styles.navBrandText}>
-          <Text style={[styles.navBrandFix, { color: isDark ? '#60A5FA' : '#1B3D6E' }]}>Fix</Text>
-          <Text style={[styles.navBrandMart, { color: theme.primary }]}>Mart</Text>
+      <View style={{ flex: 1, marginRight: 8 }}>
+        <TouchableOpacity
+          style={styles.navBrand}
+          onPress={() => { try { navigation.navigate('Main', { screen: 'HomeTab' }); } catch { navigation.navigate('HomeTab'); } }}
+        >
+          <SafeLogo logoUrl={logoUrl} style={{ width: 28, height: 28 }} resizeMode="contain" />
+          <Text style={styles.navBrandText}>
+            <Text style={[styles.navBrandFix, { color: isDark ? '#60A5FA' : '#1B3D6E' }]}>Fix</Text>
+            <Text style={[styles.navBrandMart, { color: theme.primary }]}>Mart</Text>
+          </Text>
+        </TouchableOpacity>
+        <Text style={[styles.mobileNavTagline, { color: isDark ? '#94A3B8' : '#64748B' }]} numberOfLines={1}>
+          The smart way to shop, send items & fix everyday household problems
         </Text>
-      </TouchableOpacity>
+      </View>
 
       <View style={styles.mobileNavRight}>
         <ThemeToggle compact />
         <TouchableOpacity
-          style={[styles.navAvatar, { borderColor: theme.primary, backgroundColor: theme.primary + '18', marginLeft: 8 }]}
+          style={[styles.navAvatar, { borderColor: theme.primary, backgroundColor: theme.primary + '18', marginLeft: 6 }]}
           onPress={() => navigation.navigate('ProfileTab')}
         >
           <Text style={[styles.navAvatarText, { color: theme.primary }]}>
@@ -342,7 +347,7 @@ export default function HomeScreen({ navigation }: any) {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.hamburger, { backgroundColor: theme.primary + '15', marginLeft: 8 }]}
+          style={[styles.hamburger, { backgroundColor: theme.primary + '15', marginLeft: 6 }]}
           onPress={() => setMenuOpen(!menuOpen)}
         >
           <Text style={[styles.hamburgerText, { color: theme.primary }]}>{menuOpen ? '✕' : '☰'}</Text>
@@ -400,18 +405,20 @@ export default function HomeScreen({ navigation }: any) {
         <View style={[styles.heroInner, isDesktop && styles.heroInnerDesktop]}>
           {/* Left: Brand + tagline + CTA buttons */}
           <View style={[styles.heroLeft, isDesktop && styles.heroLeftDesktop]}>
-            <View style={styles.heroBrandRow}>
-              <SafeLogo logoUrl={logoUrl} style={{ width: 52, height: 52, marginRight: 12 }} resizeMode="contain" />
-              <View>
-                <Text style={styles.heroBrandName}>
-                  <Text style={{ color: isDark ? '#60A5FA' : '#1B3D6E' }}>FIX</Text>
-                  <Text style={{ color: theme.primary }}>MART</Text>
-                </Text>
-                <View style={[styles.heroBadge, { backgroundColor: theme.primary + '18', borderColor: theme.primary + '30' }]}>
-                  <Text style={[styles.heroBadgeText, { color: theme.primary }]}>🌟 Nigeria's #1 Home Services Platform</Text>
+            {isDesktop && (
+              <View style={styles.heroBrandRow}>
+                <SafeLogo logoUrl={logoUrl} style={{ width: 52, height: 52, marginRight: 12 }} resizeMode="contain" />
+                <View>
+                  <Text style={styles.heroBrandName}>
+                    <Text style={{ color: isDark ? '#60A5FA' : '#1B3D6E' }}>FIX</Text>
+                    <Text style={{ color: theme.primary }}>MART</Text>
+                  </Text>
+                  <View style={[styles.heroBadge, { backgroundColor: theme.primary + '18', borderColor: theme.primary + '30' }]}>
+                    <Text style={[styles.heroBadgeText, { color: theme.primary }]}>🌟 Nigeria's #1 Home Services Platform</Text>
+                  </View>
                 </View>
               </View>
-            </View>
+            )}
 
             <Text style={[styles.heroHeadline, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
               Everything you need.{'\n'}
@@ -903,6 +910,7 @@ const styles = StyleSheet.create({
   navBrandText: { fontSize: 20, fontWeight: '900', marginLeft: 8, letterSpacing: -0.5 },
   navBrandFix: { color: '#1B3D6E' },
   navBrandMart: { color: '#22A45D' },
+  mobileNavTagline: { fontSize: 10, fontWeight: '500', marginTop: 1 },
   navAvatar: {
     width: 36, height: 36, borderRadius: 18,
     borderWidth: 2,
