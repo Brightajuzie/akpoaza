@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
 import MapComponent from '../components/MapComponent';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 
@@ -23,13 +24,21 @@ const AI_FILTERS = [
 
 export default function AdminScreen() {
   const { userInfo } = useContext(AuthContext);
-  const { theme, settings, updateSettings } = useContext(SettingsContext);
+  const { theme, settings, updateSettings, colorMode } = useContext(SettingsContext);
+  const { fmt } = useCurrency();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { width } = useWindowDimensions();
 
   const isVendor = userInfo?.role === 'VENDOR';
   const isAdmin  = userInfo?.role === 'ADMIN';
+
+  const isDark = colorMode === 'dark';
+  const cardBg = isDark ? '#1E293B' : '#FFFFFF';
+  const borderColor = isDark ? '#334155' : '#E2E8F0';
+  const inputBg = isDark ? '#0F172A' : '#F8FAFC';
+  const textColor = isDark ? '#F1F5F9' : '#0F172A';
+  const subtextColor = isDark ? '#94A3B8' : '#64748B';
 
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders' | 'slides'>(
@@ -1482,8 +1491,39 @@ export default function AdminScreen() {
 
 
 
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.scrollContent, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]} keyboardShouldPersistTaps="handled">
         <ResponsiveContainer>
+
+        {/* ── Executive Metrics Summary Grid ── */}
+        <View style={styles.metricsGridRow}>
+          {[
+            { icon: '📦', label: 'Inventory', value: products.length, color: theme.primary, tab: 'products' },
+            { icon: '⚡', label: 'Services', value: services.length, color: '#3B82F6', tab: 'services' },
+            { icon: '📋', label: 'Bookings', value: bookings.length, color: '#8B5CF6', tab: 'bookings' },
+            { icon: '👥', label: 'Users', value: users.length, color: '#EC4899', tab: 'users' },
+            { icon: '🛒', label: 'Orders', value: orders.length, color: '#F59E0B', tab: 'orders' },
+            { icon: '🔍', label: 'KYC Reviews', value: kycReviews.length, color: '#EF4444', tab: 'kyc' },
+          ].map(m => (
+            <TouchableOpacity
+              key={m.label}
+              style={[
+                styles.metricCard,
+                { backgroundColor: cardBg, borderColor },
+                activeTab === m.tab && { borderColor: m.color, borderWidth: 2 }
+              ]}
+              onPress={() => handleTabPress(m.tab as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.metricIconWrap, { backgroundColor: m.color + '18' }]}>
+                <Text style={styles.metricIconText}>{m.icon}</Text>
+              </View>
+              <View>
+                <Text style={[styles.metricValueText, { color: m.color }]}>{m.value}</Text>
+                <Text style={[styles.metricLabelText, { color: subtextColor }]}>{m.label}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         {/* ── PRODUCTS TAB ── */}
         {activeTab === 'products' && (
@@ -3342,6 +3382,22 @@ const styles = StyleSheet.create({
   adminMobileActiveIcon: { fontSize: 18 },
   adminMobileActiveLabel: { flex: 1, fontSize: 14, fontWeight: '700' },
   adminDropdownArrow: { fontSize: 11, fontWeight: '800' },
+  metricsGridRow: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 10,
+    marginTop: 16, marginBottom: 20,
+  },
+  metricCard: {
+    flex: 1, minWidth: 140, borderRadius: 16, borderWidth: 1,
+    padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12,
+    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+  },
+  metricIconWrap: {
+    width: 42, height: 42, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  metricIconText: { fontSize: 20 },
+  metricValueText: { fontSize: 22, fontWeight: '900' },
+  metricLabelText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
 });
 
 
