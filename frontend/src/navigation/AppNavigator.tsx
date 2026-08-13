@@ -166,17 +166,13 @@ function MainTabs() {
       <Tab.Screen 
         name="HomeTab" 
         component={HomeScreen} 
-        options={({ }) => ({
+        options={{
+          headerShown: false,
           tabBarLabel: 'Home',
-          tabBarIcon: ({ color, focused }: any) => (
+          tabBarIcon: ({ focused }: any) => (
             <Text style={{ fontSize: 20 }}>{focused ? '🏠' : '🏡'}</Text>
           ),
-          headerTitle: () => <FixMartHeader />,
-          headerTitleAlign: 'left',
-          headerStyle: { backgroundColor: theme.card },
-          headerTintColor: theme.text,
-          headerShadowVisible: true,
-        })} 
+        }} 
       />
       <Tab.Screen 
         name="CartTab" 
