@@ -1,19 +1,8 @@
 import React, { useContext, useEffect, useState, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Image,
-  TextInput,
-  Alert,
-  Modal,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  useWindowDimensions,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, Image, TextInput, Alert, Modal, FlatList,
+  KeyboardAvoidingView, Platform, useWindowDimensions,
 } from 'react-native';
 import apiClient from '../api/client';
 import { CartContext } from '../context/CartContext';
@@ -40,7 +29,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
   const [comment, setComment] = useState('');
   const [submittingReview, setSubmittingReview] = useState(false);
 
-  // Communication / Chat Simulator State
+  // Chat simulator
   const [chatVisible, setChatVisible] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [typeMessage, setTypeMessage] = useState('');
@@ -49,15 +38,15 @@ export default function ProductDetailScreen({ route, navigation }: any) {
 
   const { cart, addToCart } = useContext(CartContext);
   const [addedModalVisible, setAddedModalVisible] = useState(false);
-  const { theme } = useContext(SettingsContext);
+  const { theme, colorMode } = useContext(SettingsContext);
   const { fmt } = useCurrency();
+  const isDark = colorMode === 'dark';
 
-  // Responsive layout
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
   const isTablet = width >= 600 && width < 1024;
   const contentMaxWidth = isDesktop ? 1200 : isTablet ? 800 : undefined;
-  const imageHeight = isDesktop ? 400 : isTablet ? 320 : 250;
+  const imageHeight = isDesktop ? 420 : isTablet ? 340 : 260;
 
   const fetchProductAndReviews = async () => {
     try {
@@ -68,7 +57,6 @@ export default function ProductDetailScreen({ route, navigation }: any) {
       setProduct(productRes.data);
       setReviews(reviewsRes.data);
 
-      // Compute aggregated rating client-side from the reviews list
       const rList = reviewsRes.data as any[];
       if (rList.length > 0) {
         const avg = rList.reduce((sum: number, r: any) => sum + r.rating, 0) / rList.length;
@@ -88,13 +76,12 @@ export default function ProductDetailScreen({ route, navigation }: any) {
     fetchProductAndReviews();
   }, [productId]);
 
-  // Setup initial mock messages when chat opens
   useEffect(() => {
     if (chatVisible && product) {
       setChatMessages([
         {
           id: '1',
-          text: `Hi there! Thanks for your interest in the "${product.name}". How can I help you today?`,
+          text: `Hi there! Thanks for your interest in "${product.name}". How can I help you today?`,
           sender: 'vendor',
           timestamp: new Date()
         }
@@ -119,7 +106,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
       Alert.alert('Success', 'Review submitted!');
       setComment('');
       setRating('5');
-      fetchProductAndReviews(); // Refresh reviews
+      fetchProductAndReviews();
     } catch (error) {
       console.error(error);
       Alert.alert('Error', 'Failed to submit review.');
@@ -140,22 +127,21 @@ export default function ProductDetailScreen({ route, navigation }: any) {
     }
   };
 
-  // Communication Simulation triggers
   const handleCallSimulate = () => {
     if (!product || !product.vendor) return;
     Alert.alert(
-      '📞 Call Dialing Simulator',
-      `Connecting call to seller: ${product.vendor.name}\nPhone: +1 (555) 019-9482\n\nStatus: DIALING...`,
+      '📞 Call Seller',
+      `Connecting call to seller: ${product.vendor.name}\n\nStatus: DIALING...`,
       [{ text: 'End Call', style: 'cancel' }]
     );
   };
 
   const handleWhatsAppSimulate = () => {
     if (!product || !product.vendor) return;
-    const msg = `Hi ${product.vendor.name}, I am interested in buying your product "${product.name}" listed for $${product.price} on FixMart. Is it still available?`;
+    const msg = `Hi ${product.vendor.name}, I am interested in your product "${product.name}" listed for ${fmt(product.price)} on FixMart. Is it available?`;
     Alert.alert(
-      '💬 WhatsApp Redirection Simulator',
-      `Opening WhatsApp thread...\n\nRecipient: ${product.vendor.name}\n\nPre-filled text:\n"${msg}"`,
+      '💬 WhatsApp Redirection',
+      `Opening WhatsApp thread with ${product.vendor.name}...\n\nMessage:\n"${msg}"`,
       [{ text: 'Open WhatsApp', onPress: () => {} }, { text: 'Cancel', style: 'cancel' }]
     );
   };
@@ -174,18 +160,15 @@ export default function ProductDetailScreen({ route, navigation }: any) {
     const userMsg = typeMessage;
     setTypeMessage('');
 
-    // Trigger typing simulation
     setTyping(true);
     setTimeout(() => {
       setTyping(false);
-
-      // Smart context replies
-      let replyText = `Thanks for writing! Yes, the "${product.name}" is completely in stock and available for delivery. Let me know if you would like to arrange it!`;
-      const lowercaseUser = userMsg.toLowerCase();
-      if (lowercaseUser.includes('price') || lowercaseUser.includes('discount') || lowercaseUser.includes('cheap')) {
-        replyText = `The price is fixed at $${product.price.toFixed(2)}, which is already a discounted wholesale price for the "${product.name}"!`;
-      } else if (lowercaseUser.includes('deliver') || lowercaseUser.includes('ship') || lowercaseUser.includes('where')) {
-        replyText = `We deliver across the metropolitan region! Standard delivery takes about 1-2 business days. Let us know your address coordinates.`;
+      let replyText = `Thanks for writing! Yes, "${product.name}" is in stock and available for delivery. Let me know if you have questions!`;
+      const lc = userMsg.toLowerCase();
+      if (lc.includes('price') || lc.includes('discount')) {
+        replyText = `The price is fixed at ${fmt(product.price)}, which is already our best wholesale price!`;
+      } else if (lc.includes('deliver') || lc.includes('ship')) {
+        replyText = `We deliver nationwide! Delivery takes 1-3 business days. Enter your address at checkout for exact rates.`;
       }
 
       setChatMessages(prev => [...prev, {
@@ -197,7 +180,6 @@ export default function ProductDetailScreen({ route, navigation }: any) {
     }, 1500);
   };
 
-  // Scroll to bottom helper
   useEffect(() => {
     if (chatFlatListRef.current) {
       setTimeout(() => {
@@ -208,7 +190,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { backgroundColor: theme.background }]}>
         <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
@@ -216,17 +198,20 @@ export default function ProductDetailScreen({ route, navigation }: any) {
 
   if (!product) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.errorText}>Product not found.</Text>
+      <View style={[styles.centered, { backgroundColor: theme.background }]}>
+        <Text style={[styles.errorText, { color: isDark ? '#94A3B8' : '#64748B' }]}>Product not found.</Text>
       </View>
     );
   }
 
-  // ── Main product layout: two-column on desktop ──────────────────────────────
   const mainContent = (
     <>
-      {/* Desktop two-column layout: image left, info right */}
-      <View style={[styles.productHeader, isDesktop && styles.productHeaderDesktop]}>
+      {/* Product Hero Header */}
+      <View style={[
+        styles.productHeader,
+        { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' },
+        isDesktop && styles.productHeaderDesktop
+      ]}>
         {/* Image column */}
         <View style={[styles.imageColumn, isDesktop && styles.imageColumnDesktop]}>
           {product.imageUrl ? (
@@ -236,54 +221,85 @@ export default function ProductDetailScreen({ route, navigation }: any) {
               resizeMode="cover"
             />
           ) : (
-            <View style={[styles.placeholderImage, { height: imageHeight }]}>
-              <Text style={styles.placeholderText}>No Image Available</Text>
+            <View style={[styles.placeholderImage, { height: imageHeight, backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}>
+              <Text style={styles.placeholderText}>📦</Text>
+              <Text style={[styles.placeholderSub, { color: isDark ? '#64748B' : '#94A3B8' }]}>No image available</Text>
             </View>
           )}
 
           {product.featured && (
             <View style={styles.promotedBadge}>
-              <Text style={styles.promotedBadgeText}>🔥 Promoted Listing</Text>
+              <Text style={styles.promotedBadgeText}>🔥 Featured Product</Text>
             </View>
           )}
         </View>
 
         {/* Info column */}
         <View style={[styles.infoColumn, isDesktop && styles.infoColumnDesktop]}>
-          <Text style={[styles.name, isDesktop && styles.nameDesktop]}>{product.name}</Text>
+          {product.category && (
+            <View style={[styles.categoryBadge, { backgroundColor: theme.primary + '18' }]}>
+              <Text style={[styles.categoryText, { color: theme.primary }]}>{product.category}</Text>
+            </View>
+          )}
+          
+          <Text style={[styles.name, { color: isDark ? '#F1F5F9' : '#0F172A' }, isDesktop && styles.nameDesktop]}>
+            {product.name}
+          </Text>
+
+          {/* Rating overview */}
+          {averageRating !== null && (
+            <View style={styles.ratingOverviewRow}>
+              <View style={styles.starsRow}>
+                {[1, 2, 3, 4, 5].map(s => (
+                  <Text key={s} style={[styles.starIcon, { color: s <= Math.round(averageRating) ? '#F59E0B' : (isDark ? '#334155' : '#CBD5E1') }]}>★</Text>
+                ))}
+              </View>
+              <Text style={[styles.ratingOverviewText, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                {averageRating.toFixed(1)} ({reviews.length} review{reviews.length !== 1 ? 's' : ''})
+              </Text>
+            </View>
+          )}
+
           <Text style={[styles.price, { color: theme.primary }, isDesktop && styles.priceDesktop]}>
             {fmt(product.price)}
           </Text>
-          <Text style={styles.description}>{product.description}</Text>
-          {product.category && <Text style={styles.category}>Category: {product.category}</Text>}
 
+          <Text style={[styles.description, { color: isDark ? '#94A3B8' : '#475569' }]}>
+            {product.description}
+          </Text>
+
+          {/* Seller / Vendor Box */}
           {product.vendor && (
-            <View style={styles.vendorBox}>
+            <View style={[styles.vendorBox, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
               <View style={styles.vendorHeaderRow}>
-                <View>
-                  <Text style={styles.vendorLabel}>Verified Shop Seller</Text>
-                  <Text style={styles.vendorName}>{product.vendor.name}</Text>
-                  <Text style={styles.vendorEmail}>{product.vendor.email}</Text>
-                  {product.vendor.address && (
-                    <Text style={styles.vendorAddress}>📍 {product.vendor.address}</Text>
-                  )}
+                <View style={[styles.vendorAvatar, { backgroundColor: theme.primary + '20' }]}>
+                  <Text style={[styles.vendorAvatarText, { color: theme.primary }]}>
+                    {product.vendor.name ? product.vendor.name.charAt(0).toUpperCase() : 'S'}
+                  </Text>
                 </View>
-                <View style={styles.vendorStatusDotContainer}>
-                  <View style={styles.vendorStatusDot} />
-                  <Text style={styles.vendorStatusText}>Online</Text>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.vendorTitleRow}>
+                    <Text style={[styles.vendorName, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{product.vendor.name}</Text>
+                    <View style={styles.verifiedTag}>
+                      <Text style={styles.verifiedTagText}>✓ Verified</Text>
+                    </View>
+                  </View>
+                  {product.vendor.address && (
+                    <Text style={[styles.vendorAddress, { color: isDark ? '#64748B' : '#94A3B8' }]}>📍 {product.vendor.address}</Text>
+                  )}
                 </View>
               </View>
 
-              {/* Direct Communication Buttons Tray */}
+              {/* Direct Communication Buttons */}
               <View style={styles.communicationTray}>
                 <TouchableOpacity
-                  style={[styles.commButton, { borderColor: theme.primary }]}
+                  style={[styles.commButton, { borderColor: theme.primary, backgroundColor: theme.primary + '10' }]}
                   onPress={handleCallSimulate}
                 >
-                  <Text style={[styles.commButtonText, { color: theme.primary }]}>📞 Simulated Call</Text>
+                  <Text style={[styles.commButtonText, { color: theme.primary }]}>📞 Call</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.commButton, { borderColor: '#25D366' }]}
+                  style={[styles.commButton, { borderColor: '#25D366', backgroundColor: '#25D36610' }]}
                   onPress={handleWhatsAppSimulate}
                 >
                   <Text style={[styles.commButtonText, { color: '#25D366' }]}>💬 WhatsApp</Text>
@@ -292,36 +308,37 @@ export default function ProductDetailScreen({ route, navigation }: any) {
                   style={[styles.commButton, { backgroundColor: theme.primary, borderColor: theme.primary }]}
                   onPress={() => setChatVisible(true)}
                 >
-                  <Text style={[styles.commButtonText, { color: '#FFFFFF' }]}>💬 In-App Chat</Text>
+                  <Text style={[styles.commButtonText, { color: '#FFFFFF' }]}>💬 Live Chat</Text>
                 </TouchableOpacity>
               </View>
             </View>
           )}
 
-          {/* Add to Cart button on desktop shows inline */}
+          {/* Add to Cart button on desktop */}
           {isDesktop && (
             <TouchableOpacity
               style={[styles.addToCartBtnInline, { backgroundColor: theme.primary }]}
               onPress={handleAddToCart}
+              activeOpacity={0.85}
             >
-              <Text style={styles.addToCartBtnText}>🛒 Add to Cart</Text>
+              <Text style={styles.addToCartBtnText}>🛒 Add to Cart — {fmt(product.price)}</Text>
             </TouchableOpacity>
           )}
         </View>
       </View>
 
       {/* Reviews Section */}
-      <View style={styles.reviewsSection}>
-        <Text style={styles.sectionTitle}>Customer Reviews</Text>
+      <View style={[styles.reviewsSection, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+        <Text style={[styles.sectionTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>⭐ Customer Reviews</Text>
 
         {/* Aggregated Rating Summary */}
         {reviews.length > 0 && averageRating !== null && (
-          <View style={styles.ratingsSummary}>
+          <View style={[styles.ratingsSummary, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
             <View style={styles.ratingsBigNum}>
               <Text style={[styles.ratingsBigValue, { color: theme.primary }]}>
                 {averageRating.toFixed(1)}
               </Text>
-              <Text style={styles.ratingsOutOf}>/ 5</Text>
+              <Text style={[styles.ratingsOutOf, { color: isDark ? '#64748B' : '#94A3B8' }]}>/ 5</Text>
             </View>
             <View style={styles.ratingsRight}>
               <View style={styles.ratingsStarsRow}>
@@ -330,37 +347,41 @@ export default function ProductDetailScreen({ route, navigation }: any) {
                     key={s}
                     style={[
                       styles.ratingsStarChar,
-                      s <= Math.round(averageRating) ? { color: '#FFD700' } : { color: '#E5E5EA' },
+                      s <= Math.round(averageRating) ? { color: '#F59E0B' } : { color: isDark ? '#334155' : '#E2E8F0' },
                     ]}
                   >
                     ★
                   </Text>
                 ))}
               </View>
-              <Text style={styles.ratingsCount}>
+              <Text style={[styles.ratingsCount, { color: isDark ? '#64748B' : '#94A3B8' }]}>
                 Based on {reviews.length} review{reviews.length !== 1 ? 's' : ''}
               </Text>
             </View>
           </View>
         )}
 
-        <View style={styles.addReviewBox}>
-          <Text style={styles.label}>Write a Review</Text>
+        {/* Review Form */}
+        <View style={[styles.addReviewBox, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+          <Text style={[styles.label, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>Write a Review</Text>
+          <View style={styles.ratingSelectorRow}>
+            <Text style={[styles.ratingSelectorLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Your Rating:</Text>
+            {[1, 2, 3, 4, 5].map((starNum) => (
+              <TouchableOpacity key={starNum} onPress={() => setRating(starNum.toString())}>
+                <Text style={[styles.starSelectorChar, { color: starNum <= parseInt(rating, 10) ? '#F59E0B' : (isDark ? '#334155' : '#CBD5E1') }]}>★</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <TextInput
-            style={styles.input}
-            placeholder="Rating (1-5)"
-            keyboardType="numeric"
-            value={rating}
-            onChangeText={setRating}
-            maxLength={1}
-          />
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Share your thoughts about this product..."
+            style={[styles.input, styles.textArea, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0', color: isDark ? '#F1F5F9' : '#0F172A' }]}
+            placeholder="Share your experience with this product..."
+            placeholderTextColor={isDark ? '#475569' : '#94A3B8'}
             value={comment}
             onChangeText={setComment}
             multiline
             numberOfLines={3}
+            textAlignVertical="top"
           />
           <TouchableOpacity
             style={[styles.submitBtn, { backgroundColor: theme.primary }]}
@@ -371,17 +392,18 @@ export default function ProductDetailScreen({ route, navigation }: any) {
           </TouchableOpacity>
         </View>
 
+        {/* Review List */}
         {reviews.length === 0 ? (
-          <Text style={styles.noReviews}>No reviews yet. Be the first to share your experience!</Text>
+          <Text style={[styles.noReviews, { color: isDark ? '#64748B' : '#94A3B8' }]}>No reviews yet. Be the first to share your experience!</Text>
         ) : (
           reviews.map((review) => (
-            <View key={review.id} style={styles.reviewCard}>
+            <View key={review.id} style={[styles.reviewCard, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
               <View style={styles.reviewHeader}>
-                <Text style={styles.reviewerName}>{review.author?.name || 'Anonymous User'}</Text>
+                <Text style={[styles.reviewerName, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{review.author?.name || 'Customer'}</Text>
                 <Text style={styles.ratingStars}>{'⭐'.repeat(review.rating)}</Text>
               </View>
-              {review.comment && <Text style={styles.reviewComment}>{review.comment}</Text>}
-              <Text style={styles.reviewDate}>{new Date(review.createdAt).toLocaleDateString()}</Text>
+              {review.comment && <Text style={[styles.reviewComment, { color: isDark ? '#94A3B8' : '#475569' }]}>{review.comment}</Text>}
+              <Text style={[styles.reviewDate, { color: isDark ? '#475569' : '#94A3B8' }]}>{new Date(review.createdAt).toLocaleDateString()}</Text>
             </View>
           ))
         )}
@@ -396,10 +418,9 @@ export default function ProductDetailScreen({ route, navigation }: any) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
-          !isDesktop && { paddingBottom: 80 }, // room for fixed footer on mobile/tablet
+          !isDesktop && { paddingBottom: 90 },
         ]}
       >
-        {/* Centered max-width wrapper for desktop */}
         {contentMaxWidth ? (
           <View style={[styles.centeredContent, { maxWidth: contentMaxWidth }]}>
             {mainContent}
@@ -409,45 +430,50 @@ export default function ProductDetailScreen({ route, navigation }: any) {
         )}
       </ScrollView>
 
-      {/* FIXED PURCHASE FOOTER – only on mobile/tablet */}
+      {/* Fixed purchase footer on mobile/tablet */}
       {!isDesktop && (
-        <View style={[styles.fixedFooter, { borderTopColor: theme.border }]}>
+        <View style={[styles.fixedFooter, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderTopColor: isDark ? '#334155' : '#E2E8F0' }]}>
+          <View style={styles.footerPriceCol}>
+            <Text style={[styles.footerPriceLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>Total Price</Text>
+            <Text style={[styles.footerPriceVal, { color: theme.primary }]}>{fmt(product.price)}</Text>
+          </View>
           <TouchableOpacity
             style={[styles.addToCartBtn, { backgroundColor: theme.primary }]}
             onPress={handleAddToCart}
+            activeOpacity={0.85}
           >
             <Text style={styles.addToCartBtnText}>🛒 Add to Cart</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* DYNAMIC FULL SCREEN IN-APP LIVE CHAT SIMULATOR */}
+      {/* Live Chat Modal */}
       <Modal
         visible={chatVisible}
         animationType="slide"
         onRequestClose={() => setChatVisible(false)}
       >
         <KeyboardAvoidingView
-          style={styles.chatContainer}
+          style={[styles.chatContainer, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
         >
           {/* Chat Header */}
-          <View style={styles.chatHeader}>
+          <View style={[styles.chatHeader, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderBottomColor: isDark ? '#334155' : '#E2E8F0' }]}>
             <View style={styles.chatHeaderLeft}>
               <TouchableOpacity onPress={() => setChatVisible(false)} style={styles.chatBackBtn}>
-                <Text style={styles.chatBackBtnText}>←</Text>
+                <Text style={[styles.chatBackBtnText, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>←</Text>
               </TouchableOpacity>
               <View>
-                <Text style={styles.chatHeaderTitle}>{product.vendor?.name}</Text>
+                <Text style={[styles.chatHeaderTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{product.vendor?.name || 'Seller'}</Text>
                 <View style={styles.chatHeaderStatusRow}>
                   <View style={styles.statusDotGreen} />
-                  <Text style={styles.chatHeaderStatusText}>Simulated Chat Bot</Text>
+                  <Text style={[styles.chatHeaderStatusText, { color: isDark ? '#64748B' : '#94A3B8' }]}>Verified Seller</Text>
                 </View>
               </View>
             </View>
             <TouchableOpacity onPress={() => setChatVisible(false)} style={styles.chatCloseBtn}>
-              <Text style={styles.chatCloseBtnText}>Close</Text>
+              <Text style={[styles.chatCloseBtnText, { color: theme.primary }]}>Close</Text>
             </TouchableOpacity>
           </View>
 
@@ -465,14 +491,14 @@ export default function ProductDetailScreen({ route, navigation }: any) {
                     style={[
                       styles.msgBubble,
                       isMe
-                        ? { backgroundColor: theme.primary }
-                        : styles.msgBubbleVendor
+                        ? { backgroundColor: theme.primary, borderBottomRightRadius: 4 }
+                        : { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: isDark ? '#334155' : '#E2E8F0' }
                     ]}
                   >
-                    <Text style={[styles.msgText, isMe ? styles.msgTextMe : styles.msgTextVendor]}>
+                    <Text style={[styles.msgText, { color: isMe ? '#FFF' : (isDark ? '#F1F5F9' : '#0F172A') }]}>
                       {item.text}
                     </Text>
-                    <Text style={[styles.msgTime, isMe ? styles.msgTimeMe : styles.msgTimeVendor]}>
+                    <Text style={[styles.msgTime, { color: isMe ? 'rgba(255,255,255,0.7)' : (isDark ? '#475569' : '#94A3B8') }]}>
                       {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </Text>
                   </View>
@@ -482,8 +508,8 @@ export default function ProductDetailScreen({ route, navigation }: any) {
             ListFooterComponent={
               typing ? (
                 <View style={[styles.msgWrapper, styles.msgLeft]}>
-                  <View style={[styles.msgBubble, styles.msgBubbleVendor, styles.typingBubble]}>
-                    <Text style={styles.typingText}>Seller is typing...</Text>
+                  <View style={[styles.msgBubble, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderWidth: 1, borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+                    <Text style={[styles.typingText, { color: isDark ? '#64748B' : '#94A3B8' }]}>Seller is typing...</Text>
                   </View>
                 </View>
               ) : null
@@ -491,13 +517,13 @@ export default function ProductDetailScreen({ route, navigation }: any) {
           />
 
           {/* Messages Input Box */}
-          <View style={styles.chatInputRow}>
+          <View style={[styles.chatInputRow, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderTopColor: isDark ? '#334155' : '#E2E8F0' }]}>
             <TextInput
-              style={styles.chatInput}
+              style={[styles.chatInput, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', color: isDark ? '#F1F5F9' : '#0F172A' }]}
               placeholder="Ask a question about availability, delivery..."
               value={typeMessage}
               onChangeText={setTypeMessage}
-              placeholderTextColor="#8E8E93"
+              placeholderTextColor={isDark ? '#475569' : '#94A3B8'}
             />
             <TouchableOpacity
               style={[styles.chatSendBtn, { backgroundColor: theme.primary }]}
@@ -525,526 +551,165 @@ export default function ProductDetailScreen({ route, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    alignItems: 'center',
-  },
-  centeredContent: {
-    width: '100%',
-    alignSelf: 'center',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#888',
-  },
+  mainContainer: { flex: 1 },
+  container: { flex: 1 },
+  scrollContent: { alignItems: 'center' },
+  centeredContent: { width: '100%', alignSelf: 'center', padding: 16 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  errorText: { fontSize: 16 },
 
-  // ── Product Header ──────────────────────────────────────────────────────────
+  // Product Header
   productHeader: {
-    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1,
     padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-    marginBottom: 10,
+    marginBottom: 16,
     width: '100%',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 2,
   },
   productHeaderDesktop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 32,
+    gap: 36,
+    padding: 28,
   },
 
-  // ── Image ───────────────────────────────────────────────────────────────────
-  imageColumn: {
-    position: 'relative',
-  },
-  imageColumnDesktop: {
-    flex: 1,
-    minWidth: 0,
-  },
-  image: {
-    width: '100%',
-    borderRadius: 12,
-    marginBottom: 16,
-  },
+  // Image Column
+  imageColumn: { position: 'relative' },
+  imageColumnDesktop: { flex: 1, minWidth: 0 },
+  image: { width: '100%', borderRadius: 16 },
   placeholderImage: {
-    width: '100%',
-    backgroundColor: '#E9ECEF',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
+    width: '100%', borderRadius: 16,
+    justifyContent: 'center', alignItems: 'center', gap: 6,
   },
-  placeholderText: {
-    color: '#ADB5BD',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
+  placeholderText: { fontSize: 44 },
+  placeholderSub: { fontSize: 13, fontWeight: '500' },
   promotedBadge: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    backgroundColor: '#FF9500',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
+    position: 'absolute', top: 12, left: 12,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6,
   },
-  promotedBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
+  promotedBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '800' },
 
-  // ── Info Column ─────────────────────────────────────────────────────────────
-  infoColumn: {},
-  infoColumnDesktop: {
-    flex: 1,
-    minWidth: 0,
-  },
-  name: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1C1C1E',
-    marginBottom: 8,
-  },
-  nameDesktop: {
-    fontSize: 28,
-  },
-  price: {
-    fontSize: 24,
-    fontWeight: '800',
-    marginBottom: 16,
-  },
-  priceDesktop: {
-    fontSize: 32,
-  },
-  description: {
-    fontSize: 15,
-    color: '#3A3A3C',
-    lineHeight: 22,
-    marginBottom: 16,
-  },
-  category: {
-    fontSize: 13,
-    color: '#8E8E93',
-    fontStyle: 'italic',
-    marginBottom: 8,
-  },
+  // Info Column
+  infoColumn: { marginTop: 16 },
+  infoColumnDesktop: { flex: 1, marginTop: 0 },
+  categoryBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginBottom: 8 },
+  categoryText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  name: { fontSize: 22, fontWeight: '900', lineHeight: 28, marginBottom: 8, letterSpacing: -0.5 },
+  nameDesktop: { fontSize: 28, lineHeight: 34 },
+  ratingOverviewRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
+  starsRow: { flexDirection: 'row', gap: 1 },
+  starIcon: { fontSize: 16 },
+  ratingOverviewText: { fontSize: 13, fontWeight: '600' },
+  price: { fontSize: 26, fontWeight: '900', marginBottom: 14 },
+  priceDesktop: { fontSize: 32 },
+  description: { fontSize: 14, lineHeight: 22, marginBottom: 20 },
 
-  // ── Vendor Box ──────────────────────────────────────────────────────────────
-  vendorBox: {
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    marginVertical: 16,
-  },
-  vendorHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 14,
-  },
-  vendorLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#8E8E93',
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  vendorName: {
-    fontSize: 16,
-    color: '#1C1C1E',
-    fontWeight: '700',
-  },
-  vendorEmail: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginTop: 1,
-  },
-  vendorAddress: {
-    fontSize: 12,
-    color: '#5856D6',
-    marginTop: 4,
-  },
-  vendorStatusDotContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E8F5E9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  vendorStatusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#4CAF50',
-    marginRight: 6,
-  },
-  vendorStatusText: {
-    color: '#4CAF50',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  communicationTray: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
+  // Vendor box
+  vendorBox: { borderRadius: 16, borderWidth: 1, padding: 16, marginBottom: 20 },
+  vendorHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  vendorAvatar: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  vendorAvatarText: { fontSize: 18, fontWeight: '900' },
+  vendorTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  vendorName: { fontSize: 15, fontWeight: '800' },
+  verifiedTag: { backgroundColor: '#22C55E18', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  verifiedTagText: { color: '#22C55E', fontSize: 10, fontWeight: '800' },
+  vendorAddress: { fontSize: 12, marginTop: 2 },
+  communicationTray: { flexDirection: 'row', gap: 8 },
   commButton: {
-    flex: 1,
-    height: 38,
-    borderRadius: 8,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 3,
+    flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5,
+    alignItems: 'center', justifyContent: 'center',
   },
-  commButtonText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
+  commButtonText: { fontSize: 12, fontWeight: '800' },
 
-  // ── Inline Add to Cart (desktop only) ───────────────────────────────────────
   addToCartBtnInline: {
-    height: 52,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
+    paddingVertical: 16, borderRadius: 14, alignItems: 'center',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4,
   },
+  addToCartBtnText: { color: '#FFF', fontSize: 15, fontWeight: '800' },
 
-  // ── Reviews Section ─────────────────────────────────────────────────────────
+  // Reviews
   reviewsSection: {
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    paddingBottom: 32,
-    width: '100%',
+    borderRadius: 20, borderWidth: 1, padding: 20, marginBottom: 16, width: '100%',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 2,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    marginBottom: 16,
-    color: '#1C1C1E',
-  },
-  addReviewBox: {
-    backgroundColor: '#F8F9FA',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    marginBottom: 24,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#3A3A3C',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#D1D1D6',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    marginBottom: 12,
-    color: '#1C1C1E',
-  },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  submitBtn: {
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  submitBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  noReviews: {
-    color: '#8E8E93',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginVertical: 20,
-  },
-  reviewCard: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#F2F2F7',
-    paddingVertical: 16,
-  },
-  reviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  reviewerName: {
-    fontWeight: '700',
-    color: '#1C1C1E',
-    fontSize: 14,
-  },
-  ratingStars: {
-    fontSize: 11,
-  },
-  reviewComment: {
-    color: '#3A3A3C',
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 6,
-  },
-  reviewDate: {
-    fontSize: 11,
-    color: '#AEAEB2',
-  },
-
-  // ── Fixed Footer (mobile/tablet only) ──────────────────────────────────────
-  fixedFooter: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderTopWidth: 1,
-    ...Platform.select({
-      ios: { paddingBottom: 28 },
-      default: {},
-    }),
-  },
-  addToCartBtn: {
-    height: 52,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  addToCartBtnText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  // ── Ratings Summary ─────────────────────────────────────────────────────────
+  sectionTitle: { fontSize: 18, fontWeight: '900', marginBottom: 16 },
   ratingsSummary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    padding: 16,
-    marginBottom: 20,
+    flexDirection: 'row', alignItems: 'center', gap: 16,
+    borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 16,
   },
-  ratingsBigNum: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    marginRight: 16,
+  ratingsBigNum: { flexDirection: 'row', alignItems: 'baseline' },
+  ratingsBigValue: { fontSize: 36, fontWeight: '900' },
+  ratingsOutOf: { fontSize: 14, fontWeight: '600', marginLeft: 2 },
+  ratingsRight: { flex: 1 },
+  ratingsStarsRow: { flexDirection: 'row', gap: 2, marginBottom: 2 },
+  ratingsStarChar: { fontSize: 18 },
+  ratingsCount: { fontSize: 12, fontWeight: '500' },
+
+  addReviewBox: { borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 20 },
+  label: { fontSize: 14, fontWeight: '800', marginBottom: 8 },
+  ratingSelectorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  ratingSelectorLabel: { fontSize: 13, fontWeight: '600' },
+  starSelectorChar: { fontSize: 24 },
+  input: { borderRadius: 10, borderWidth: 1, padding: 12, fontSize: 14, marginBottom: 12 },
+  textArea: { minHeight: 80 },
+  submitBtn: { paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  submitBtnText: { color: '#FFF', fontSize: 14, fontWeight: '800' },
+  noReviews: { fontSize: 14, textAlign: 'center', marginVertical: 16 },
+  reviewCard: { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 10 },
+  reviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  reviewerName: { fontSize: 14, fontWeight: '800' },
+  ratingStars: { fontSize: 12 },
+  reviewComment: { fontSize: 13, lineHeight: 19, marginBottom: 6 },
+  reviewDate: { fontSize: 10 },
+
+  // Fixed Mobile Footer
+  fixedFooter: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 14,
+    shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 8,
   },
-  ratingsBigValue: {
-    fontSize: 36,
-    fontWeight: '900',
-  },
-  ratingsOutOf: {
-    fontSize: 14,
-    color: '#8E8E93',
-    marginLeft: 4,
-    fontWeight: '600',
-  },
-  ratingsRight: {
-    flex: 1,
-  },
-  ratingsStarsRow: {
-    flexDirection: 'row',
-    marginBottom: 4,
-  },
-  ratingsStarChar: {
-    fontSize: 20,
-    marginRight: 2,
-  },
-  ratingsCount: {
-    fontSize: 12,
-    color: '#8E8E93',
-    fontWeight: '500',
+  footerPriceCol: { gap: 2 },
+  footerPriceLabel: { fontSize: 11, fontWeight: '600' },
+  footerPriceVal: { fontSize: 22, fontWeight: '900' },
+  addToCartBtn: {
+    paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12,
+    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 3,
   },
 
-  // ── Chat Simulator ──────────────────────────────────────────────────────────
-  chatContainer: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
+  // Chat Modal
+  chatContainer: { flex: 1 },
   chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 48 : 16,
-    paddingBottom: 16,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 52 : 16, paddingBottom: 16,
     borderBottomWidth: 1,
-    borderColor: '#E5E5EA',
   },
-  chatHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  chatBackBtn: {
-    marginRight: 12,
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  chatBackBtnText: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1C1C1E',
-  },
-  chatHeaderTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  chatHeaderStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  statusDotGreen: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#4CAF50',
-    marginRight: 4,
-  },
-  chatHeaderStatusText: {
-    color: '#8E8E93',
-    fontSize: 11,
-  },
-  chatCloseBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#F2F2F7',
-  },
-  chatCloseBtnText: {
-    fontSize: 13,
-    color: '#8E8E93',
-    fontWeight: '600',
-  },
-  chatMessagesList: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  msgWrapper: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  msgLeft: {
-    justifyContent: 'flex-start',
-  },
-  msgRight: {
-    justifyContent: 'flex-end',
-  },
-  msgBubble: {
-    maxWidth: '80%',
-    padding: 12,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  msgBubbleVendor: {
-    backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  msgText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  msgTextMe: {
-    color: '#FFFFFF',
-  },
-  msgTextVendor: {
-    color: '#1C1C1E',
-  },
-  msgTime: {
-    fontSize: 9,
-    marginTop: 4,
-    textAlign: 'right',
-  },
-  msgTimeMe: {
-    color: 'rgba(255,255,255,0.7)',
-  },
-  msgTimeVendor: {
-    color: '#AEAEB2',
-  },
-  typingBubble: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  typingText: {
-    color: '#8E8E93',
-    fontStyle: 'italic',
-    fontSize: 12,
-  },
+  chatHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  chatBackBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  chatBackBtnText: { fontSize: 22, fontWeight: '800' },
+  chatHeaderTitle: { fontSize: 15, fontWeight: '800' },
+  chatHeaderStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  statusDotGreen: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' },
+  chatHeaderStatusText: { fontSize: 11 },
+  chatCloseBtn: { paddingHorizontal: 12, paddingVertical: 6 },
+  chatCloseBtnText: { fontSize: 14, fontWeight: '800' },
+  chatMessagesList: { padding: 16, paddingBottom: 24 },
+  msgWrapper: { flexDirection: 'row', marginBottom: 12 },
+  msgLeft: { justifyContent: 'flex-start' },
+  msgRight: { justifyContent: 'flex-end' },
+  msgBubble: { maxWidth: '80%', padding: 12, borderRadius: 16 },
+  msgText: { fontSize: 14, lineHeight: 20 },
+  msgTime: { fontSize: 9, marginTop: 4, textAlign: 'right' },
+  typingText: { fontSize: 12, fontStyle: 'italic' },
   chatInputRow: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderColor: '#E5E5EA',
-    alignItems: 'center',
+    flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12,
+    borderTopWidth: 1, alignItems: 'center', gap: 10,
     paddingBottom: Platform.OS === 'ios' ? 24 : 12,
   },
-  chatInput: {
-    flex: 1,
-    backgroundColor: '#F2F2F7',
-    height: 40,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: '#1C1C1E',
-    marginRight: 10,
-  },
-  chatSendBtn: {
-    height: 40,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  chatSendBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
+  chatInput: { flex: 1, height: 42, borderRadius: 21, paddingHorizontal: 16, fontSize: 14 },
+  chatSendBtn: { height: 42, paddingHorizontal: 18, borderRadius: 21, justifyContent: 'center', alignItems: 'center' },
+  chatSendBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
 });

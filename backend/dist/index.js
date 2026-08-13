@@ -16,6 +16,7 @@ require("./lib/env");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
 const http_1 = __importDefault(require("http"));
 const socket_io_1 = require("socket.io");
 // Capture unhandled errors so nodemon shows the real crash reason
@@ -59,6 +60,33 @@ app.use((0, cors_1.default)({
 // Webhook route must be parsed as raw body for Stripe signature verification
 app.use('/api/payments/webhook', express_1.default.raw({ type: 'application/json' }));
 app.use(express_1.default.json());
+// Explicit APK download route — sets proper Content-Disposition so browsers
+// download the file instead of rendering it as JSON / triggering a 404.
+app.get('/uploads/fixmart-latest.apk', (req, res) => {
+    const filePath = path_1.default.resolve(__dirname, '../uploads/fixmart-latest.apk');
+    if (fs_1.default.existsSync(filePath)) {
+        res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+        res.setHeader('Content-Disposition', 'attachment; filename="fixmart-latest.apk"');
+        return res.sendFile(filePath);
+    }
+    return res.status(404).json({
+        error: 'Not Found',
+        message: 'APK file not found on server. Please try again later.'
+    });
+});
+// Explicit AAB download route
+app.get('/uploads/fixmart-latest.aab', (req, res) => {
+    const filePath = path_1.default.resolve(__dirname, '../uploads/fixmart-latest.aab');
+    if (fs_1.default.existsSync(filePath)) {
+        res.setHeader('Content-Type', 'application/x-authoritative-aab');
+        res.setHeader('Content-Disposition', 'attachment; filename="fixmart-latest.aab"');
+        return res.sendFile(filePath);
+    }
+    return res.status(404).json({
+        error: 'Not Found',
+        message: 'AAB file not found on server. Please try again later.'
+    });
+});
 // Serve static uploads folder
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads')));
 // Root route

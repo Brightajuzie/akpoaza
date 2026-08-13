@@ -1,412 +1,409 @@
 import React, { useEffect, useState, useContext, useRef } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, TextInput, Modal, KeyboardAvoidingView, Platform, useWindowDimensions } from 'react-native';
+import {
+  View, Text, FlatList, StyleSheet, ActivityIndicator,
+  TouchableOpacity, Alert, TextInput, Modal,
+  KeyboardAvoidingView, Platform, useWindowDimensions,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import apiClient from '../api/client';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
+import FloatingCartBar from '../components/FloatingCartBar';
 
 interface ChatMessage {
-  id: string;
-  text: string;
-  sender: 'customer' | 'provider';
-  timestamp: Date;
+  id: string; text: string;
+  sender: 'customer' | 'provider'; timestamp: Date;
 }
+
+const CATEGORY_CONFIG: Record<string, { icon: string; color: string; bg: string }> = {
+  'Plumbing':    { icon: '🚿', color: '#3B82F6', bg: '#EFF6FF' },
+  'Electrical':  { icon: '⚡', color: '#F59E0B', bg: '#FFFBEB' },
+  'General':     { icon: '🔧', color: '#10B981', bg: '#F0FDF4' },
+  'Carpentry':   { icon: '🪚', color: '#8B5CF6', bg: '#F5F3FF' },
+  'Painting':    { icon: '🖌️', color: '#EC4899', bg: '#FDF2F8' },
+  'Cleaning':    { icon: '🧹', color: '#06B6D4', bg: '#ECFEFF' },
+  'HVAC':        { icon: '❄️', color: '#0EA5E9', bg: '#F0F9FF' },
+  'default':     { icon: '🛠️', color: '#64748B', bg: '#F8FAFC' },
+};
 
 export default function ServicesScreen({ navigation }: any) {
   const [services, setServices] = useState<any[]>([]);
   const [filteredServices, setFilteredServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const { theme } = useContext(SettingsContext);
-  const { width } = useWindowDimensions();
-  const numColumns = width > 1024 ? 4 : width > 600 ? 3 : 2;
-
-  // Service ratings map: serviceId -> { averageRating, count }
   const [ratingsMap, setRatingsMap] = useState<Record<string, { averageRating: number | null; count: number }>>({});
 
-  // Chat simulator state
+  const { theme, colorMode } = useContext(SettingsContext);
+  const { fmt } = useCurrency();
+  const { width } = useWindowDimensions();
+  const isDark = colorMode === 'dark';
+  const numColumns = width >= 1200 ? 3 : width >= 768 ? 2 : 1;
+
+  // Chat state
   const [chatVisible, setChatVisible] = useState(false);
   const [selectedService, setSelectedService] = useState<any>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [typeMessage, setTypeMessage] = useState('');
   const [typing, setTyping] = useState(false);
-  const chatFlatListRef = useRef<FlatList>(null);
-
-  const categories = ['All', 'Plumbing', 'Electrical', 'General'];
+  const chatListRef = useRef<FlatList>(null);
 
   const fetchServices = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get('/services');
-      const fetchedServices = response.data;
-      setServices(fetchedServices);
-      setFilteredServices(fetchedServices);
+      const res = await apiClient.get('/services');
+      const data = res.data;
+      setServices(data);
+      setFilteredServices(data);
 
-      // Fetch ratings for each service in parallel
-      const ratingResults = await Promise.allSettled(
-        fetchedServices.map((s: any) =>
-          apiClient.get(`/reviews/service/${s.id}`).then((r) => ({ id: s.id, data: r.data }))
+      const ratings = await Promise.allSettled(
+        data.map((s: any) =>
+          apiClient.get(`/reviews/service/${s.id}`).then(r => ({ id: s.id, data: r.data }))
         )
       );
       const map: Record<string, { averageRating: number | null; count: number }> = {};
-      ratingResults.forEach((result) => {
-        if (result.status === 'fulfilled') {
-          const { id, data } = result.value;
-          map[id] = { averageRating: data.averageRating, count: data.count };
-        }
+      ratings.forEach(r => {
+        if (r.status === 'fulfilled') map[r.value.id] = r.value.data;
       });
       setRatingsMap(map);
-    } catch (error) {
-      console.error('Failed to fetch services', error);
+    } catch (e) {
+      console.error('Failed to fetch services', e);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchServices();
-  }, []);
+  useEffect(() => { fetchServices(); }, []);
+
+  const categories = ['All', ...Array.from(new Set(services.map((s: any) => s.category).filter(Boolean)))];
 
   useEffect(() => {
     let result = services;
-
-    // Apply search filter
     if (search.trim()) {
-      result = result.filter(s => 
-        s.name.toLowerCase().includes(search.toLowerCase()) || 
+      result = result.filter(s =>
+        s.name.toLowerCase().includes(search.toLowerCase()) ||
         s.description.toLowerCase().includes(search.toLowerCase())
       );
     }
-
-    // Apply category filter
     if (selectedCategory !== 'All') {
-      result = result.filter(s => s.category.toLowerCase() === selectedCategory.toLowerCase());
+      result = result.filter(s => s.category === selectedCategory);
     }
-
     setFilteredServices(result);
   }, [search, selectedCategory, services]);
 
-  const handleBookService = (service: any) => {
-    // Allow guests to navigate — BookingSetupScreen handles its own auth gate
+  const handleBookService = (service: any) =>
     navigation.navigate('BookingSetup', { service });
-  };
 
-  // Communication Simulation triggers
-  const handleCallSimulate = (service: any) => {
-    Alert.alert(
-      '📞 Call Dialing Simulator',
-      `Connecting to closest certified technician specializing in: ${service.name}\nSpecialist: Bob Builder (Specialty: ${service.category})\n\nStatus: DIALING...`,
-      [{ text: 'End Call', style: 'cancel' }]
-    );
-  };
+  const handleCallSimulate = (service: any) =>
+    Alert.alert('📞 Calling Specialist', `Connecting to the nearest certified ${service.category} technician...\n\nStatus: DIALING...`, [{ text: 'End Call', style: 'cancel' }]);
 
   const handleWhatsAppSimulate = (service: any) => {
-    const msg = `Hi, I am looking for a qualified specialist for "${service.name}". I saw your service on FixMart. Is anyone available for booking tomorrow?`;
-    Alert.alert(
-      '💬 WhatsApp Redirection Simulator',
-      `Opening WhatsApp thread...\n\nRecipient: Closest ${service.category} Expert\n\nPre-filled text:\n"${msg}"`,
-      [{ text: 'Open WhatsApp', onPress: () => {} }, { text: 'Cancel', style: 'cancel' }]
-    );
+    const msg = `Hi, I'm looking for a "${service.name}" specialist. I found you on FixMart. Are you available?`;
+    Alert.alert('💬 WhatsApp', `Opening chat with nearest ${service.category} expert...\n\nMessage: "${msg}"`,
+      [{ text: 'Open WhatsApp' }, { text: 'Cancel', style: 'cancel' }]);
   };
 
   const handleOpenChat = (service: any) => {
     setSelectedService(service);
     setChatVisible(true);
-    setChatMessages([
-      {
-        id: '1',
-        text: `Hi there! I am Bob the Builder, your closest verified expert for "${service.name}". I am online and currently in your area! What repair do you need help with?`,
-        sender: 'provider',
-        timestamp: new Date()
-      }
-    ]);
+    setChatMessages([{
+      id: '1',
+      text: `Hi! I'm Bob, your nearest verified ${service.category} specialist. I'm currently in your area. What do you need help with?`,
+      sender: 'provider', timestamp: new Date(),
+    }]);
   };
 
-  const handleSendChatMessage = () => {
+  const handleSendMessage = () => {
     if (!typeMessage.trim()) return;
-
-    const newMsg: ChatMessage = {
-      id: Date.now().toString(),
-      text: typeMessage.trim(),
-      sender: 'customer',
-      timestamp: new Date()
-    };
-
-    setChatMessages(prev => [...prev, newMsg]);
-    const userMsg = typeMessage;
+    const msg: ChatMessage = { id: Date.now().toString(), text: typeMessage.trim(), sender: 'customer', timestamp: new Date() };
+    setChatMessages(prev => [...prev, msg]);
+    const text = typeMessage.toLowerCase();
     setTypeMessage('');
-
     setTyping(true);
     setTimeout(() => {
       setTyping(false);
-      
-      let replyText = `I can definitely help you with that repair! Feel free to book the appointment slot using the 'Book Now' button in the app. I will immediately confirm and be on my way!`;
-      const lowercaseUser = userMsg.toLowerCase();
-      if (lowercaseUser.includes('cost') || lowercaseUser.includes('price') || lowercaseUser.includes('expensive')) {
-        replyText = `Our base hourly rate is $${selectedService.basePrice.toFixed(2)}/hr. This includes standard diagnostic checking and tools!`;
-      } else if (lowercaseUser.includes('time') || lowercaseUser.includes('when') || lowercaseUser.includes('tomorrow') || lowercaseUser.includes('today')) {
-        replyText = `I have open slots available today and tomorrow! If you schedule now via 'Book Now', I will peg my GPS route coordinates directly to your house!`;
+      let reply = `I can definitely help! Use the 'Book Now' button to confirm your slot and I'll head over immediately.`;
+      if (text.includes('cost') || text.includes('price')) {
+        reply = `Our base rate is ${fmt(selectedService.basePrice)}/hr, which includes diagnostic checks and standard tools!`;
+      } else if (text.includes('time') || text.includes('when') || text.includes('today')) {
+        reply = `I have open slots today and tomorrow! Book now and I'll GPS-route directly to your location.`;
       }
-
-      setChatMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        text: replyText,
-        sender: 'provider',
-        timestamp: new Date()
-      }]);
+      setChatMessages(prev => [...prev, { id: (Date.now() + 1).toString(), text: reply, sender: 'provider', timestamp: new Date() }]);
     }, 1500);
   };
 
-  // Scroll to bottom helper
   useEffect(() => {
-    if (chatFlatListRef.current) {
-      setTimeout(() => {
-        chatFlatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
+    setTimeout(() => chatListRef.current?.scrollToEnd({ animated: true }), 100);
   }, [chatMessages, typing]);
 
-  if (loading) {
+  const getCatConf = (cat: string) => CATEGORY_CONFIG[cat] || CATEGORY_CONFIG['default'];
+
+  const renderStars = (serviceId: string) => {
+    const r = ratingsMap[serviceId];
+    if (!r || r.averageRating === null) return null;
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color={theme.primary} />
+      <View style={styles.ratingRow}>
+        {[1, 2, 3, 4, 5].map(s => (
+          <Text key={s} style={[styles.star, { color: s <= Math.round(r.averageRating!) ? '#F59E0B' : (isDark ? '#334155' : '#E2E8F0') }]}>★</Text>
+        ))}
+        <Text style={[styles.ratingLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>
+          {r.averageRating!.toFixed(1)} ({r.count})
+        </Text>
       </View>
     );
-  }
+  };
+
+  const renderServiceCard = ({ item }: any) => {
+    const isFeatured = item.featured;
+    const conf = getCatConf(item.category);
+
+    return (
+      <View style={[
+        styles.card,
+        { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isFeatured ? '#F59E0B' : (isDark ? '#334155' : '#E2E8F0') },
+        isFeatured && { borderWidth: 2 },
+        { margin: 8, flex: numColumns > 1 ? 1 : undefined },
+      ]}>
+        {/* Top accent */}
+        <View style={[styles.cardAccent, { backgroundColor: conf.color }]} />
+
+        {isFeatured && (
+          <View style={styles.featuredBadge}>
+            <Text style={styles.featuredBadgeText}>🔥 FEATURED</Text>
+          </View>
+        )}
+
+        <View style={styles.cardMain}>
+          {/* Icon + Category */}
+          <View style={[styles.catIconWrap, { backgroundColor: isDark ? conf.color + '22' : conf.bg }]}>
+            <Text style={styles.catIcon}>{conf.icon}</Text>
+          </View>
+
+          <View style={styles.cardInfo}>
+            {/* Category pill */}
+            <View style={[styles.catPill, { backgroundColor: isDark ? conf.color + '22' : conf.bg }]}>
+              <Text style={[styles.catPillText, { color: conf.color }]}>{item.category}</Text>
+            </View>
+            <Text style={[styles.cardName, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={2}>
+              {item.name}
+            </Text>
+            {renderStars(item.id)}
+          </View>
+
+          {/* Price */}
+          <View style={styles.priceBlock}>
+            <Text style={[styles.priceVal, { color: theme.primary }]}>{fmt(item.basePrice)}</Text>
+            <Text style={[styles.priceUnit, { color: isDark ? '#64748B' : '#94A3B8' }]}>/hr</Text>
+          </View>
+        </View>
+
+        <Text style={[styles.cardDesc, { color: isDark ? '#64748B' : '#94A3B8' }]} numberOfLines={2}>
+          {item.description}
+        </Text>
+
+        {/* CTA Row */}
+        <View style={styles.ctaRow}>
+          <TouchableOpacity
+            style={[styles.ctaOutline, { borderColor: theme.primary + '60' }]}
+            onPress={() => handleOpenChat(item)}
+            activeOpacity={0.82}
+          >
+            <Text style={[styles.ctaOutlineText, { color: theme.primary }]}>💬 Contact</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.ctaFilled, { backgroundColor: theme.primary }]}
+            onPress={() => handleBookService(item)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.ctaFilledText}>Book Now →</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header Search Bar */}
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.text }]}>Find a Professional</Text>
-        <TextInput
-          style={styles.searchBar}
-          placeholder="🔍 Search plumbing, electrical, assembly..."
-          value={search}
-          onChangeText={setSearch}
-          placeholderTextColor="#8E8E93"
-        />
-      </View>
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
+      {/* ── Header ───────────────────────────────────────────────────────── */}
+      <View style={[styles.header, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderBottomColor: isDark ? '#334155' : '#E2E8F0' }]}>
+        <Text style={[styles.pageTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>🛠️ Find a Professional</Text>
+        <Text style={[styles.pageSubtitle, { color: isDark ? '#64748B' : '#94A3B8' }]}>
+          Verified specialists near you
+        </Text>
 
-      {/* Category Selection Filter Pills */}
-      <View style={styles.categoryContainer}>
+        {/* Search */}
+        <View style={[
+          styles.searchBar,
+          { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: searchFocused ? theme.primary : (isDark ? '#334155' : '#E2E8F0') }
+        ]}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={[styles.searchInput, { color: isDark ? '#F1F5F9' : '#0F172A' }]}
+            placeholder="Search plumbing, electrical, cleaning..."
+            placeholderTextColor={isDark ? '#475569' : '#94A3B8'}
+            value={search}
+            onChangeText={setSearch}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity onPress={() => setSearch('')} style={styles.clearBtn}>
+              <Text style={[styles.clearBtnText, { color: isDark ? '#64748B' : '#94A3B8' }]}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Category Pills */}
         <FlatList
           data={categories}
           horizontal
           showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item}
-          contentContainerStyle={styles.categoryList}
+          keyExtractor={c => c}
+          contentContainerStyle={styles.pillList}
           renderItem={({ item }) => {
-            const isActive = selectedCategory === item;
+            const active = selectedCategory === item;
+            const conf = item !== 'All' ? getCatConf(item) : null;
             return (
               <TouchableOpacity
                 style={[
-                  styles.categoryPill,
-                  isActive && { backgroundColor: theme.primary, borderColor: theme.primary }
+                  styles.pill,
+                  { backgroundColor: active ? (conf?.color || theme.primary) : (isDark ? '#0F172A' : '#F1F5F9'), borderColor: active ? (conf?.color || theme.primary) : (isDark ? '#334155' : '#E2E8F0') }
                 ]}
                 onPress={() => setSelectedCategory(item)}
               >
-                <Text
-                  style={[
-                    styles.categoryText,
-                    isActive && styles.activeCategoryText
-                  ]}
-                >
-                  {item}
-                </Text>
+                {conf && <Text style={styles.pillIcon}>{conf.icon}</Text>}
+                <Text style={[styles.pillText, { color: active ? '#FFF' : (isDark ? '#94A3B8' : '#64748B') }]}>{item}</Text>
               </TouchableOpacity>
             );
           }}
         />
       </View>
 
-      {/* Services List */}
-      <FlatList
-        key={`grid-${numColumns}`}
-        data={filteredServices}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContainer}
-        numColumns={numColumns}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => {
-          const isFeatured = item.featured;
-          return (
-            <View 
-              style={[
-                styles.card, 
-                isFeatured && {
-                  borderColor: '#FF9500',
-                  borderWidth: 2,
-                  shadowColor: '#FF9500',
-                  shadowOpacity: 0.1,
-                }
-              ]}
-            >
-              {isFeatured && (
-                <View style={styles.promotedBadge}>
-                  <Text style={styles.promotedBadgeText}>🔥 Featured Service</Text>
-                </View>
-              )}
-
-              <View style={styles.cardHeader}>
-                <View style={styles.titleColumn}>
-                  <Text style={styles.name}>{item.name}</Text>
-                  <Text style={[styles.categoryBadge, { color: theme.primary }]}>
-                    {item.category}
-                  </Text>
-                  {/* Star Rating Row */}
-                  {ratingsMap[item.id] && ratingsMap[item.id].averageRating !== null && (
-                    <View style={styles.ratingRow}>
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <Text
-                          key={s}
-                          style={[
-                            styles.ratingStar,
-                            s <= Math.round(ratingsMap[item.id]!.averageRating!) ? styles.ratingStarOn : styles.ratingStarOff,
-                          ]}
-                        >
-                          ★
-                        </Text>
-                      ))}
-                      <Text style={styles.ratingCount}>
-                        {ratingsMap[item.id]!.averageRating!.toFixed(1)} ({ratingsMap[item.id]!.count})
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.price}>
-                  ${item.basePrice.toFixed(0)}
-                  <Text style={styles.baseLabel}>/hr base</Text>
-                </Text>
-              </View>
-              
-              <Text style={styles.desc} numberOfLines={2}>
-                {item.description}
-              </Text>
-
-              {/* Service Cards CTA buttons tray */}
-              <View style={styles.actionsRow}>
-                <TouchableOpacity 
-                  style={[styles.contactBtn, { borderColor: theme.primary }]}
-                  onPress={() => handleOpenChat(item)}
-                >
-                  <Text style={[styles.contactBtnText, { color: theme.primary }]}>💬 Contact Specialist</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={[styles.bookButton, { backgroundColor: theme.primary }]} 
-                  onPress={() => handleBookService(item)}
-                >
-                  <Text style={styles.bookButtonText}>Book Now</Text>
-                </TouchableOpacity>
-              </View>
+      {/* ── Services Grid ─────────────────────────────────────────────────── */}
+      {loading ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.loadingText, { color: isDark ? '#64748B' : '#94A3B8' }]}>Loading services...</Text>
+        </View>
+      ) : (
+        <FlatList
+          key={`svc-${numColumns}`}
+          data={filteredServices}
+          keyExtractor={i => i.id}
+          numColumns={numColumns}
+          contentContainerStyle={[styles.list, { paddingBottom: 110 }]}
+          showsVerticalScrollIndicator={false}
+          renderItem={renderServiceCard}
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyIcon}>🔍</Text>
+              <Text style={[styles.emptyTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>No services found</Text>
+              <Text style={[styles.emptySub, { color: isDark ? '#64748B' : '#94A3B8' }]}>Try a different search or category</Text>
+              <TouchableOpacity
+                style={[styles.emptyReset, { backgroundColor: theme.primary }]}
+                onPress={() => { setSearch(''); setSelectedCategory('All'); }}
+              >
+                <Text style={styles.emptyResetText}>Clear Filters</Text>
+              </TouchableOpacity>
             </View>
-          );
-        }}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No services found matching filters.</Text>
-          </View>
-        }
-      />
+          }
+        />
+      )}
 
-      {/* CHAT WITH TECHNICIAN SIMULATOR MODAL */}
-      <Modal
-        visible={chatVisible}
-        animationType="slide"
-        onRequestClose={() => setChatVisible(false)}
-      >
+      <FloatingCartBar />
+
+      {/* ── Chat Modal ────────────────────────────────────────────────────── */}
+      <Modal visible={chatVisible} animationType="slide" onRequestClose={() => setChatVisible(false)}>
         {selectedService && (
-          <KeyboardAvoidingView 
-            style={styles.chatContainer} 
+          <KeyboardAvoidingView
+            style={[styles.chatRoot, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
           >
             {/* Chat Header */}
-            <View style={styles.chatHeader}>
+            <View style={[styles.chatHeader, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderBottomColor: isDark ? '#334155' : '#E2E8F0' }]}>
               <View style={styles.chatHeaderLeft}>
-                <TouchableOpacity onPress={() => setChatVisible(false)} style={styles.chatBackBtn}>
-                  <Text style={styles.chatBackBtnText}>←</Text>
+                <TouchableOpacity onPress={() => setChatVisible(false)} style={styles.backBtn}>
+                  <Text style={[styles.backBtnText, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>←</Text>
                 </TouchableOpacity>
+                <View style={[styles.chatAvatar, { backgroundColor: getCatConf(selectedService.category).color + '20' }]}>
+                  <Text style={styles.chatAvatarText}>{getCatConf(selectedService.category).icon}</Text>
+                </View>
                 <View>
-                  <Text style={styles.chatHeaderTitle}>Bob Builder ({selectedService.category})</Text>
-                  <View style={styles.chatHeaderStatusRow}>
-                    <View style={styles.statusDotGreen} />
-                    <Text style={styles.chatHeaderStatusText}>Simulated Technician Bot</Text>
+                  <Text style={[styles.chatName, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>Bob Builder</Text>
+                  <View style={styles.onlineRow}>
+                    <View style={styles.onlineDot} />
+                    <Text style={[styles.onlineText, { color: isDark ? '#64748B' : '#94A3B8' }]}>Online · {selectedService.category} Specialist</Text>
                   </View>
                 </View>
               </View>
-              
               <View style={styles.chatHeaderRight}>
-                <TouchableOpacity 
-                  style={styles.headerSimCall}
-                  onPress={() => handleCallSimulate(selectedService)}
-                >
-                  <Text style={styles.headerSimCallText}>📞 Call</Text>
+                <TouchableOpacity style={[styles.chatQuickBtn, { backgroundColor: isDark ? '#0F172A' : '#F1F5F9' }]} onPress={() => handleCallSimulate(selectedService)}>
+                  <Text style={[styles.chatQuickBtnText, { color: '#3B82F6' }]}>📞 Call</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.headerSimCall}
-                  onPress={() => handleWhatsAppSimulate(selectedService)}
-                >
-                  <Text style={[styles.headerSimCallText, { color: '#25D366' }]}>💬 WA</Text>
+                <TouchableOpacity style={[styles.chatQuickBtn, { backgroundColor: isDark ? '#0F172A' : '#F1F5F9' }]} onPress={() => handleWhatsAppSimulate(selectedService)}>
+                  <Text style={[styles.chatQuickBtnText, { color: '#25D366' }]}>💬 WA</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* Chat message listing */}
+            {/* Messages */}
             <FlatList
-              ref={chatFlatListRef}
+              ref={chatListRef}
               data={chatMessages}
-              keyExtractor={item => item.id}
-              contentContainerStyle={styles.chatMessagesList}
+              keyExtractor={i => i.id}
+              contentContainerStyle={styles.msgList}
               renderItem={({ item }) => {
                 const isMe = item.sender === 'customer';
                 return (
-                  <View style={[styles.msgWrapper, isMe ? styles.msgRight : styles.msgLeft]}>
-                    <View 
-                      style={[
-                        styles.msgBubble, 
-                        isMe 
-                          ? { backgroundColor: theme.primary } 
-                          : styles.msgBubbleVendor
-                      ]}
-                    >
-                      <Text style={[styles.msgText, isMe ? styles.msgTextMe : styles.msgTextVendor]}>
+                  <View style={[styles.msgWrap, isMe ? styles.msgRight : styles.msgLeft]}>
+                    <View style={[
+                      styles.bubble,
+                      isMe
+                        ? { backgroundColor: theme.primary, borderBottomRightRadius: 4 }
+                        : { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: isDark ? '#334155' : '#E2E8F0' }
+                    ]}>
+                      <Text style={[styles.bubbleText, { color: isMe ? '#FFF' : (isDark ? '#F1F5F9' : '#0F172A') }]}>
                         {item.text}
                       </Text>
-                      <Text style={[styles.msgTime, isMe ? styles.msgTimeMe : styles.msgTimeVendor]}>
+                      <Text style={[styles.bubbleTime, { color: isMe ? 'rgba(255,255,255,0.6)' : (isDark ? '#475569' : '#94A3B8') }]}>
                         {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </Text>
                     </View>
                   </View>
                 );
               }}
-              ListFooterComponent={
-                typing ? (
-                  <View style={[styles.msgWrapper, styles.msgLeft]}>
-                    <View style={[styles.msgBubble, styles.msgBubbleVendor, styles.typingBubble]}>
-                      <Text style={styles.typingText}>Technician is typing...</Text>
-                    </View>
+              ListFooterComponent={typing ? (
+                <View style={[styles.msgWrap, styles.msgLeft]}>
+                  <View style={[styles.bubble, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+                    <Text style={[styles.typingText, { color: isDark ? '#64748B' : '#94A3B8' }]}>Typing...</Text>
                   </View>
-                ) : null
-              }
+                </View>
+              ) : null}
             />
 
-            {/* Messages Input Box */}
-            <View style={styles.chatInputRow}>
+            {/* Input */}
+            <View style={[styles.inputRow, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderTopColor: isDark ? '#334155' : '#E2E8F0' }]}>
               <TextInput
-                style={styles.chatInput}
-                placeholder="Ask about availability, emergency repair..."
+                style={[styles.chatInput, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', color: isDark ? '#F1F5F9' : '#0F172A' }]}
+                placeholder="Ask about availability, pricing..."
+                placeholderTextColor={isDark ? '#475569' : '#94A3B8'}
                 value={typeMessage}
                 onChangeText={setTypeMessage}
-                placeholderTextColor="#8E8E93"
               />
-              <TouchableOpacity 
-                style={[styles.chatSendBtn, { backgroundColor: theme.primary }]}
-                onPress={handleSendChatMessage}
-              >
-                <Text style={styles.chatSendBtnText}>Send</Text>
+              <TouchableOpacity style={[styles.sendBtn, { backgroundColor: theme.primary }]} onPress={handleSendMessage}>
+                <Text style={styles.sendBtnText}>Send →</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Book CTA inside chat */}
+            <TouchableOpacity
+              style={[styles.chatBookBtn, { backgroundColor: theme.primary }]}
+              onPress={() => { setChatVisible(false); handleBookService(selectedService); }}
+            >
+              <Text style={styles.chatBookBtnText}>📅 Book {selectedService.name} Now</Text>
+            </TouchableOpacity>
           </KeyboardAvoidingView>
         )}
       </Modal>
@@ -415,355 +412,156 @@ export default function ServicesScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  root: { flex: 1 },
+
+  // Header
   header: {
-    padding: 20,
-    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderColor: '#E5E5EA',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 8 : 12,
+    paddingBottom: 8,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 12,
-  },
+  pageTitle: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5, marginBottom: 2 },
+  pageSubtitle: { fontSize: 12, fontWeight: '500', marginBottom: 12 },
   searchBar: {
-    backgroundColor: '#F2F2F7',
-    height: 44,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: 15,
-    color: '#1C1C1E',
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 12, borderWidth: 1.5,
+    paddingHorizontal: 12, marginBottom: 10,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 2,
   },
-  categoryContainer: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderColor: '#E5E5EA',
+  searchIcon: { fontSize: 15, marginRight: 8 },
+  searchInput: { flex: 1, fontSize: 14, fontWeight: '500', paddingVertical: 8 },
+  clearBtn: { padding: 6 },
+  clearBtnText: { fontSize: 13, fontWeight: '700' },
+  pillList: { gap: 6, paddingBottom: 6 },
+  pill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1,
   },
-  categoryList: {
-    paddingHorizontal: 16,
-  },
-  categoryPill: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: '#F2F2F7',
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#F2F2F7',
-  },
-  categoryText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8E8E93',
-  },
-  activeCategoryText: {
-    color: '#FFFFFF',
-  },
-  listContainer: {
-    padding: 16,
-  },
+  pillIcon: { fontSize: 13 },
+  pillText: { fontSize: 12, fontWeight: '700' },
+
+  // Loading
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { fontSize: 13, fontWeight: '500' },
+  list: { padding: 4 },
+
+  // Service card
   card: {
-    flex: 1,
-    margin: 8,
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    position: 'relative',
+    borderRadius: 18, borderWidth: 1,
+    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
   },
-  promotedBadge: {
-    position: 'absolute',
-    top: -12,
-    left: 16,
-    backgroundColor: '#FF9500',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
+  cardAccent: { height: 4, width: '100%' },
+  featuredBadge: {
+    position: 'absolute', top: 12, right: 12,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
   },
-  promotedBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '800',
-    textTransform: 'uppercase',
+  featuredBadgeText: { color: '#FFF', fontSize: 8, fontWeight: '800' },
+  cardMain: {
+    flexDirection: 'row', alignItems: 'flex-start',
+    padding: 14, gap: 12,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-    marginTop: 4,
+  catIconWrap: {
+    width: 48, height: 48, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  titleColumn: {
-    flex: 1,
-    marginRight: 8,
+  catIcon: { fontSize: 24 },
+  cardInfo: { flex: 1 },
+  catPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 20, marginBottom: 4,
   },
-  name: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    marginBottom: 4,
+  catPillText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 },
+  cardName: { fontSize: 15, fontWeight: '800', lineHeight: 20, marginBottom: 4 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 1 },
+  star: { fontSize: 12 },
+  ratingLabel: { fontSize: 10, fontWeight: '600', marginLeft: 4 },
+  priceBlock: { alignItems: 'flex-end', paddingTop: 2 },
+  priceVal: { fontSize: 18, fontWeight: '900' },
+  priceUnit: { fontSize: 10, fontWeight: '600', marginTop: 1 },
+  cardDesc: { fontSize: 12, lineHeight: 17, paddingHorizontal: 14, marginBottom: 14 },
+  ctaRow: {
+    flexDirection: 'row', gap: 10,
+    paddingHorizontal: 14, paddingBottom: 14,
   },
-  categoryBadge: {
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  ctaOutline: {
+    flex: 1, height: 42, borderRadius: 10,
+    borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
   },
-  price: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#34C759',
-    textAlign: 'right',
+  ctaOutlineText: { fontSize: 12, fontWeight: '700' },
+  ctaFilled: {
+    flex: 1.2, height: 42, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 3,
   },
-  baseLabel: {
-    fontSize: 11,
-    color: '#8E8E93',
-    fontWeight: '400',
-  },
-  desc: {
-    color: '#8E8E93',
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 20,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  contactBtn: {
-    flex: 1,
-    height: 46,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  contactBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  bookButton: {
-    flex: 1,
-    height: 46,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bookButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingTop: 40,
-  },
-  emptyText: {
-    fontSize: 15,
-    color: '#8E8E93',
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 2,
-  },
-  ratingStar: {
-    fontSize: 13,
-    marginRight: 1,
-  },
-  ratingStarOn: {
-    color: '#FFD700',
-  },
-  ratingStarOff: {
-    color: '#E5E5EA',
-  },
-  ratingCount: {
-    fontSize: 11,
-    color: '#8E8E93',
-    marginLeft: 4,
-    fontWeight: '600',
-  },
-  // Chat Simulator Modal Styles
-  chatContainer: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
+  ctaFilledText: { color: '#FFF', fontSize: 13, fontWeight: '800' },
+
+  // Empty
+  emptyWrap: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 32 },
+  emptyIcon: { fontSize: 48, marginBottom: 16 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', marginBottom: 6 },
+  emptySub: { fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 20 },
+  emptyReset: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  emptyResetText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
+
+  // Chat modal
+  chatRoot: { flex: 1 },
   chatHeader: {
-    flexDirection: 'row',
+    flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 48 : 16,
-    paddingBottom: 16,
+    paddingHorizontal: 14,
+    paddingTop: Platform.OS === 'ios' ? 52 : 14,
+    paddingBottom: 14,
     borderBottomWidth: 1,
-    borderColor: '#E5E5EA',
   },
-  chatHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  chatHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  backBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', marginRight: 4 },
+  backBtnText: { fontSize: 22, fontWeight: '700' },
+  chatAvatar: {
+    width: 38, height: 38, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
-  chatBackBtn: {
-    marginRight: 12,
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+  chatAvatarText: { fontSize: 20 },
+  chatName: { fontSize: 14, fontWeight: '800' },
+  onlineRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E', marginRight: 5 },
+  onlineText: { fontSize: 11 },
+  chatHeaderRight: { flexDirection: 'row', gap: 6 },
+  chatQuickBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  chatQuickBtnText: { fontSize: 11, fontWeight: '700' },
+  msgList: { padding: 16, paddingBottom: 24 },
+  msgWrap: { flexDirection: 'row', marginBottom: 12 },
+  msgLeft: { justifyContent: 'flex-start' },
+  msgRight: { justifyContent: 'flex-end' },
+  bubble: {
+    maxWidth: '80%', padding: 12, borderRadius: 16,
+    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
   },
-  chatBackBtnText: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1C1C1E',
-  },
-  chatHeaderTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  chatHeaderStatusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  statusDotGreen: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#4CAF50',
-    marginRight: 4,
-  },
-  chatHeaderStatusText: {
-    color: '#8E8E93',
-    fontSize: 11,
-  },
-  chatHeaderRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerSimCall: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#F2F2F7',
-    borderRadius: 6,
-    marginLeft: 6,
-  },
-  headerSimCallText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#007AFF',
-  },
-  chatMessagesList: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  msgWrapper: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  msgLeft: {
-    justifyContent: 'flex-start',
-  },
-  msgRight: {
-    justifyContent: 'flex-end',
-  },
-  msgBubble: {
-    maxWidth: '80%',
-    padding: 12,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  msgBubbleVendor: {
-    backgroundColor: '#FFFFFF',
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  msgText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  msgTextMe: {
-    color: '#FFFFFF',
-  },
-  msgTextVendor: {
-    color: '#1C1C1E',
-  },
-  msgTime: {
-    fontSize: 9,
-    marginTop: 4,
-    textAlign: 'right',
-  },
-  msgTimeMe: {
-    color: 'rgba(255,255,255,0.7)',
-  },
-  msgTimeVendor: {
-    color: '#AEAEB2',
-  },
-  typingBubble: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  typingText: {
-    color: '#8E8E93',
-    fontStyle: 'italic',
-    fontSize: 12,
-  },
-  chatInputRow: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderColor: '#E5E5EA',
-    alignItems: 'center',
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
+  bubbleText: { fontSize: 14, lineHeight: 20 },
+  bubbleTime: { fontSize: 9, marginTop: 4, textAlign: 'right' },
+  typingText: { fontSize: 12, fontStyle: 'italic' },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
   },
   chatInput: {
-    flex: 1,
-    backgroundColor: '#F2F2F7',
-    height: 40,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    fontSize: 14,
-    color: '#1C1C1E',
-    marginRight: 10,
+    flex: 1, height: 42, borderRadius: 21,
+    paddingHorizontal: 16, fontSize: 14,
   },
-  chatSendBtn: {
-    height: 40,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+  sendBtn: {
+    height: 42, paddingHorizontal: 16, borderRadius: 21,
+    alignItems: 'center', justifyContent: 'center',
   },
-  chatSendBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
+  sendBtnText: { color: '#FFF', fontWeight: '800', fontSize: 13 },
+  chatBookBtn: {
+    marginHorizontal: 14, marginBottom: Platform.OS === 'ios' ? 32 : 14,
+    marginTop: 4, paddingVertical: 14,
+    borderRadius: 14, alignItems: 'center',
   },
+  chatBookBtnText: { color: '#FFF', fontSize: 15, fontWeight: '800' },
 });

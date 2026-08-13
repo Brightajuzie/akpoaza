@@ -31,7 +31,7 @@ const FLUTTERWAVE_BASE_URL = 'https://api.flutterwave.com/v3';
 // Create a checkout session/intent based on the payment provider
 router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b;
-    const { checkoutType, id, provider, isSplit } = req.body;
+    const { checkoutType, id, provider, isSplit, currency: reqCurrency, localAmount: reqLocalAmount } = req.body;
     if (!checkoutType || !id || !provider) {
         return res.status(400).json({ error: 'checkoutType, id, and provider are required' });
     }
@@ -102,6 +102,12 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
             checkoutType,
             id,
         };
+        // Determine the charge currency and local amount
+        // Frontend passes currency + localAmount (already converted); fall back to USD if not provided.
+        const chargeCurrency = reqCurrency || 'USD';
+        const chargeAmount = reqLocalAmount !== undefined && reqLocalAmount > 0
+            ? Number(reqLocalAmount)
+            : totalAmount;
         // Load API Keys dynamically from DB settings
         const settingsList = yield prisma_1.default.appSetting.findMany({
             where: {
@@ -132,8 +138,8 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
                 apiVersion: '2023-10-16',
             });
             const paymentIntent = yield activeStripe.paymentIntents.create({
-                amount: Math.round(totalAmount * 100), // Stripe uses cents
-                currency: 'usd',
+                amount: Math.round(chargeAmount * 100), // Stripe uses cents/kobo
+                currency: chargeCurrency.toLowerCase(),
                 metadata,
             });
             return res.json({
@@ -148,7 +154,8 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
             // Paystack initialization
             const response = yield axios_1.default.post(`${PAYSTACK_BASE_URL}/transaction/initialize`, {
                 email: userEmail,
-                amount: Math.round(totalAmount * 100), // Paystack uses Kobo/cents
+                amount: Math.round(chargeAmount * 100), // Paystack uses kobo/cents
+                currency: chargeCurrency,
                 reference: `PAY_${id}_${Date.now()}`,
                 metadata,
             }, {
@@ -172,8 +179,8 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
             const txRef = `PAY_${id}_${Date.now()}`;
             const response = yield axios_1.default.post(`${FLUTTERWAVE_BASE_URL}/payments`, {
                 tx_ref: txRef,
-                amount: totalAmount,
-                currency: 'NGN', // Assume NGN or USD based on requirement
+                amount: chargeAmount,
+                currency: chargeCurrency,
                 redirect_url: 'https://your-frontend-url.com/payment/callback',
                 customer: {
                     email: userEmail,
@@ -214,8 +221,8 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
                     merchantId: activeOpayMerchantId,
                     orderId: reference,
                     amount: {
-                        total: Math.round(totalAmount * 100).toString(), // Kobo
-                        currency: 'NGN',
+                        total: Math.round(chargeAmount * 100).toString(),
+                        currency: chargeCurrency,
                     },
                     product: {
                         name: checkoutType === 'order' ? 'Product Order Payment' : 'Service Booking Payment',

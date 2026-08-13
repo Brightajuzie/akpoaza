@@ -119,6 +119,108 @@ router.post('/quote', async (req: Request, res) => {
   });
 });
 
+// Guest Parcel Delivery Checkout
+router.post('/guest-checkout', async (req: Request, res: Response, next: NextFunction) => {
+  const { 
+    pickupAddress, dropoffAddress, 
+    pickupLat, pickupLng, dropoffLat, dropoffLng, 
+    parcelDescription, paymentProvider,
+    guestEmail, guestName, guestPhone
+  } = req.body;
+
+  if (!guestEmail || !guestName) {
+    return res.status(400).json({ error: 'Guest email and name are required' });
+  }
+
+  const pLat = parseFloat(pickupLat);
+  const pLng = parseFloat(pickupLng);
+  const dLat = parseFloat(dropoffLat);
+  const dLng = parseFloat(dropoffLng);
+
+  if (!pickupAddress || !dropoffAddress || isNaN(pLat) || isNaN(pLng) || isNaN(dLat) || isNaN(dLng)) {
+    return res.status(400).json({ error: 'All address and valid coordinate fields are required' });
+  }
+
+  try {
+    let user = await prisma.user.findUnique({ where: { email: guestEmail.trim() } });
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: guestEmail.trim(),
+          name: guestName.trim(),
+          phone: guestPhone ? guestPhone.trim() : null,
+          address: pickupAddress.trim(),
+          role: 'CUSTOMER',
+          verificationStatus: 'VERIFIED',
+        },
+      });
+    }
+
+    const userId = user.id;
+    const result = await calculateDeliveryPrice(pLat, pLng, dLat, dLng);
+    const computedTotalAmount = result.price;
+
+    // Proximity Rider Assignment
+    let assignedRiderId: string | null = null;
+    let riderDistance: number | null = null;
+
+    const riders = await prisma.user.findMany({
+      where: {
+        role: 'RIDER',
+        verificationStatus: 'VERIFIED',
+        OR: [
+          { currentLat: { not: null }, currentLng: { not: null } },
+          { latitude: { not: null }, longitude: { not: null } },
+        ],
+      },
+    });
+
+    const ridersWithDist = riders
+      .map((r) => {
+        const lat = r.currentLat !== null ? r.currentLat! : r.latitude!;
+        const lng = r.currentLng !== null ? r.currentLng! : r.longitude!;
+        return {
+          rider: r,
+          dist: haversineDistanceKm(pLat, pLng, lat, lng),
+        };
+      })
+      .sort((a, b) => a.dist - b.dist);
+
+    if (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100) {
+      assignedRiderId = ridersWithDist[0].rider.id;
+      riderDistance = Math.round(ridersWithDist[0].dist * 10) / 10;
+    }
+
+    const parcel = await prisma.parcelDelivery.create({
+      data: {
+        userId,
+        riderId: assignedRiderId,
+        pickupAddress,
+        dropoffAddress,
+        pickupLat: pLat,
+        pickupLng: pLng,
+        dropoffLat: dLat,
+        dropoffLng: dLng,
+        parcelDescription,
+        totalAmount: computedTotalAmount,
+        paymentProvider: (paymentProvider as PaymentProvider) || 'NONE',
+        status: 'PENDING',
+      },
+      include: { rider: true },
+    });
+
+    res.status(201).json({
+      message: 'Guest parcel delivery created successfully',
+      parcel,
+      riderDistance,
+      isGuest: true,
+      guestEmail: user.email,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Checkout / Create Parcel Delivery
 router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const userId = req.user?.userId;
@@ -143,9 +245,41 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
     const result = await calculateDeliveryPrice(pLat, pLng, dLat, dLng);
     const computedTotalAmount = result.price;
 
+    // Proximity Rider Assignment
+    let assignedRiderId: string | null = null;
+    let riderDistance: number | null = null;
+
+    const riders = await prisma.user.findMany({
+      where: {
+        role: 'RIDER',
+        verificationStatus: 'VERIFIED',
+        OR: [
+          { currentLat: { not: null }, currentLng: { not: null } },
+          { latitude: { not: null }, longitude: { not: null } },
+        ],
+      },
+    });
+
+    const ridersWithDist = riders
+      .map((r) => {
+        const lat = r.currentLat !== null ? r.currentLat! : r.latitude!;
+        const lng = r.currentLng !== null ? r.currentLng! : r.longitude!;
+        return {
+          rider: r,
+          dist: haversineDistanceKm(pLat, pLng, lat, lng),
+        };
+      })
+      .sort((a, b) => a.dist - b.dist);
+
+    if (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100) {
+      assignedRiderId = ridersWithDist[0].rider.id;
+      riderDistance = Math.round(ridersWithDist[0].dist * 10) / 10;
+    }
+
     const parcel = await prisma.parcelDelivery.create({
       data: {
         userId,
+        riderId: assignedRiderId,
         pickupAddress,
         dropoffAddress,
         pickupLat: pLat,
@@ -156,7 +290,8 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
         totalAmount: computedTotalAmount,
         paymentProvider: (paymentProvider as PaymentProvider) || 'NONE',
         status: 'PENDING',
-      }
+      },
+      include: { rider: true },
     });
 
     // ── Customer confirmation (in-app + email + SMS) ────────────────────

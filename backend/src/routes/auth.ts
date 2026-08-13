@@ -41,6 +41,42 @@ router.post('/register', async (req, res) => {
   try {
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
+      if (!existingUser.passwordHash) {
+        // Guest user converting to a full registered account post-checkout!
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(password, salt);
+
+        let bvnHash = null;
+        if (identityNumber) {
+          bvnHash = crypto.createHash('sha256').update(identityNumber).digest('hex');
+        }
+
+        const updatedUser = await prisma.user.update({
+          where: { email },
+          data: {
+            passwordHash,
+            name: name || existingUser.name,
+            phone: phone || existingUser.phone,
+            address: address || existingUser.address,
+            bvnHash: bvnHash || existingUser.bvnHash,
+          },
+        });
+
+        const token = jwt.sign(
+          { userId: updatedUser.id, role: updatedUser.role },
+          JWT_SECRET,
+          { expiresIn: '7d' }
+        );
+
+        const { passwordHash: _, ...userResponse } = updatedUser;
+        return res.status(200).json({
+          token,
+          user: {
+            ...userResponse,
+            requiresKYC: (updatedUser.role === 'VENDOR' || updatedUser.role === 'HANDYMAN' || updatedUser.role === 'RIDER') && updatedUser.verificationStatus === 'UNVERIFIED',
+          },
+        });
+      }
       return res.status(400).json({ error: 'User already exists' });
     }
 

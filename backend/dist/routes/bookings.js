@@ -88,6 +88,97 @@ router.get('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 
         next(error);
     }
 }));
+// Guest Booking for unauthenticated users
+router.post('/guest-booking', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { serviceId, scheduledAt, address, latitude, longitude, autoAssign, guestEmail, guestName, guestPhone } = req.body;
+    if (!guestEmail || !guestName) {
+        return res.status(400).json({ error: 'Guest email and name are required' });
+    }
+    if (!serviceId || !scheduledAt || !address) {
+        return res.status(400).json({ error: 'Missing serviceId, scheduledAt, or address' });
+    }
+    try {
+        let user = yield prisma_1.default.user.findUnique({ where: { email: guestEmail.trim() } });
+        if (!user) {
+            user = yield prisma_1.default.user.create({
+                data: {
+                    email: guestEmail.trim(),
+                    name: guestName.trim(),
+                    phone: guestPhone ? guestPhone.trim() : null,
+                    address: address.trim(),
+                    role: 'CUSTOMER',
+                    verificationStatus: 'VERIFIED',
+                },
+            });
+        }
+        const customerId = user.id;
+        const service = yield prisma_1.default.service.findUnique({ where: { id: serviceId } });
+        if (!service)
+            return res.status(404).json({ error: 'Service not found' });
+        let handymanId = null;
+        let status = 'PENDING';
+        let matchDistance = null;
+        const customerLat = latitude ? parseFloat(latitude) : null;
+        const customerLng = longitude ? parseFloat(longitude) : null;
+        const MAX_RADIUS_KM = 50;
+        const FALLBACK_RADIUS_KM = 100;
+        if (autoAssign && customerLat !== null && customerLng !== null) {
+            const busyHandymanRecords = yield prisma_1.default.booking.findMany({
+                where: { status: 'IN_PROGRESS' },
+                select: { handymanId: true },
+            });
+            const busyIds = new Set(busyHandymanRecords.map((b) => b.handymanId).filter(Boolean));
+            const allHandymen = yield prisma_1.default.user.findMany({
+                where: {
+                    role: 'HANDYMAN',
+                    verificationStatus: 'VERIFIED',
+                    latitude: { not: null },
+                    longitude: { not: null },
+                },
+            });
+            const availableWithDist = allHandymen
+                .filter((hm) => !busyIds.has(hm.id))
+                .map((hm) => ({
+                hm,
+                dist: getDistanceKm(customerLat, customerLng, hm.latitude, hm.longitude),
+            }))
+                .sort((a, b) => a.dist - b.dist);
+            let best = availableWithDist.find((x) => x.hm.specialty === service.category && x.dist <= MAX_RADIUS_KM);
+            if (!best) {
+                best = availableWithDist.find((x) => x.dist <= MAX_RADIUS_KM);
+            }
+            if (!best) {
+                best = availableWithDist.find((x) => x.hm.specialty === service.category && x.dist <= FALLBACK_RADIUS_KM);
+            }
+            if (!best) {
+                best = availableWithDist.find((x) => x.dist <= FALLBACK_RADIUS_KM);
+            }
+            if (best) {
+                handymanId = best.hm.id;
+                matchDistance = Math.round(best.dist * 10) / 10;
+                status = 'ACCEPTED';
+            }
+        }
+        const newBooking = yield prisma_1.default.booking.create({
+            data: {
+                customerId,
+                serviceId,
+                handymanId,
+                scheduledAt: new Date(scheduledAt),
+                address,
+                latitude: customerLat,
+                longitude: customerLng,
+                totalPrice: service.basePrice,
+                status,
+            },
+            include: { handyman: true, service: true },
+        });
+        res.status(201).json(Object.assign(Object.assign({}, newBooking), { matchDistance, isGuest: true, guestEmail: user.email }));
+    }
+    catch (error) {
+        next(error);
+    }
+}));
 // Create a new booking
 router.post('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;

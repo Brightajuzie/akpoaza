@@ -1,36 +1,46 @@
 import React, { useState, useEffect, useContext } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, useWindowDimensions
+  TextInput, ActivityIndicator, Alert, KeyboardAvoidingView,
+  Platform, useWindowDimensions,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import AddressInput from '../components/AddressInput';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
 import apiClient from '../api/client';
 
-const VEHICLE_ICONS: Record<string, string> = {
-  BICYCLE: '🚲',
-  MOTORCYCLE: '🏍️',
-  CAR: '🚗',
-};
+const PARCEL_SIZES = [
+  { label: 'Documents', icon: '📄', desc: 'Letters, papers' },
+  { label: 'Small Box', icon: '📦', desc: 'Up to 5 kg' },
+  { label: 'Medium Box', icon: '🗃️', desc: '5 – 20 kg' },
+  { label: 'Heavy Item', icon: '🪨', desc: '20 kg+' },
+];
+
+const HOW_IT_WORKS = [
+  { icon: '📍', step: 'Enter pickup & drop-off locations' },
+  { icon: '💸', step: 'Get an instant price quote' },
+  { icon: '✅', step: 'Book & a rider gets assigned nearby' },
+  { icon: '📡', step: 'Track your delivery live on the map' },
+];
 
 export default function BookParcelScreen({ route, navigation }: any) {
-  const settingsCtx = useContext(SettingsContext);
-  const theme = settingsCtx?.theme || {
-    primary: '#007AFF',
-    secondary: '#5856D6',
-    background: '#F8F9FA',
-    card: '#FFFFFF',
-    text: '#1C1C1E',
-    lightText: '#8E8E93',
-    border: '#E5E5EA',
-  };
+  const { theme, colorMode } = useContext(SettingsContext) || {};
+  const isDark = colorMode === 'dark';
   const { userToken } = useContext(AuthContext);
+  const { fmt } = useCurrency();
   const { width } = useWindowDimensions();
-  const isLargeScreen = width >= 768;
+  const isLarge = width >= 768;
 
-  // Form state
+  const safeTheme = theme || {
+    primary: '#22A45D', background: '#F8FAFC',
+    card: '#FFFFFF', text: '#0F172A',
+    border: '#E2E8F0',
+  };
+
+  // ── Form State ────────────────────────────────────────────────────────────
   const [pickupAddress, setPickupAddress] = useState('');
   const [dropoffAddress, setDropoffAddress] = useState('');
   const [pickupLat, setPickupLat] = useState<number | null>(null);
@@ -38,71 +48,40 @@ export default function BookParcelScreen({ route, navigation }: any) {
   const [dropoffLat, setDropoffLat] = useState<number | null>(null);
   const [dropoffLng, setDropoffLng] = useState<number | null>(null);
   const [parcelDescription, setParcelDescription] = useState('');
+  const [parcelSize, setParcelSize] = useState('');
+  const [descFocused, setDescFocused] = useState(false);
 
-  // Quote / UI state
   const [quote, setQuote] = useState<{
-    price: number;
-    distanceKm: string;
-    durationMins: number | null;
-    routeType: 'road' | 'straight-line';
-    baseFare: number;
-    perKmRate: number;
+    price: number; distanceKm: string;
+    durationMins: number | null; routeType: 'road' | 'straight-line';
+    baseFare: number; perKmRate: number;
   } | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [locationLoading, setLocationLoading] = useState(false);
 
-  // Selected parcel size tag
-  const [parcelSize, setParcelSize] = useState<string>('');
-  const PARCEL_SIZES = ['📄 Documents', '📦 Small Box', '🗃️ Medium Box', '🪨 Heavy Item'];
-
-  // Handle redirect params pre-filling and auto-getting quote
+  // ── Pre-fill from route params ────────────────────────────────────────────
   useEffect(() => {
-    if (route?.params) {
-      const {
-        pickupAddress: pAddr,
-        dropoffAddress: dAddr,
-        pickupLat: pLat,
-        pickupLng: pLng,
-        dropoffLat: dLat,
-        dropoffLng: dLng,
-        parcelDescription: pDesc,
-        parcelSize: pSize,
-      } = route.params;
-
-      if (pAddr) setPickupAddress(pAddr);
-      if (dAddr) setDropoffAddress(dAddr);
-      if (pLat !== undefined) setPickupLat(pLat);
-      if (pLng !== undefined) setPickupLng(pLng);
-      if (dLat !== undefined) setDropoffLat(dLat);
-      if (dLng !== undefined) setDropoffLng(dLng);
-      if (pDesc) setParcelDescription(pDesc);
-      if (pSize) setParcelSize(pSize);
-
-      // Auto-get quote if coordinates are provided
-      if (pLat && pLng && dLat && dLng) {
-        const fetchQuote = async () => {
-          setQuoteLoading(true);
-          try {
-            const res = await apiClient.post('/parcels/quote', {
-              pickupLat: pLat,
-              pickupLng: pLng,
-              dropoffLat: dLat,
-              dropoffLng: dLng,
-            });
-            setQuote(res.data);
-          } catch (e) {
-            console.error('Auto quote calculation failed', e);
-          } finally {
-            setQuoteLoading(false);
-          }
-        };
-        fetchQuote();
-      }
+    if (!route?.params) return;
+    const { pickupAddress: pA, dropoffAddress: dA, pickupLat: pLat, pickupLng: pLng, dropoffLat: dLat, dropoffLng: dLng, parcelDescription: pDesc, parcelSize: pSize } = route.params;
+    if (pA) setPickupAddress(pA);
+    if (dA) setDropoffAddress(dA);
+    if (pLat !== undefined) setPickupLat(pLat);
+    if (pLng !== undefined) setPickupLng(pLng);
+    if (dLat !== undefined) setDropoffLat(dLat);
+    if (dLng !== undefined) setDropoffLng(dLng);
+    if (pDesc) setParcelDescription(pDesc);
+    if (pSize) setParcelSize(pSize);
+    if (pLat && pLng && dLat && dLng) {
+      (async () => {
+        setQuoteLoading(true);
+        try {
+          const res = await apiClient.post('/parcels/quote', { pickupLat: pLat, pickupLng: pLng, dropoffLat: dLat, dropoffLng: dLng });
+          setQuote(res.data);
+        } catch { /* silent */ } finally { setQuoteLoading(false); }
+      })();
     }
   }, [route?.params]);
 
-  // Auto-proceed to booking & payment after guest logs in or registers
   useEffect(() => {
     if (userToken && route.params?.autoProceed && quote && pickupAddress.trim() && dropoffAddress.trim()) {
       navigation.setParams({ autoProceed: undefined });
@@ -110,467 +89,377 @@ export default function BookParcelScreen({ route, navigation }: any) {
     }
   }, [userToken, route.params?.autoProceed, quote]);
 
-  // Use current location for pickup
-  const useCurrentLocation = async () => {
-    setLocationLoading(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location access is needed to use your current location.');
-        return;
-      }
-      const loc = await Location.getCurrentPositionAsync({});
-      const [geocode] = await Location.reverseGeocodeAsync({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
-      });
-      const address = [geocode?.street, geocode?.district, geocode?.city].filter(Boolean).join(', ');
-      setPickupAddress(address || 'Current Location');
-      setPickupLat(loc.coords.latitude);
-      setPickupLng(loc.coords.longitude);
-    } catch (e) {
-      Alert.alert('Error', 'Could not get your location. Please enter it manually.');
-    } finally {
-      setLocationLoading(false);
-    }
-  };
-
-  // Geocode an address string to lat/lng using Nominatim (OpenStreetMap)
+  // ── Geocode ────────────────────────────────────────────────────────────────
   const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number }> => {
     try {
-      const query = address.toLowerCase().includes('nigeria') ? address : `${address}, Nigeria`;
-      const encoded = encodeURIComponent(query);
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1`, {
-        headers: { 'User-Agent': 'FixMartApp/1.0' }
-      });
+      const q = address.toLowerCase().includes('nigeria') ? address : `${address}, Nigeria`;
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`, { headers: { 'User-Agent': 'FixMartApp/1.0' } });
       const data = await res.json();
-      if (data && data.length > 0) {
-        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-      }
-    } catch (e) {
-      console.log('Geocoding notice:', e);
-    }
-    // Fallback to default Lagos area coordinates if exact geocoding is unavailable
+      if (data?.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    } catch { /* silent */ }
     return { lat: 6.5244, lng: 3.3792 };
   };
 
-  // Get a price quote
+  // ── Get Quote ──────────────────────────────────────────────────────────────
   const handleGetQuote = async () => {
     if (!pickupAddress.trim() || !dropoffAddress.trim()) {
-      Alert.alert('Missing Info', 'Please enter both pickup and drop-off addresses.');
-      return;
+      return Alert.alert('Missing Info', 'Please enter both pickup and drop-off addresses.');
     }
-    setQuoteLoading(true);
-    setQuote(null);
+    setQuoteLoading(true); setQuote(null);
     try {
       let pLat = pickupLat, pLng = pickupLng;
       let dLat = dropoffLat, dLng = dropoffLng;
-
-      if (!pLat || !pLng) {
-        const coords = await geocodeAddress(pickupAddress);
-        pLat = coords.lat; pLng = coords.lng;
-        setPickupLat(pLat); setPickupLng(pLng);
-      }
+      if (!pLat || !pLng) { const c = await geocodeAddress(pickupAddress); pLat = c.lat; pLng = c.lng; setPickupLat(pLat); setPickupLng(pLng); }
       if (!dLat || !dLng) {
-        const coords = await geocodeAddress(dropoffAddress);
-        // If pickup and dropoff fall back to same default point, offset dropoff slightly
-        if (coords.lat === pLat && coords.lng === pLng) {
-          dLat = coords.lat + 0.035;
-          dLng = coords.lng + 0.025;
-        } else {
-          dLat = coords.lat; dLng = coords.lng;
-        }
+        const c = await geocodeAddress(dropoffAddress);
+        if (c.lat === pLat && c.lng === pLng) { dLat = c.lat + 0.035; dLng = c.lng + 0.025; }
+        else { dLat = c.lat; dLng = c.lng; }
         setDropoffLat(dLat); setDropoffLng(dLng);
       }
-
-      const res = await apiClient.post('/parcels/quote', {
-        pickupLat: pLat, pickupLng: pLng,
-        dropoffLat: dLat, dropoffLng: dLng,
-      });
+      const res = await apiClient.post('/parcels/quote', { pickupLat: pLat, pickupLng: pLng, dropoffLat: dLat, dropoffLng: dLng });
       setQuote(res.data);
-    } catch (e) {
-      Alert.alert('Error', 'Could not calculate a quote. Please check connection and try again.');
-    } finally {
-      setQuoteLoading(false);
-    }
+    } catch { Alert.alert('Error', 'Could not calculate a quote. Please check your connection and try again.'); }
+    finally { setQuoteLoading(false); }
   };
 
-  // Execute parcel delivery creation and navigate to payment
-  // NOTE: This is only called after quote is verified to be non-null in handleBook
+  // ── Process Booking ────────────────────────────────────────────────────────
   const processBooking = async (paymentChoice: 'ONLINE' | 'WALLET' | 'CASH', confirmedQuote: NonNullable<typeof quote>) => {
     setSubmitting(true);
     try {
       const description = parcelSize ? `${parcelSize}${parcelDescription ? ' – ' + parcelDescription : ''}` : parcelDescription;
-      // WALLET maps to NONE until wallet payment integration is complete
-      const provider = 'NONE';
       const res = await apiClient.post('/parcels/checkout', {
         pickupAddress, dropoffAddress,
         pickupLat, pickupLng, dropoffLat, dropoffLng,
         parcelDescription: description || undefined,
-        paymentProvider: provider,
+        paymentProvider: 'NONE',
       });
-
       const parcelId = res.data?.parcel?.id;
-
       if (paymentChoice === 'ONLINE' && parcelId) {
-        // Navigate to Checkout screen for card/bank payment via Stripe / Paystack / Flutterwave / OPay
-        navigation.navigate('Checkout', {
-          checkoutType: 'parcel',
-          id: parcelId,
-          amount: confirmedQuote.price,
-        });
+        navigation.navigate('Checkout', { checkoutType: 'parcel', id: parcelId, amount: confirmedQuote.price });
       } else {
-        Alert.alert(
-          '✅ Delivery Booked!',
-          `Your parcel delivery has been created.\n\n📍 From: ${pickupAddress}\n📍 To: ${dropoffAddress}\n💰 Total: ₦${confirmedQuote.price.toLocaleString()}\n\nA verified rider will be assigned shortly.`,
+        Alert.alert('✅ Delivery Booked!',
+          `Your parcel is on its way!\n\n📍 From: ${pickupAddress}\n📍 To: ${dropoffAddress}\n💰 Total: ${fmt(confirmedQuote.price)}\n\nA verified rider will be assigned shortly.`,
           [{ text: 'View My Deliveries', onPress: () => navigation.navigate('History', { tab: 'parcels' }) }]
         );
       }
     } catch (e: any) {
       Alert.alert('Booking Failed', e?.response?.data?.error || 'Something went wrong. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
   };
 
-  // Book the parcel delivery - enforce Address, Login, and Payment
   const handleBook = async () => {
     if (!pickupAddress.trim() || !dropoffAddress.trim()) {
-      Alert.alert(
-        'Address Required',
-        'Please enter both your pickup and drop-off addresses to continue with booking.'
-      );
-      return;
+      return Alert.alert('Address Required', 'Please enter both your pickup and drop-off addresses.');
     }
-
     if (!quote || !pickupLat || !pickupLng || !dropoffLat || !dropoffLng) {
-      Alert.alert('Get a Quote First', 'Please calculate a price quote before booking.');
-      return;
+      return Alert.alert('Get a Quote First', 'Please calculate a price quote before booking.');
     }
-
+    const description = parcelSize ? `${parcelSize}${parcelDescription ? ' – ' + parcelDescription : ''}` : parcelDescription;
     if (!userToken) {
-      Alert.alert(
-        '🔐 Login Required to Book',
-        'Please log in or sign up to confirm your delivery booking and complete payment.',
-        [
-          {
-            text: 'Log In',
-            onPress: () =>
-              navigation.navigate('Login', {
-                redirectTo: 'BookParcel',
-                redirectParams: {
-                  pickupAddress,
-                  dropoffAddress,
-                  pickupLat,
-                  pickupLng,
-                  dropoffLat,
-                  dropoffLng,
-                  parcelDescription,
-                  parcelSize,
-                  autoProceed: true,
-                },
-              }),
-          },
-          {
-            text: 'Sign Up',
-            onPress: () =>
-              navigation.navigate('Signup', {
-                redirectTo: 'BookParcel',
-                redirectParams: {
-                  pickupAddress,
-                  dropoffAddress,
-                  pickupLat,
-                  pickupLng,
-                  dropoffLat,
-                  dropoffLng,
-                  parcelDescription,
-                  parcelSize,
-                  autoProceed: true,
-                },
-              }),
-          },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
+      navigation.navigate('Checkout', {
+        checkoutType: 'parcel', isGuest: true,
+        parcelParams: { pickupAddress, dropoffAddress, pickupLat, pickupLng, dropoffLat, dropoffLng, parcelDescription: description || undefined },
+        amount: quote.price,
+      });
       return;
     }
-
-    // At this point quote is guaranteed non-null (checked above)
     const confirmedQuote = quote;
-
-    // Prompt payment method selection
-    Alert.alert(
-      '💳 Confirm & Select Payment',
-      `Total Delivery Fee: ₦${confirmedQuote.price.toLocaleString()}\n\n📍 From: ${pickupAddress}\n📍 To: ${dropoffAddress}\n\nChoose your preferred payment method:`,
+    Alert.alert('💳 Select Payment Method',
+      `Delivery Fee: ${fmt(confirmedQuote.price)}\n📍 ${pickupAddress} → ${dropoffAddress}`,
       [
-        {
-          text: '💳 Pay Online (Card / Bank)',
-          onPress: () => processBooking('ONLINE', confirmedQuote),
-        },
-        {
-          text: '👛 Pay with Wallet',
-          onPress: () => processBooking('WALLET', confirmedQuote),
-        },
-        {
-          text: '💵 Pay on Delivery',
-          onPress: () => processBooking('CASH', confirmedQuote),
-        },
+        { text: '💳 Pay Online (Card / Bank)', onPress: () => processBooking('ONLINE', confirmedQuote) },
+        { text: '👛 Pay with Wallet', onPress: () => processBooking('WALLET', confirmedQuote) },
+        { text: '💵 Pay on Delivery', onPress: () => processBooking('CASH', confirmedQuote) },
         { text: 'Cancel', style: 'cancel' },
       ]
     );
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: theme.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
-        contentContainerStyle={[styles.container, isLargeScreen && styles.desktopContainer]}
+        contentContainerStyle={[styles.scroll, isLarge && styles.scrollDesktop]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Back navigation button for web/desktop */}
-        {isLargeScreen && (
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Text style={{ fontSize: 16, fontWeight: '700', color: theme.primary }}>← Back</Text>
-          </TouchableOpacity>
-        )}
+        {/* ── Hero ──────────────────────────────────────────────────────────── */}
+        <LinearGradient
+          colors={isDark ? ['#0F172A', '#1E293B'] : ['#F0FFF4', '#ECFDF5']}
+          style={styles.hero}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        >
+          <View style={[styles.heroDecor, { backgroundColor: safeTheme.primary + '12' }]} />
+          <View style={styles.heroContent}>
+            <View style={[styles.heroIconWrap, { backgroundColor: safeTheme.primary + '20' }]}>
+              <Text style={styles.heroIcon}>🚚</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.heroTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>Book a Delivery Rider</Text>
+              <Text style={[styles.heroSub, { color: isDark ? '#64748B' : '#64748B' }]}>
+                Fast & secure parcel delivery by verified riders near you
+              </Text>
+            </View>
+          </View>
+        </LinearGradient>
 
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerIcon}>🚚</Text>
-          <Text style={[styles.headerTitle, { color: theme.text }]}>Book a Delivery Rider</Text>
-          <Text style={styles.headerSubtitle}>Fast, secure parcel delivery by verified riders</Text>
-        </View>
-
-        {/* How it works */}
-        <View style={[styles.infoCard, { borderColor: theme.border }]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>How it works</Text>
-          {['Enter pickup & drop-off locations', 'Get an instant price quote', 'Book & a rider gets assigned', 'Track your delivery live on the map'].map((step, i) => (
+        {/* ── How it Works ──────────────────────────────────────────────────── */}
+        <View style={[styles.card, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+          <Text style={[styles.cardTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>How it works</Text>
+          {HOW_IT_WORKS.map((item, i) => (
             <View key={i} style={styles.stepRow}>
-              <View style={styles.stepBadge}><Text style={styles.stepNum}>{i + 1}</Text></View>
-              <Text style={[styles.stepText, { color: theme.text }]}>{step}</Text>
+              <View style={[styles.stepBubble, { backgroundColor: safeTheme.primary + '18' }]}>
+                <Text style={styles.stepBubbleText}>{i + 1}</Text>
+              </View>
+              <Text style={styles.stepIcon}>{item.icon}</Text>
+              <Text style={[styles.stepText, { color: isDark ? '#94A3B8' : '#64748B' }]}>{item.step}</Text>
             </View>
           ))}
         </View>
 
-        {/* Pickup */}
-        <AddressInput
-          label="📍 Pickup Address"
-          onAddressChange={(addr, lat, lng) => {
-            setPickupAddress(addr);
-            setPickupLat(lat);
-            setPickupLng(lng);
-            setQuote(null);
-          }}
-          initialValue={pickupAddress}
-          showGps={true}
-          countryCode="ng"
-        />
+        {/* ── Address Inputs ─────────────────────────────────────────────────── */}
+        <View style={[styles.card, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+          <Text style={[styles.cardTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>📍 Delivery Route</Text>
 
-        {/* Dropoff */}
-        <AddressInput
-          label="🏁 Drop-off Address"
-          onAddressChange={(addr, lat, lng) => {
-            setDropoffAddress(addr);
-            setDropoffLat(lat);
-            setDropoffLng(lng);
-            setQuote(null);
-          }}
-          initialValue={dropoffAddress}
-          showGps={false}
-          countryCode="ng"
-        />
+          <View style={styles.routeViz}>
+            <View style={[styles.routeDot, { backgroundColor: '#22C55E' }]} />
+            <View style={[styles.routeLine, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]} />
+            <View style={[styles.routeDot, { backgroundColor: '#EF4444' }]} />
+          </View>
 
-        {/* Parcel Size */}
-        <Text style={[styles.label, { color: theme.text }]}>📦 Parcel Size (optional)</Text>
-        <View style={styles.sizeRow}>
-          {PARCEL_SIZES.map(size => (
-            <TouchableOpacity
-              key={size}
-              style={[styles.sizePill, { borderColor: parcelSize === size ? '#5856D6' : theme.border, backgroundColor: parcelSize === size ? '#5856D6' : 'transparent' }]}
-              onPress={() => setParcelSize(parcelSize === size ? '' : size)}
-            >
-              <Text style={[styles.sizePillText, { color: parcelSize === size ? '#fff' : theme.text }]}>{size}</Text>
-            </TouchableOpacity>
-          ))}
+          <View style={styles.addressInputsWrap}>
+            <AddressInput
+              label="📍 Pickup Address"
+              onAddressChange={(addr, lat, lng) => { setPickupAddress(addr); setPickupLat(lat); setPickupLng(lng); setQuote(null); }}
+              initialValue={pickupAddress}
+              showGps={true}
+              countryCode="ng"
+            />
+            <View style={{ height: 12 }} />
+            <AddressInput
+              label="🏁 Drop-off Address"
+              onAddressChange={(addr, lat, lng) => { setDropoffAddress(addr); setDropoffLat(lat); setDropoffLng(lng); setQuote(null); }}
+              initialValue={dropoffAddress}
+              showGps={false}
+              countryCode="ng"
+            />
+          </View>
         </View>
 
-        {/* Description */}
-        <Text style={[styles.label, { color: theme.text }]}>📝 Description (optional)</Text>
-        <TextInput
-          style={[styles.input, styles.inputStandalone, styles.textArea, { borderColor: theme.border, color: theme.text }]}
-          placeholder="e.g. Fragile – handle with care, return items..."
-          placeholderTextColor="#AEAEB2"
-          value={parcelDescription}
-          onChangeText={setParcelDescription}
-          multiline
-          numberOfLines={3}
-        />
+        {/* ── Parcel Details ─────────────────────────────────────────────────── */}
+        <View style={[styles.card, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+          <Text style={[styles.cardTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>📦 Parcel Details</Text>
 
-        {/* Get Quote Button */}
+          <Text style={[styles.fieldLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>Size / Weight Category</Text>
+          <View style={styles.sizeGrid}>
+            {PARCEL_SIZES.map(s => {
+              const selected = parcelSize === s.label;
+              return (
+                <TouchableOpacity
+                  key={s.label}
+                  style={[
+                    styles.sizeTile,
+                    { backgroundColor: selected ? safeTheme.primary : (isDark ? '#0F172A' : '#F8FAFC'), borderColor: selected ? safeTheme.primary : (isDark ? '#334155' : '#E2E8F0') }
+                  ]}
+                  onPress={() => setParcelSize(selected ? '' : s.label)}
+                  activeOpacity={0.82}
+                >
+                  <Text style={styles.sizeTileIcon}>{s.icon}</Text>
+                  <Text style={[styles.sizeTileLabel, { color: selected ? '#FFF' : (isDark ? '#F1F5F9' : '#0F172A') }]}>{s.label}</Text>
+                  <Text style={[styles.sizeTileDesc, { color: selected ? 'rgba(255,255,255,0.75)' : (isDark ? '#475569' : '#94A3B8') }]}>{s.desc}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.fieldLabel, { color: isDark ? '#94A3B8' : '#64748B', marginTop: 16 }]}>Description (optional)</Text>
+          <TextInput
+            style={[
+              styles.textArea,
+              { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: descFocused ? safeTheme.primary : (isDark ? '#334155' : '#E2E8F0'), color: isDark ? '#F1F5F9' : '#0F172A' }
+            ]}
+            placeholder="e.g. Fragile – handle with care, return items..."
+            placeholderTextColor={isDark ? '#475569' : '#94A3B8'}
+            value={parcelDescription}
+            onChangeText={setParcelDescription}
+            onFocus={() => setDescFocused(true)}
+            onBlur={() => setDescFocused(false)}
+            multiline numberOfLines={3}
+            textAlignVertical="top"
+          />
+        </View>
+
+        {/* ── Get Quote Button ───────────────────────────────────────────────── */}
         <TouchableOpacity
-          style={[styles.quoteBtn, { backgroundColor: '#5856D6' }]}
+          style={[styles.quoteBtn, { backgroundColor: isDark ? '#3B82F6' : '#1D4ED8', opacity: quoteLoading ? 0.8 : 1 }]}
           onPress={handleGetQuote}
           disabled={quoteLoading}
+          activeOpacity={0.85}
         >
           {quoteLoading ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color="#FFF" />
           ) : (
-            <Text style={styles.quoteBtnText}>🧮 Get Price Quote</Text>
+            <>
+              <Text style={styles.quoteBtnText}>🧮 Calculate Price Quote</Text>
+              <Text style={styles.quoteBtnSub}>Instant route-based pricing</Text>
+            </>
           )}
         </TouchableOpacity>
 
-        {/* Quote Result */}
+        {/* ── Quote Result Card ──────────────────────────────────────────────── */}
         {quote && (
-            <View style={[styles.quoteCard, { borderColor: '#5856D6' }]}>
-              {/* Route type badge */}
-              <View style={[
-                styles.routeBadge,
-                { backgroundColor: quote.routeType === 'road' ? '#E8F5E9' : '#FFF3E0' }
-              ]}>
-                <Text style={[
-                  styles.routeBadgeText,
-                  { color: quote.routeType === 'road' ? '#2E7D32' : '#E65100' }
-                ]}>
-                  {quote.routeType === 'road' ? '🗺️ Road Distance' : '📐 Estimated Distance'}
+          <View style={[styles.quoteCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: safeTheme.primary }]}>
+            <LinearGradient
+              colors={isDark ? ['#0F2C18', '#1A5C32'] : ['#F0FDF4', '#DCFCE7']}
+              style={styles.quoteCardHeader}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            >
+              <View style={[styles.routeTypeBadge, { backgroundColor: quote.routeType === 'road' ? '#22C55E' : '#F59E0B' }]}>
+                <Text style={styles.routeTypeBadgeText}>
+                  {quote.routeType === 'road' ? '🗺️ Road Route' : '📐 Estimated'}
                 </Text>
               </View>
+              <Text style={styles.quotePriceBig}>{fmt(quote.price)}</Text>
+              <Text style={[styles.quotePriceLabel, { color: isDark ? '#4ADE80' : '#16A34A' }]}>Total Delivery Fee</Text>
+            </LinearGradient>
 
-              <View style={styles.quoteRow}>
-                <Text style={styles.quoteLabel}>📏 Distance</Text>
-                <Text style={styles.quoteValue}>{quote.distanceKm} km</Text>
-              </View>
-              {quote.durationMins != null && (
-                <View style={styles.quoteRow}>
-                  <Text style={styles.quoteLabel}>⏱️ Est. Ride Time</Text>
-                  <Text style={styles.quoteValue}>{quote.durationMins} min</Text>
+            <View style={styles.quoteDetails}>
+              {[
+                { label: '📏 Distance', value: `${quote.distanceKm} km` },
+                ...(quote.durationMins != null ? [{ label: '⏱️ Est. Time', value: `${quote.durationMins} min` }] : []),
+                { label: '🏁 Base Fare', value: fmt(quote.baseFare ?? 1000) },
+                { label: '📍 Per km Rate', value: `${fmt(quote.perKmRate ?? 200)}/km` },
+              ].map((row, i) => (
+                <View key={i} style={[styles.quoteRow, { borderBottomColor: isDark ? '#334155' : '#F1F5F9' }]}>
+                  <Text style={[styles.quoteRowLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>{row.label}</Text>
+                  <Text style={[styles.quoteRowValue, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{row.value}</Text>
                 </View>
-              )}
-              <View style={styles.quoteDivider} />
-              <View style={styles.quoteRow}>
-                <Text style={styles.quoteLabel}>🏁 Base Fare</Text>
-                <Text style={styles.quoteValue}>₦{(quote.baseFare ?? 1000).toLocaleString()}</Text>
-              </View>
-              <View style={styles.quoteRow}>
-                <Text style={styles.quoteLabel}>📍 Per km Rate</Text>
-                <Text style={styles.quoteValue}>₦{(quote.perKmRate ?? 200).toLocaleString()}/km</Text>
-              </View>
-              <View style={styles.quoteDivider} />
-              <View style={styles.quoteRow}>
-                <Text style={styles.quoteLabel}>💰 Total (incl. platform fee)</Text>
-                <Text style={[styles.quotePriceLarge, { color: '#5856D6' }]}>₦{quote.price.toLocaleString()}</Text>
-              </View>
-              <Text style={styles.quoteNote}>
-                {quote.routeType === 'road'
-                  ? 'Price based on real road route distance.'
-                  : 'Straight-line estimate with road factor applied. Final price may vary slightly.'}
-              </Text>
-
-              <TouchableOpacity
-                style={[styles.bookBtn, { backgroundColor: '#34C759' }]}
-                onPress={handleBook}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.bookBtnText}>✅ Confirm Booking — ₦{quote.price.toLocaleString()}</Text>
-                )}
-              </TouchableOpacity>
+              ))}
             </View>
+
+            <Text style={[styles.quoteNote, { color: isDark ? '#475569' : '#94A3B8' }]}>
+              {quote.routeType === 'road'
+                ? '✅ Price based on actual road route.'
+                : 'ℹ️ Straight-line estimate with road factor applied. Final price may vary slightly.'}
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.bookBtn, { backgroundColor: '#22C55E', opacity: submitting ? 0.8 : 1 }]}
+              onPress={handleBook}
+              disabled={submitting}
+              activeOpacity={0.85}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <>
+                  <Text style={styles.bookBtnText}>✅ Confirm & Book Rider</Text>
+                  <Text style={styles.bookBtnSub}>{fmt(quote.price)} · Payment at next step</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
         )}
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 48 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20 },
-  desktopContainer: {
-    maxWidth: 720,
-    width: '100%',
-    alignSelf: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 24,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#F0F0FF',
-  },
-  header: { alignItems: 'center', marginBottom: 24, paddingTop: 12 },
-  headerIcon: { fontSize: 52, marginBottom: 8 },
-  headerTitle: { fontSize: 24, fontWeight: '900', marginBottom: 4 },
-  headerSubtitle: { fontSize: 14, color: '#8E8E93', textAlign: 'center' },
+  scroll: { padding: 16 },
+  scrollDesktop: { maxWidth: 720, alignSelf: 'center', width: '100%', paddingHorizontal: 24, paddingVertical: 20 },
 
-  infoCard: {
-    borderWidth: 1, borderRadius: 16, padding: 16, marginBottom: 24,
-    backgroundColor: '#F9F9F9',
+  // Hero
+  hero: {
+    borderRadius: 20, padding: 20, marginBottom: 14, overflow: 'hidden', position: 'relative',
   },
-  sectionTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12 },
-  stepRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  stepBadge: {
-    width: 26, height: 26, borderRadius: 13, backgroundColor: '#5856D6',
-    alignItems: 'center', justifyContent: 'center', marginRight: 12,
+  heroDecor: {
+    position: 'absolute', width: 180, height: 180, borderRadius: 90,
+    top: -60, right: -40,
   },
-  stepNum: { color: '#fff', fontWeight: '800', fontSize: 13 },
-  stepText: { fontSize: 14, flex: 1 },
+  heroContent: { flexDirection: 'row', alignItems: 'center', gap: 14, zIndex: 1 },
+  heroIconWrap: {
+    width: 56, height: 56, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  heroIcon: { fontSize: 28 },
+  heroTitle: { fontSize: 20, fontWeight: '900', marginBottom: 4 },
+  heroSub: { fontSize: 13, lineHeight: 18 },
 
-  label: { fontSize: 13, fontWeight: '700', marginBottom: 6, marginTop: 16 },
-  inputRow: {
-    flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 2,
-    backgroundColor: '#fff',
+  // Cards
+  card: {
+    borderRadius: 18, borderWidth: 1, padding: 18, marginBottom: 14,
+    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2,
   },
-  input: { flex: 1, fontSize: 14, paddingVertical: 11 },
-  inputStandalone: {
-    borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 11,
-    backgroundColor: '#fff', fontSize: 14,
-  },
-  textArea: { height: 80, textAlignVertical: 'top' },
-  locationBtn: { paddingHorizontal: 10, paddingVertical: 6 },
-  locationBtnText: { fontSize: 13, fontWeight: '700', color: '#5856D6' },
+  cardTitle: { fontSize: 15, fontWeight: '800', marginBottom: 14 },
 
-  sizeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
-  sizePill: {
-    borderWidth: 1.5, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7,
+  // How it works
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  stepBubble: {
+    width: 24, height: 24, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
-  sizePillText: { fontSize: 12, fontWeight: '600' },
+  stepBubbleText: { fontSize: 11, fontWeight: '900', color: '#22A45D' },
+  stepIcon: { fontSize: 16, width: 22, textAlign: 'center' },
+  stepText: { flex: 1, fontSize: 13, lineHeight: 18 },
 
+  // Route visualizer
+  routeViz: { position: 'absolute', left: 27, top: 54, alignItems: 'center' },
+  routeDot: { width: 10, height: 10, borderRadius: 5 },
+  routeLine: { width: 2, height: 32 },
+  addressInputsWrap: { marginTop: 4 },
+
+  // Parcel size
+  fieldLabel: { fontSize: 12, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 8 },
+  sizeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  sizeTile: {
+    width: '47%', borderRadius: 14, borderWidth: 1.5,
+    padding: 12, alignItems: 'center', gap: 4,
+  },
+  sizeTileIcon: { fontSize: 24 },
+  sizeTileLabel: { fontSize: 12, fontWeight: '800' },
+  sizeTileDesc: { fontSize: 10, fontWeight: '500' },
+  textArea: {
+    borderWidth: 1.5, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, minHeight: 80,
+  },
+
+  // Quote button
   quoteBtn: {
-    borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginTop: 24,
-    shadowColor: '#5856D6', shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
+    borderRadius: 16, paddingVertical: 18, alignItems: 'center',
+    marginBottom: 14,
+    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
   },
-  quoteBtnText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  quoteBtnText: { color: '#FFF', fontSize: 16, fontWeight: '900' },
+  quoteBtnSub: { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 2 },
 
+  // Quote card
   quoteCard: {
-    borderWidth: 2, borderRadius: 16, padding: 20, marginTop: 20,
-    backgroundColor: '#f0f0ff',
+    borderRadius: 20, borderWidth: 2, overflow: 'hidden', marginBottom: 14,
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 4,
   },
-  routeBadge: {
-    alignSelf: 'center', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 5, marginBottom: 14,
+  quoteCardHeader: { padding: 20, alignItems: 'center', gap: 6 },
+  routeTypeBadge: {
+    paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, marginBottom: 4,
   },
-  routeBadgeText: { fontSize: 12, fontWeight: '700' },
-  quoteRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  quoteLabel: { fontSize: 14, color: '#3A3A3C', fontWeight: '600' },
-  quoteValue: { fontSize: 14, fontWeight: '700', color: '#1C1C1E' },
-  quotePriceLarge: { fontSize: 26, fontWeight: '900' },
-  quoteDivider: { height: 1, backgroundColor: '#D1D1D6', marginVertical: 12 },
-  quoteNote: { fontSize: 11, color: '#8E8E93', textAlign: 'center', marginTop: 8, marginBottom: 16 },
-
+  routeTypeBadgeText: { color: '#FFF', fontSize: 11, fontWeight: '800' },
+  quotePriceBig: { fontSize: 38, fontWeight: '900', color: '#0F172A' },
+  quotePriceLabel: { fontSize: 13, fontWeight: '700' },
+  quoteDetails: { paddingHorizontal: 18, paddingTop: 6 },
+  quoteRow: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingVertical: 10, borderBottomWidth: 1,
+  },
+  quoteRowLabel: { fontSize: 13, fontWeight: '500' },
+  quoteRowValue: { fontSize: 14, fontWeight: '800' },
+  quoteNote: { fontSize: 11, textAlign: 'center', padding: 14, paddingTop: 10 },
   bookBtn: {
-    borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4,
-    shadowColor: '#34C759', shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
+    marginHorizontal: 16, marginBottom: 16, borderRadius: 14,
+    paddingVertical: 16, alignItems: 'center',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8, elevation: 5,
   },
-  bookBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  bookBtnText: { color: '#FFF', fontSize: 16, fontWeight: '900' },
+  bookBtnSub: { color: 'rgba(255,255,255,0.75)', fontSize: 11, marginTop: 2 },
 });

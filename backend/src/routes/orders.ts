@@ -1,4 +1,4 @@
-import { Router, Response, NextFunction } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { PaymentProvider, OrderStatus } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { sendNotification, notifyMany } from '../lib/notify';
@@ -64,10 +64,156 @@ router.get('/vendor', authenticateToken, async (req: AuthRequest, res, next) => 
   }
 });
 
+function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// Guest Checkout for unauthenticated users
+router.post('/guest-checkout', async (req: Request, res: Response, next: NextFunction) => {
+  const { items, paymentProvider, guestEmail, guestName, guestPhone, deliveryAddress, latitude, longitude } = req.body;
+
+  if (!guestEmail || !guestName) {
+    return res.status(400).json({ error: 'Guest email and name are required for checkout' });
+  }
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Items are required for checkout' });
+  }
+
+  try {
+    // 1. Find or create guest user account
+    let user = await prisma.user.findUnique({ where: { email: guestEmail.trim() } });
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: guestEmail.trim(),
+          name: guestName.trim(),
+          phone: guestPhone ? guestPhone.trim() : null,
+          address: deliveryAddress ? deliveryAddress.trim() : null,
+          role: 'CUSTOMER',
+          verificationStatus: 'VERIFIED',
+        },
+      });
+    }
+
+    const userId = user.id;
+
+    // 2. Validate products and calculate total amount
+    const productIds = items.map((i: any) => String(i.productId));
+    const dbProducts = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+    });
+
+    const dbProductsMap = new Map(dbProducts.map((p) => [p.id, p]));
+    let computedTotalAmount = 0;
+    const checkoutItems: { productId: string; quantity: number; price: number }[] = [];
+
+    for (const item of items) {
+      const dbProduct = dbProductsMap.get(item.productId);
+      if (!dbProduct) {
+        return res.status(404).json({ error: `Product with ID ${item.productId} not found` });
+      }
+
+      if (dbProduct.stock < item.quantity) {
+        return res.status(400).json({
+          error: `Insufficient stock for product: ${dbProduct.name}. Requested: ${item.quantity}, Available: ${dbProduct.stock}`,
+        });
+      }
+
+      computedTotalAmount += dbProduct.price * item.quantity;
+      checkoutItems.push({
+        productId: dbProduct.id,
+        quantity: item.quantity,
+        price: dbProduct.price,
+      });
+    }
+
+    // 3. Proximity Rider Assignment
+    let assignedRiderId: string | null = null;
+    let riderDistance: number | null = null;
+    const cLat = latitude ? parseFloat(latitude) : null;
+    const cLng = longitude ? parseFloat(longitude) : null;
+
+    if (cLat !== null && cLng !== null) {
+      const riders = await prisma.user.findMany({
+        where: {
+          role: 'RIDER',
+          verificationStatus: 'VERIFIED',
+          OR: [
+            { currentLat: { not: null }, currentLng: { not: null } },
+            { latitude: { not: null }, longitude: { not: null } },
+          ],
+        },
+      });
+
+      const ridersWithDist = riders
+        .map((r) => {
+          const lat = r.currentLat !== null ? r.currentLat! : r.latitude!;
+          const lng = r.currentLng !== null ? r.currentLng! : r.longitude!;
+          return {
+            rider: r,
+            dist: getDistanceKm(cLat, cLng, lat, lng),
+          };
+        })
+        .sort((a, b) => a.dist - b.dist);
+
+      if (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100) {
+        assignedRiderId = ridersWithDist[0].rider.id;
+        riderDistance = Math.round(ridersWithDist[0].dist * 10) / 10;
+      }
+    }
+
+    // 4. Create Order with stock deduction in transaction
+    const order = await prisma.$transaction(async (tx) => {
+      for (const item of items) {
+        await tx.product.update({
+          where: { id: item.productId },
+          data: {
+            stock: { decrement: item.quantity },
+          },
+        });
+      }
+
+      return tx.order.create({
+        data: {
+          userId,
+          riderId: assignedRiderId,
+          deliveryAddress: deliveryAddress || user?.address || null,
+          totalAmount: computedTotalAmount,
+          paymentProvider: (paymentProvider as PaymentProvider) || 'NONE',
+          status: 'PENDING',
+          items: {
+            create: checkoutItems,
+          },
+        },
+        include: { items: true, rider: true },
+      });
+    });
+
+    res.status(201).json({
+      message: 'Guest order created successfully',
+      order,
+      riderDistance,
+      isGuest: true,
+      guestEmail: user.email,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Create an order (Checkout with Stock Verification and Backend Price Calculation)
 router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const userId = req.user?.userId;
-  const { items, paymentProvider } = req.body;
+  const { items, paymentProvider, deliveryAddress, latitude, longitude } = req.body;
 
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -107,6 +253,41 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
       });
     }
 
+    // 2.5 Proximity Rider Assignment
+    let assignedRiderId: string | null = null;
+    let riderDistance: number | null = null;
+    const cLat = latitude ? parseFloat(latitude) : null;
+    const cLng = longitude ? parseFloat(longitude) : null;
+
+    if (cLat !== null && cLng !== null) {
+      const riders = await prisma.user.findMany({
+        where: {
+          role: 'RIDER',
+          verificationStatus: 'VERIFIED',
+          OR: [
+            { currentLat: { not: null }, currentLng: { not: null } },
+            { latitude: { not: null }, longitude: { not: null } },
+          ],
+        },
+      });
+
+      const ridersWithDist = riders
+        .map((r) => {
+          const lat = r.currentLat !== null ? r.currentLat! : r.latitude!;
+          const lng = r.currentLng !== null ? r.currentLng! : r.longitude!;
+          return {
+            rider: r,
+            dist: getDistanceKm(cLat, cLng, lat, lng),
+          };
+        })
+        .sort((a, b) => a.dist - b.dist);
+
+      if (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100) {
+        assignedRiderId = ridersWithDist[0].rider.id;
+        riderDistance = Math.round(ridersWithDist[0].dist * 10) / 10;
+      }
+    }
+
     // 3. Process stock deduction and order creation in a transaction
     const order = await prisma.$transaction(async (tx) => {
       // Decrement stock for each product
@@ -125,6 +306,8 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
       return tx.order.create({
         data: {
           userId,
+          riderId: assignedRiderId,
+          deliveryAddress: deliveryAddress || null,
           totalAmount: computedTotalAmount,
           paymentProvider: (paymentProvider as PaymentProvider) || 'NONE',
           status: 'PENDING',
@@ -132,7 +315,7 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
             create: checkoutItems,
           },
         },
-        include: { items: true },
+        include: { items: true, rider: true },
       });
     });
 

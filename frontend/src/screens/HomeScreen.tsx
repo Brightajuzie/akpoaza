@@ -1,21 +1,26 @@
 import React, { useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image, ActivityIndicator, TextInput, useWindowDimensions, Platform, Linking, Alert } from 'react-native';
+import {
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
+  ActivityIndicator, TextInput, useWindowDimensions, Platform, Linking, Alert, Animated
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
 import apiClient from '../api/client';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import SafeLogo from '../components/SafeLogo';
 import ThemeToggle from '../components/ThemeToggle';
 
+// ─── Constants ────────────────────────────────────────────────────────────────
 const PROMO_SLIDES = [
   {
     id: 1,
     title: '🔥 Mega Tool Sale',
     subtitle: 'Up to 40% off on power tools, drills & more!',
     cta: 'Shop Now',
-    gradient: ['#1a472a', '#2d6a4f'],
-    accent: '#52b788',
+    gradient: ['#0F2C18', '#1A5C32'] as const,
+    accent: '#4ADE80',
     icon: '🛒',
     action: 'Products',
   },
@@ -24,8 +29,8 @@ const PROMO_SLIDES = [
     title: '⚡ Book a Handyman',
     subtitle: 'Verified professionals at your doorstep. Fast & reliable.',
     cta: 'Book Now',
-    gradient: ['#0d1b2a', '#1b4f72'],
-    accent: '#3498db',
+    gradient: ['#0A1628', '#0D3A6E'] as const,
+    accent: '#60A5FA',
     icon: '🔧',
     action: 'Services',
   },
@@ -34,1721 +39,1302 @@ const PROMO_SLIDES = [
     title: '🎁 Refer & Earn',
     subtitle: 'Invite friends & earn wallet credits on every signup!',
     cta: 'Learn More',
-    gradient: ['#4a1942', '#7b2d8b'],
-    accent: '#e040fb',
+    gradient: ['#2D0F3A', '#5B1F87'] as const,
+    accent: '#C084FC',
     icon: '💜',
     action: 'ProfileTab',
   },
 ];
 
+const QUICK_ACTIONS = [
+  { icon: '🛍️', label: 'Buy', screen: 'Products', bgLight: '#E8F5E9', bgDark: '#1B3E2B', accent: '#22A45D' },
+  { icon: '🏷️', label: 'Sell', screen: '__sell__', bgLight: '#FFF8E1', bgDark: '#3D3010', accent: '#F59E0B' },
+  { icon: '🛠️', label: 'Services', screen: 'Services', bgLight: '#E3F2FD', bgDark: '#0D2540', accent: '#3B82F6' },
+  { icon: '🛵', label: 'Book Rider', screen: 'BookParcel', bgLight: '#F0FFF4', bgDark: '#0F2820', accent: '#10B981' },
+];
+
+const NAV_LINKS = [
+  { label: 'Home', screen: 'HomeTab' },
+  { label: 'Products', screen: 'Products' },
+  { label: 'Services', screen: 'Services' },
+  { label: 'Book Rider', screen: 'BookParcel' },
+  { label: 'Wallet', screen: 'Wallet' },
+];
+
+// ─── Component ────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
-  const { theme, logoUrl, heroTitle, heroSubtitle, footerText, apkUrl, aabUrl, colorMode } = useContext(SettingsContext);
+  const { theme, logoUrl, footerText, apkUrl, aabUrl, colorMode } = useContext(SettingsContext);
+  const { fmt } = useCurrency();
   const { width } = useWindowDimensions();
-  const isLargeScreen = width >= 768;
 
-  const handleSellPress = () => {
-    if (!userInfo) {
-      Alert.alert(
-        '🏪 Vendor Registration Required',
-        'You must register as a vendor before you can sell in the app.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Register as Vendor',
-            onPress: () => navigation.navigate('Signup', { role: 'VENDOR', initialRole: 'VENDOR' }),
-          },
-        ]
-      );
-      return;
-    }
+  const isDesktop = width >= 1024;
+  const isTablet = width >= 768 && width < 1024;
+  const isMobile = width < 768;
+  const isDark = colorMode === 'dark';
 
-    if (userInfo.role === 'VENDOR' || userInfo.role === 'ADMIN') {
-      if (userInfo.role === 'VENDOR' && userInfo.kycStatus && userInfo.kycStatus !== 'VERIFIED' && userInfo.kycStatus !== 'APPROVED') {
-        Alert.alert(
-          '⏳ Complete Vendor Verification',
-          'Your vendor profile is incomplete or pending verification. Please complete registration before uploading products.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Complete Verification',
-              onPress: () => navigation.navigate('KYCVerification', { role: 'VENDOR' }),
-            },
-          ]
-        );
-        return;
-      }
-      navigation.navigate('Admin', { activeTab: 'products', action: 'add' });
-    } else {
-      Alert.alert(
-        '🏪 Vendor Registration Required',
-        'You must register as a vendor before you can sell in the app.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Register as Vendor',
-            onPress: () => navigation.navigate('KYCVerification', { role: 'VENDOR' }),
-          },
-        ]
-      );
-    }
-  };
-
-  const triggerDirectApkDownload = (targetUrl?: string | null) => {
-    let url = targetUrl || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
-    if (url.startsWith('/')) {
-      const apiBase = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
-      const origin = apiBase.replace(/\/api\/?$/, '');
-      url = `${origin}${url}`;
-    }
-    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-      const link = document.createElement('a');
-      link.href = url;
-      link.target = '_blank';
-      link.download = 'fixmart-latest.apk';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } else {
-      Linking.openURL(url);
-    }
-  };
-
-  const triggerDirectAabDownload = (targetUrl?: string | null) => {
-    let url = targetUrl || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.aab';
-    if (url.startsWith('/')) {
-      const apiBase = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
-      const origin = apiBase.replace(/\/api\/?$/, '');
-      url = `${origin}${url}`;
-    }
-    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-      const link = document.createElement('a');
-      link.href = url;
-      link.target = '_blank';
-      link.download = 'fixmart-latest.aab';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } else {
-      Linking.openURL(url);
-    }
-  };
-
+  // ── State ────────────────────────────────────────────────────────────────
   const [promotedListings, setPromotedListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
-
-  // Slides State
   const [slides, setSlides] = useState<any[]>([]);
   const [slidesLoading, setSlidesLoading] = useState(true);
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const slideScrollViewRef = useRef<ScrollView>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ products: any[]; services: any[] } | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchDebounceRef = useRef<any>(null);
+  const [searchFocused, setSearchFocused] = useState(false);
 
-  // Fetch Slides (with fallback to rich PROMO_SLIDES if empty)
+  const heroFadeAnim = useRef(new Animated.Value(0)).current;
+  const heroSlideAnim = useRef(new Animated.Value(24)).current;
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  const resolveUrl = (url: string) => {
+    if (url.startsWith('/')) {
+      const apiBase = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000/api';
+      return `${apiBase.replace(/\/api\/?$/, '')}${url}`;
+    }
+    return url;
+  };
+
+  const triggerDownload = (targetUrl: string | null | undefined, filename: string) => {
+    const url = resolveUrl(targetUrl || `https://akpoaza-3.onrender.com/uploads/${filename}`);
+    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+      const link = document.createElement('a');
+      link.href = url; link.target = '_blank'; link.download = filename;
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    } else { Linking.openURL(url); }
+  };
+
+  const handleSellPress = () => {
+    if (!userInfo) {
+      return Alert.alert('🏪 Vendor Registration Required', 'You must register as a vendor before you can sell.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Register as Vendor', onPress: () => navigation.navigate('Signup', { role: 'VENDOR', initialRole: 'VENDOR' }) },
+      ]);
+    }
+    if (userInfo.role === 'VENDOR' && userInfo.kycStatus && !['VERIFIED', 'APPROVED'].includes(userInfo.kycStatus)) {
+      return Alert.alert('⏳ Verification Pending', 'Complete your vendor verification first.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Complete Verification', onPress: () => navigation.navigate('KYCVerification', { role: 'VENDOR' }) },
+      ]);
+    }
+    if (userInfo.role === 'VENDOR' || userInfo.role === 'ADMIN') {
+      navigation.navigate('Admin', { activeTab: 'products', action: 'add' });
+    } else {
+      Alert.alert('🏪 Vendor Required', 'Register as a vendor to sell.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Register', onPress: () => navigation.navigate('KYCVerification', { role: 'VENDOR' }) },
+      ]);
+    }
+  };
+
+  const handleActionPress = (screen: string) => {
+    if (screen === '__sell__') return handleSellPress();
+    navigation.navigate(screen);
+  };
+
+  // ── Effects ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(heroFadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(heroSlideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
   useEffect(() => {
     const fetchSlides = async () => {
       try {
         setSlidesLoading(true);
         const res = await apiClient.get('/slides');
-        if (res.data && Array.isArray(res.data) && res.data.length > 0) {
-          setSlides(res.data);
-        } else {
-          setSlides(PROMO_SLIDES);
-        }
-      } catch (e) {
-        console.error('Failed to load slides', e);
-        setSlides(PROMO_SLIDES);
-      } finally {
-        setSlidesLoading(false);
-      }
+        setSlides(res.data?.length > 0 ? res.data : PROMO_SLIDES);
+      } catch { setSlides(PROMO_SLIDES); }
+      finally { setSlidesLoading(false); }
     };
     fetchSlides();
   }, []);
 
-  // Auto-scroll logic for slides
   useEffect(() => {
     if (slides.length <= 1) return;
     const interval = setInterval(() => {
       const nextIndex = (activeSlideIndex + 1) % slides.length;
       setActiveSlideIndex(nextIndex);
-      const containerWidth = Math.min(width, 1200) - 40;
-      slideScrollViewRef.current?.scrollTo({
-        x: nextIndex * containerWidth,
-        animated: true,
-      });
-    }, 4000);
+      slideScrollViewRef.current?.scrollTo({ x: nextIndex * (Math.min(width, 1200) - 40), animated: true });
+    }, 4500);
     return () => clearInterval(interval);
   }, [slides, activeSlideIndex, width]);
 
-  const handleScroll = (event: any) => {
-    const contentOffsetX = event.nativeEvent.contentOffset.x;
-    const containerWidth = Math.min(width, 1200) - 40;
-    const currentIndex = Math.round(contentOffsetX / containerWidth);
-    if (currentIndex !== activeSlideIndex && currentIndex >= 0 && currentIndex < slides.length) {
-      setActiveSlideIndex(currentIndex);
-    }
+  const handleSliderScroll = (e: any) => {
+    const x = e.nativeEvent.contentOffset.x;
+    const w = Math.min(width, 1200) - 40;
+    const i = Math.round(x / w);
+    if (i !== activeSlideIndex && i >= 0 && i < slides.length) setActiveSlideIndex(i);
   };
 
-  // Search states
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{ products: any[]; services: any[] } | null>(null);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const searchDebounceRef = useRef<any>(null);
-
   const performSearch = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      setSearchResults(null);
-      return;
-    }
+    if (!query.trim()) { setSearchResults(null); return; }
     setSearchLoading(true);
     try {
-      const [productsRes, servicesRes] = await Promise.all([
+      const [pr, sr] = await Promise.all([
         apiClient.get(`/products?search=${encodeURIComponent(query)}`),
         apiClient.get(`/services?search=${encodeURIComponent(query)}`),
       ]);
-      setSearchResults({
-        products: productsRes.data.slice(0, 5),
-        services: servicesRes.data.slice(0, 5),
-      });
-    } catch (e) {
-      console.error('Search error', e);
-    } finally {
-      setSearchLoading(false);
-    }
+      setSearchResults({ products: pr.data.slice(0, 5), services: sr.data.slice(0, 5) });
+    } catch { /* silent */ }
+    finally { setSearchLoading(false); }
   }, []);
 
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => {
-      performSearch(text);
-    }, 400);
+    searchDebounceRef.current = setTimeout(() => performSearch(text), 380);
   };
 
   useEffect(() => {
     const fetchPromoted = async () => {
       try {
         setLoading(true);
-        // Fetch products and services concurrently
-        const [productsRes, servicesRes] = await Promise.all([
-          apiClient.get('/products'),
-          apiClient.get('/services')
-        ]);
-
-        const featuredProducts = productsRes.data
-          .filter((p: any) => p.featured)
-          .map((p: any) => ({ ...p, itemType: 'product' }));
-
-        const featuredServices = servicesRes.data
-          .filter((s: any) => s.featured)
-          .map((s: any) => ({ ...s, itemType: 'service' }));
-
-        // Mix and sort
-        setPromotedListings([...featuredProducts, ...featuredServices]);
-      } catch (error) {
-        console.error('Failed to load promoted spotlights', error);
-      } finally {
-        setLoading(false);
-      }
+        const [pr, sr] = await Promise.all([apiClient.get('/products'), apiClient.get('/services')]);
+        const fp = pr.data.filter((p: any) => p.featured).map((p: any) => ({ ...p, itemType: 'product' }));
+        const fs = sr.data.filter((s: any) => s.featured).map((s: any) => ({ ...s, itemType: 'service' }));
+        setPromotedListings([...fp, ...fs]);
+      } catch { /* silent */ }
+      finally { setLoading(false); }
     };
-
     fetchPromoted();
   }, []);
 
+  // ── Sub-renders ──────────────────────────────────────────────────────────
+  const slideW = Math.min(width, 1200) - 40;
 
+  const renderSlide = (slide: any) => {
+    if (slide.imageUrl) {
+      return (
+        <View key={slide.id} style={[styles.slideCard, { width: slideW }]}>
+          <Image source={{ uri: slide.imageUrl }} style={styles.slideImage} resizeMode="cover" />
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={StyleSheet.absoluteFill} />
+          {slide.caption && (
+            <View style={styles.slideCaptionContainer}>
+              <Text style={styles.slideCaptionText}>{slide.caption}</Text>
+            </View>
+          )}
+        </View>
+      );
+    }
+    const colors = slide.gradient || ['#0f2027', '#203a43'];
+    return (
+      <TouchableOpacity
+        key={slide.id}
+        activeOpacity={0.92}
+        style={[styles.slideCard, { width: slideW }]}
+        onPress={() => {
+          if (!slide.action) return;
+          if (slide.action === 'Products') navigation.navigate('Products');
+          else if (slide.action === 'Services') navigation.navigate('Services');
+          else navigation.navigate(slide.action);
+        }}
+      >
+        <LinearGradient colors={colors as any} style={styles.promoSlideGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+          {/* decorative circles */}
+          <View style={[styles.slideDecor1, { backgroundColor: (slide.accent || '#FFF') + '18' }]} />
+          <View style={[styles.slideDecor2, { backgroundColor: (slide.accent || '#FFF') + '10' }]} />
+          <View style={styles.promoSlideContent}>
+            <View style={[styles.promoSlideIconWrap, { backgroundColor: (slide.accent || '#FFF') + '22' }]}>
+              <Text style={styles.promoSlideIcon}>{slide.icon || '🛍️'}</Text>
+            </View>
+            <View style={{ flex: 1, marginLeft: 16 }}>
+              <Text style={styles.promoSlideTitle}>{slide.title}</Text>
+              <Text style={styles.promoSlideSub} numberOfLines={2}>{slide.subtitle}</Text>
+            </View>
+            <View style={[styles.promoSlideCtaBtn, { backgroundColor: slide.accent || '#FFF' }]}>
+              <Text style={[styles.promoSlideCtaText, { color: '#0F2027' }]}>{slide.cta || 'Explore'}</Text>
+              <Text style={[styles.promoSlideCtaArrow, { color: '#0F2027' }]}>›</Text>
+            </View>
+          </View>
+        </LinearGradient>
+      </TouchableOpacity>
+    );
+  };
 
-  const renderHeader = () => (
-    <View style={[
-      styles.navHeader, 
-      { borderBottomColor: theme.border }, 
-      Platform.OS === 'web' && { marginBottom: 0, borderBottomWidth: 0 }
-    ]}>
-      <View style={styles.navHeaderContainer}>
-        {/* Logo / Brand Name */}
-        <TouchableOpacity 
-          onPress={() => {
-            try {
-              navigation.navigate('Main', { screen: 'HomeTab' });
-            } catch {
-              navigation.navigate('HomeTab');
-            }
-          }} 
-          style={styles.logoContainer}
+  const renderDesktopNavbar = () => (
+    <View style={[styles.desktopNavbar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+      <View style={styles.desktopNavInner}>
+        {/* Brand */}
+        <TouchableOpacity
+          style={styles.navBrand}
+          onPress={() => { try { navigation.navigate('Main', { screen: 'HomeTab' }); } catch { navigation.navigate('HomeTab'); } }}
         >
-          <SafeLogo
-            logoUrl={logoUrl}
-            style={{ width: 34, height: 34 }}
-            resizeMode="contain"
-          />
-          <Text style={{ fontSize: 18, fontWeight: '800', marginLeft: 6 }}>
-            <Text style={{ color: '#1B3D6E' }}>Fix</Text>
-            <Text style={{ color: theme?.primary || '#22A45D' }}>Mart</Text>
+          <SafeLogo logoUrl={logoUrl} style={{ width: 32, height: 32 }} resizeMode="contain" />
+          <Text style={styles.navBrandText}>
+            <Text style={[styles.navBrandFix, { color: isDark ? '#60A5FA' : '#1B3D6E' }]}>Fix</Text>
+            <Text style={[styles.navBrandMart, { color: theme.primary }]}>Mart</Text>
           </Text>
         </TouchableOpacity>
 
-        {width >= 768 ? (
-          /* 🖥️ DESKTOP/WEB FULL SCREEN NAVIGATION BAR */
-          <View style={styles.desktopNav}>
-            <TouchableOpacity onPress={() => navigation.navigate('HomeTab')} style={styles.navLink}>
-              <Text style={[styles.navLinkLabel, styles.activeNavLink, { color: theme.primary }]}>Home</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('Products')} style={styles.navLink}>
-              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Products</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('Services')} style={styles.navLink}>
-              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Services</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('BookParcel')} style={styles.navLink}>
-              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Book Rider</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('Wallet')} style={styles.navLink}>
-              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Wallet</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('CartTab')} style={styles.navLink}>
-              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Cart 🛒</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => navigation.navigate('NotificationsTab')} style={styles.navLink}>
-              <Text style={[styles.navLinkLabel, { color: theme.text }]}>Alerts 🔔</Text>
-            </TouchableOpacity>
-            {userInfo?.role === 'RIDER' && (
-              <TouchableOpacity onPress={() => navigation.navigate('History', { type: 'orders', role: 'RIDER' })} style={styles.navLink}>
-                <Text style={[styles.navLinkLabel, { color: '#34C759', fontWeight: '800' }]}>🚚 Rider Hub</Text>
-              </TouchableOpacity>
-            )}
-            {/* User Avatar */}
-            <TouchableOpacity 
-              style={[styles.profileIndicator, { borderColor: theme.primary, marginLeft: 12 }]}
-              onPress={() => navigation.navigate('ProfileTab')}
-            >
-              <Text style={styles.profileIndicatorText}>
-                {userInfo?.name ? userInfo.name.charAt(0).toUpperCase() : 'G'}
+        {/* Nav links */}
+        <View style={styles.desktopNavLinks}>
+          {NAV_LINKS.map(link => (
+            <TouchableOpacity key={link.screen} onPress={() => navigation.navigate(link.screen)} style={styles.navLinkBtn}>
+              <Text style={[styles.navLinkText, { color: link.screen === 'HomeTab' ? theme.primary : theme.text }]}>
+                {link.label}
               </Text>
+              {link.screen === 'HomeTab' && <View style={[styles.navLinkActive, { backgroundColor: theme.primary }]} />}
             </TouchableOpacity>
-            {/* Theme Toggle at extreme right of nav items */}
-            <View style={{ marginLeft: 12 }}>
-              <ThemeToggle compact />
-            </View>
-          </View>
-        ) : (
-          /* 📱 MOBILE HAMBURGER BUTTON */
-          <View style={styles.mobileNavHeaderRight}>
-            <TouchableOpacity 
-              style={[styles.profileIndicator, { borderColor: theme.primary, marginRight: 8 }]}
-              onPress={() => navigation.navigate('ProfileTab')}
-            >
-              <Text style={styles.profileIndicatorText}>
-                {userInfo?.name ? userInfo.name.charAt(0).toUpperCase() : 'G'}
-              </Text>
+          ))}
+          {userInfo?.role === 'RIDER' && (
+            <TouchableOpacity onPress={() => navigation.navigate('History', { type: 'orders', role: 'RIDER' })} style={styles.navLinkBtn}>
+              <Text style={[styles.navLinkText, { color: '#34C759', fontWeight: '800' }]}>🚚 Rider Hub</Text>
             </TouchableOpacity>
-            
-            {/* Theme Toggle close to hamburger on mobile */}
-            <View style={{ marginRight: 8 }}>
-              <ThemeToggle compact />
-            </View>
-
-            <TouchableOpacity 
-              style={[styles.hamburgerButton, { backgroundColor: theme.primary + '15' }]} 
-              onPress={() => setMenuOpen(!menuOpen)}
-            >
-              <Text style={[styles.hamburgerIcon, { color: theme.primary }]}>
-                {menuOpen ? '✕' : '☰'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-
-          {/* 📱 MOBILE DROP-DOWN DRAWER MENU */}
-          {width < 768 && menuOpen && (
-            <View style={[styles.mobileMenuDropdown, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <TouchableOpacity 
-                style={styles.mobileMenuItem} 
-                onPress={() => { setMenuOpen(false); navigation.navigate('HomeTab'); }}
-              >
-                <Text style={[styles.mobileMenuText, { color: theme.primary, fontWeight: '700' }]}>🏠 Home</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.mobileMenuItem} 
-                onPress={() => { setMenuOpen(false); navigation.navigate('Products'); }}
-              >
-                <Text style={[styles.mobileMenuText, { color: theme.text }]}>📦 Products</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.mobileMenuItem} 
-                onPress={() => { setMenuOpen(false); navigation.navigate('Services'); }}
-              >
-                <Text style={[styles.mobileMenuText, { color: theme.text }]}>⚡ Services</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.mobileMenuItem} 
-                onPress={() => { setMenuOpen(false); navigation.navigate('BookParcel'); }}
-              >
-                <Text style={[styles.mobileMenuText, { color: theme.text }]}>🚚 Book Rider</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.mobileMenuItem} 
-                onPress={() => { setMenuOpen(false); navigation.navigate('Wallet'); }}
-              >
-                <Text style={[styles.mobileMenuText, { color: theme.text }]}>💳 Wallet</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.mobileMenuItem} 
-                onPress={() => { setMenuOpen(false); navigation.navigate('CartTab'); }}
-              >
-                <Text style={[styles.mobileMenuText, { color: theme.text }]}>🛒 Cart</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.mobileMenuItem} 
-                onPress={() => { setMenuOpen(false); navigation.navigate('NotificationsTab'); }}
-              >
-                <Text style={[styles.mobileMenuText, { color: theme.text }]}>🔔 Alerts</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.mobileMenuItem} 
-                onPress={() => { setMenuOpen(false); navigation.navigate('ProfileTab'); }}
-              >
-                <Text style={[styles.mobileMenuText, { color: theme.text }]}>👤 Profile</Text>
-              </TouchableOpacity>
-              {userInfo?.role === 'RIDER' && (
-                <TouchableOpacity 
-                  style={[styles.mobileMenuItem, { backgroundColor: '#34C75915' }]} 
-                  onPress={() => { setMenuOpen(false); navigation.navigate('History', { type: 'orders', role: 'RIDER' }); }}
-                >
-                  <Text style={[styles.mobileMenuText, { color: '#34C759', fontWeight: '800' }]}>🚚 Rider Dashboard</Text>
-                </TouchableOpacity>
-              )}
-            </View>
           )}
+        </View>
+
+        {/* Right controls */}
+        <View style={styles.desktopNavRight}>
+          <TouchableOpacity
+            style={[styles.navIconBtn, { borderColor: theme.border }]}
+            onPress={() => navigation.navigate('CartTab')}
+          >
+            <Text style={styles.navIconBtnText}>🛒</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.navIconBtn, { borderColor: theme.border }]}
+            onPress={() => navigation.navigate('NotificationsTab')}
+          >
+            <Text style={styles.navIconBtnText}>🔔</Text>
+          </TouchableOpacity>
+          <ThemeToggle compact />
+          <TouchableOpacity
+            style={[styles.navAvatar, { borderColor: theme.primary, backgroundColor: theme.primary + '18' }]}
+            onPress={() => navigation.navigate('ProfileTab')}
+          >
+            <Text style={[styles.navAvatarText, { color: theme.primary }]}>
+              {userInfo?.name ? userInfo.name.charAt(0).toUpperCase() : 'G'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
 
-  return (
-    <View style={{ flex: 1, backgroundColor: theme.background }}>
-      {Platform.OS === 'web' && (
-        <View style={[styles.webHeaderWrapper, { backgroundColor: theme.card || '#FFFFFF', borderBottomColor: theme.border }]}>
-          <ResponsiveContainer>
-            {renderHeader()}
-          </ResponsiveContainer>
+  const renderMobileNavbar = () => (
+    <View style={[styles.mobileNavbar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+      <TouchableOpacity
+        style={styles.navBrand}
+        onPress={() => { try { navigation.navigate('Main', { screen: 'HomeTab' }); } catch { navigation.navigate('HomeTab'); } }}
+      >
+        <SafeLogo logoUrl={logoUrl} style={{ width: 30, height: 30 }} resizeMode="contain" />
+        <Text style={styles.navBrandText}>
+          <Text style={[styles.navBrandFix, { color: isDark ? '#60A5FA' : '#1B3D6E' }]}>Fix</Text>
+          <Text style={[styles.navBrandMart, { color: theme.primary }]}>Mart</Text>
+        </Text>
+      </TouchableOpacity>
+
+      <View style={styles.mobileNavRight}>
+        <ThemeToggle compact />
+        <TouchableOpacity
+          style={[styles.navAvatar, { borderColor: theme.primary, backgroundColor: theme.primary + '18', marginLeft: 8 }]}
+          onPress={() => navigation.navigate('ProfileTab')}
+        >
+          <Text style={[styles.navAvatarText, { color: theme.primary }]}>
+            {userInfo?.name ? userInfo.name.charAt(0).toUpperCase() : 'G'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.hamburger, { backgroundColor: theme.primary + '15', marginLeft: 8 }]}
+          onPress={() => setMenuOpen(!menuOpen)}
+        >
+          <Text style={[styles.hamburgerText, { color: theme.primary }]}>{menuOpen ? '✕' : '☰'}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {menuOpen && (
+        <View style={[styles.mobileDrawer, { backgroundColor: theme.card, borderColor: theme.border, shadowColor: isDark ? '#000' : '#888' }]}>
+          {[
+            { icon: '🏠', label: 'Home', screen: 'HomeTab' },
+            { icon: '📦', label: 'Products', screen: 'Products' },
+            { icon: '⚡', label: 'Services', screen: 'Services' },
+            { icon: '🚚', label: 'Book Rider', screen: 'BookParcel' },
+            { icon: '💳', label: 'Wallet', screen: 'Wallet' },
+            { icon: '🛒', label: 'Cart', screen: 'CartTab' },
+            { icon: '🔔', label: 'Alerts', screen: 'NotificationsTab' },
+            { icon: '👤', label: 'Profile', screen: 'ProfileTab' },
+          ].map(item => (
+            <TouchableOpacity
+              key={item.screen}
+              style={[styles.drawerItem, { borderBottomColor: theme.border }]}
+              onPress={() => { setMenuOpen(false); navigation.navigate(item.screen); }}
+            >
+              <Text style={styles.drawerItemIcon}>{item.icon}</Text>
+              <Text style={[styles.drawerItemLabel, { color: theme.text }]}>{item.label}</Text>
+              <Text style={[styles.drawerChevron, { color: theme.lightText || '#8E8E93' }]}>›</Text>
+            </TouchableOpacity>
+          ))}
+          {userInfo?.role === 'RIDER' && (
+            <TouchableOpacity
+              style={[styles.drawerItem, { backgroundColor: '#34C75912', borderBottomColor: 'transparent' }]}
+              onPress={() => { setMenuOpen(false); navigation.navigate('History', { type: 'orders', role: 'RIDER' }); }}
+            >
+              <Text style={styles.drawerItemIcon}>🛵</Text>
+              <Text style={[styles.drawerItemLabel, { color: '#34C759', fontWeight: '800' }]}>Rider Dashboard</Text>
+              <Text style={{ color: '#34C759' }}>›</Text>
+            </TouchableOpacity>
+          )}
         </View>
       )}
-      <ScrollView 
-        style={[styles.container, { backgroundColor: theme.background }]} 
-        contentContainerStyle={[
-          styles.contentContainer, 
-          Platform.OS === 'web' && { paddingTop: 20 }
-        ]}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+    </View>
+  );
+
+  const renderHero = () => (
+    <Animated.View style={{ opacity: heroFadeAnim, transform: [{ translateY: heroSlideAnim }] }}>
+      <LinearGradient
+        colors={isDark ? ['#0F172A', '#1E293B'] : ['#F0FDF9', '#FFFFFF']}
+        style={[styles.heroSection, isDesktop && styles.heroSectionDesktop]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
       >
-        <ResponsiveContainer>
-          {/* 🔍 Unified Smart Search Bar */}
-          <View style={[styles.searchContainer, { backgroundColor: theme.card, borderColor: searchQuery ? theme.primary : theme.border }]}>
-            <Text style={styles.searchIcon}>🔍</Text>
-            <TextInput
-              style={[styles.searchInput, { color: theme.text }]}
-              placeholder="Search services, products, categories..."
-              placeholderTextColor={colorMode === 'dark' ? '#8E8E93' : '#AEAEB2'}
-              value={searchQuery}
-              onChangeText={handleSearchChange}
-              returnKeyType="search"
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity
-                onPress={() => { setSearchQuery(''); setSearchResults(null); }}
-                style={styles.clearBtn}
-              >
-                <Text style={styles.clearBtnText}>✕</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+        {/* Decorative background blobs */}
+        <View style={[styles.heroBlob1, { backgroundColor: theme.primary + '12' }]} />
+        <View style={[styles.heroBlob2, { backgroundColor: (isDark ? '#60A5FA' : '#1B3D6E') + '08' }]} />
 
-          {/* Search Results Panel */}
-          {(searchQuery.length > 0) && (
-            <View style={[styles.searchResultsPanel, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              {searchLoading ? (
-                <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 16 }} />
-              ) : searchResults && (searchResults.products.length > 0 || searchResults.services.length > 0) ? (
-                <>
-                  {searchResults.services.length > 0 && (
-                    <View>
-                      <Text style={styles.resultGroupLabel}>⚡ Services</Text>
-                      {searchResults.services.map(item => (
-                        <TouchableOpacity
-                          key={item.id}
-                          style={styles.resultRow}
-                          onPress={() => {
-                            setSearchQuery('');
-                            setSearchResults(null);
-                            navigation.navigate('Services');
-                          }}
-                        >
-                          <View style={[styles.resultIcon, { backgroundColor: theme.primary + '15' }]}>
-                            <Text style={{ fontSize: 14 }}>⚡</Text>
-                          </View>
-                          <View style={styles.resultInfo}>
-                            <Text style={[styles.resultName, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
-                            <Text style={[styles.resultMeta, { color: colorMode === 'dark' ? '#A1A1A6' : '#8E8E93' }]}>{item.category} · ${item.basePrice.toFixed(0)}/hr</Text>
-                          </View>
-                          <Text style={[styles.resultArrow, { color: theme.primary }]}>→</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                  {searchResults.products.length > 0 && (
-                    <View>
-                      <Text style={styles.resultGroupLabel}>📦 Products</Text>
-                      {searchResults.products.map(item => (
-                        <TouchableOpacity
-                          key={item.id}
-                          style={styles.resultRow}
-                          onPress={() => {
-                            setSearchQuery('');
-                            setSearchResults(null);
-                            navigation.navigate('ProductDetail', { productId: item.id });
-                          }}
-                        >
-                          <View style={[styles.resultIcon, { backgroundColor: '#FF950015' }]}>
-                            <Text style={{ fontSize: 14 }}>📦</Text>
-                          </View>
-                          <View style={styles.resultInfo}>
-                            <Text style={[styles.resultName, { color: theme.text }]} numberOfLines={1}>{item.name}</Text>
-                            <Text style={[styles.resultMeta, { color: colorMode === 'dark' ? '#A1A1A6' : '#8E8E93' }]}>{item.category || 'Product'} · ${item.price.toFixed(2)}</Text>
-                          </View>
-                          <Text style={[styles.resultArrow, { color: '#FF9500' }]}>→</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  )}
-                </>
-              ) : (
-                <Text style={styles.noResultsText}>No results found for "{searchQuery}"</Text>
-              )}
-            </View>
-          )}
-
-          {/* ─── HERO: Logo + Action Grid + Tagline ─── */}
-          <View style={[styles.heroSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            {/* FIXMART Logo */}
-            <View style={styles.heroLogoRow}>
-              <SafeLogo
-                logoUrl={logoUrl}
-                style={styles.heroLogoImg}
-                resizeMode="contain"
-              />
-              <Text style={styles.heroLogoText}>
-                <Text style={[styles.heroLogoFix, { color: colorMode === 'dark' ? '#60A5FA' : '#1B3D6E' }]}>FIX</Text>
-                <Text style={[styles.heroLogoMart, { color: theme.primary }]}>MART</Text>
-              </Text>
+        <View style={[styles.heroInner, isDesktop && styles.heroInnerDesktop]}>
+          {/* Left: Brand + tagline + CTA buttons */}
+          <View style={[styles.heroLeft, isDesktop && styles.heroLeftDesktop]}>
+            <View style={styles.heroBrandRow}>
+              <SafeLogo logoUrl={logoUrl} style={{ width: 52, height: 52, marginRight: 12 }} resizeMode="contain" />
+              <View>
+                <Text style={styles.heroBrandName}>
+                  <Text style={{ color: isDark ? '#60A5FA' : '#1B3D6E' }}>FIX</Text>
+                  <Text style={{ color: theme.primary }}>MART</Text>
+                </Text>
+                <View style={[styles.heroBadge, { backgroundColor: theme.primary + '18', borderColor: theme.primary + '30' }]}>
+                  <Text style={[styles.heroBadgeText, { color: theme.primary }]}>🌟 Nigeria's #1 Home Services Platform</Text>
+                </View>
+              </View>
             </View>
 
-            {/* Action Grid (Smaller & Horizontally aligned on large screen) */}
-            <View style={[styles.actionGrid, isLargeScreen && styles.actionGridHorizontal]}>
-              {/* Buy */}
+            <Text style={[styles.heroHeadline, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
+              Everything you need.{'\n'}
+              <Text style={{ color: theme.primary }}>One platform.</Text>
+            </Text>
+            <Text style={[styles.heroSubline, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+              Shop products, book verified handymen, request delivery riders — all from one trusted marketplace.
+            </Text>
+
+            {/* Hero CTA Buttons */}
+            <View style={[styles.heroCtaRow, isDesktop && { flexDirection: 'row', flexWrap: 'wrap' }]}>
               <TouchableOpacity
-                style={[
-                  styles.actionTile,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                  isLargeScreen && styles.actionTileHorizontal
-                ]}
+                style={[styles.heroCtaPrimary, { backgroundColor: theme.primary }]}
                 onPress={() => navigation.navigate('Products')}
-                activeOpacity={0.82}
+                activeOpacity={0.85}
               >
-                <View style={[styles.actionIconCircle, { backgroundColor: colorMode === 'dark' ? '#1B3E2B' : '#E8F5E9' }]}>
-                  <Text style={styles.actionEmoji}>🛍️</Text>
-                </View>
-                <Text style={[styles.actionLabel, { color: theme.text }]}>Buy</Text>
+                <Text style={styles.heroCtaPrimaryText}>🛍️ Shop Products</Text>
               </TouchableOpacity>
-
-              {/* Sell */}
               <TouchableOpacity
-                style={[
-                  styles.actionTile,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                  isLargeScreen && styles.actionTileHorizontal
-                ]}
-                onPress={handleSellPress}
-                activeOpacity={0.82}
-              >
-                <View style={[styles.actionIconCircle, { backgroundColor: colorMode === 'dark' ? '#3D381B' : '#FFFDE7' }]}>
-                  <Text style={styles.actionEmoji}>🏷️</Text>
-                </View>
-                <Text style={[styles.actionLabel, { color: theme.text }]}>Sell</Text>
-              </TouchableOpacity>
-
-              {/* Request a Service */}
-              <TouchableOpacity
-                style={[
-                  styles.actionTile,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                  isLargeScreen && styles.actionTileHorizontal
-                ]}
+                style={[styles.heroCtaSecondary, { borderColor: theme.primary + '50', backgroundColor: theme.primary + '10' }]}
                 onPress={() => navigation.navigate('Services')}
-                activeOpacity={0.82}
+                activeOpacity={0.85}
               >
-                <View style={[styles.actionIconCircle, { backgroundColor: colorMode === 'dark' ? '#1B2D3E' : '#E3F2FD' }]}>
-                  <Text style={styles.actionEmoji}>🛠️</Text>
-                </View>
-                <Text style={[styles.actionLabel, { color: theme.text }]}>{'Request\na Service'}</Text>
+                <Text style={[styles.heroCtaSecondaryText, { color: theme.primary }]}>⚡ Book Services</Text>
               </TouchableOpacity>
-
-              {/* Request a Rider */}
-              <TouchableOpacity
-                style={[
-                  styles.actionTile,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                  isLargeScreen && styles.actionTileHorizontal
-                ]}
-                onPress={() => navigation.navigate('BookParcel')}
-                activeOpacity={0.82}
-              >
-                <View style={[styles.actionIconCircle, { backgroundColor: colorMode === 'dark' ? '#1B3E2B' : '#E8F5E9' }]}>
-                  <Text style={styles.actionEmoji}>🛵</Text>
-                </View>
-                <Text style={[styles.actionLabel, { color: theme.text }]}>{'Request\na Rider'}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Tagline */}
-            <View style={styles.taglineBlock}>
-              <Text style={[styles.taglinePrimary, { color: theme.text }]}>Everything you need.</Text>
-              <Text style={[styles.taglineGreen, { color: theme.primary }]}>One platform.</Text>
             </View>
           </View>
 
-          {/* 🚚 Dedicated Rider Control Banner (When Logged in as RIDER) */}
-          {userInfo?.role === 'RIDER' && (
-            <View style={styles.riderHeroBanner}>
-              <View style={styles.riderHeroHeader}>
-                <Text style={styles.riderHeroIcon}>🛵</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.riderHeroTitle}>Rider Control Center</Text>
-                  <Text style={styles.riderHeroSub}>Deliver parcels & order dispatches in real-time</Text>
-                </View>
-              </View>
-              <View style={styles.riderHeroBtnRow}>
+          {/* Right: Quick Action Tiles */}
+          <View style={[styles.heroRight, isDesktop && styles.heroRightDesktop]}>
+            <View style={[styles.quickActionsGrid, !isDesktop && styles.quickActionsGridMobile]}>
+              {QUICK_ACTIONS.map((action) => (
                 <TouchableOpacity
-                  style={[styles.riderHeroBtn, { backgroundColor: '#34C759' }]}
-                  onPress={() => navigation.navigate('History', { type: 'orders', role: 'RIDER' })}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.riderHeroBtnText}>📋 Available Jobs</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.riderHeroBtn, { backgroundColor: theme.primary }]}
-                  onPress={() => navigation.navigate('RiderEarnings')}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.riderHeroBtnText}>💰 Earnings & Wallet</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-
-
-      {/* 🚀 Dynamic Slides Carousel */}
-      {(!slidesLoading || slides.length > 0) && (
-        <View style={styles.sliderWrapper}>
-          <ScrollView
-            ref={slideScrollViewRef}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-            style={[styles.sliderScroll, { width: Math.min(width, 1200) - 40 }]}
-          >
-            {(slides.length > 0 ? slides : PROMO_SLIDES).map((slide: any) => {
-              const slideWidth = Math.min(width, 1200) - 40;
-
-              // If slide has an image URL (admin uploaded slide)
-              if (slide.imageUrl) {
-                return (
-                  <View key={slide.id} style={[styles.slideCard, { width: slideWidth }]}>
-                    <Image source={{ uri: slide.imageUrl }} style={styles.slideImage} resizeMode="cover" />
-                    <View style={styles.slideOverlay} />
-                    {slide.caption && (
-                      <View style={styles.slideCaptionContainer}>
-                        <Text style={styles.slideCaptionText}>{slide.caption}</Text>
-                      </View>
-                    )}
-                  </View>
-                );
-              }
-
-              // Built-in promo card (gradient + icon + CTA)
-              const colors = slide.gradient || ['#0f2027', '#203a43'];
-              return (
-                <TouchableOpacity
-                  key={slide.id}
-                  activeOpacity={0.9}
-                  style={[styles.slideCard, { width: slideWidth }]}
-                  onPress={() => {
-                    if (slide.action) {
-                      if (slide.action === 'Products') navigation.navigate('Products');
-                      else if (slide.action === 'Services') navigation.navigate('Services');
-                      else navigation.navigate(slide.action);
-                    }
-                  }}
-                >
-                  <LinearGradient colors={colors} style={styles.promoSlideGradient}>
-                    <View style={styles.promoSlideContent}>
-                      <Text style={styles.promoSlideIcon}>{slide.icon || '🛍️'}</Text>
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <Text style={styles.promoSlideTitle}>{slide.title}</Text>
-                        <Text style={styles.promoSlideSub}>{slide.subtitle}</Text>
-                      </View>
-                      <View style={[styles.promoSlideCtaBtn, { backgroundColor: slide.accent || '#FFF' }]}>
-                        <Text style={styles.promoSlideCtaText}>{slide.cta || 'Explore'} →</Text>
-                      </View>
-                    </View>
-                  </LinearGradient>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Dots Indicator */}
-          {(slides.length > 1 || PROMO_SLIDES.length > 1) && (
-            <View style={styles.indicatorContainer}>
-              {(slides.length > 0 ? slides : PROMO_SLIDES).map((_, i) => (
-                <View
-                  key={i}
+                  key={action.screen}
                   style={[
-                    styles.indicatorDot,
-                    { backgroundColor: activeSlideIndex === i ? theme.primary : '#FFFFFF99' }
+                    styles.quickTile,
+                    { backgroundColor: isDark ? theme.card : '#FFFFFF', borderColor: isDark ? theme.border : '#E2E8F0' },
+                    isDesktop && styles.quickTileDesktop
                   ]}
-                />
+                  onPress={() => handleActionPress(action.screen)}
+                  activeOpacity={0.82}
+                >
+                  <View style={[styles.quickTileIcon, { backgroundColor: isDark ? action.bgDark : action.bgLight }]}>
+                    <Text style={styles.quickTileEmoji}>{action.icon}</Text>
+                  </View>
+                  <Text style={[styles.quickTileLabel, { color: isDark ? '#F1F5F9' : '#1E293B' }]}>{action.label}</Text>
+                  <View style={[styles.quickTileArrow, { backgroundColor: action.accent + '18' }]}>
+                    <Text style={[styles.quickTileArrowText, { color: action.accent }]}>→</Text>
+                  </View>
+                </TouchableOpacity>
               ))}
             </View>
+          </View>
+        </View>
+      </LinearGradient>
+    </Animated.View>
+  );
+
+  const renderTrustBar = () => (
+    <View style={[styles.trustBar, { backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+      {[
+        { icon: '✅', val: '10K+', label: 'Orders Delivered' },
+        { icon: '🛠️', val: '500+', label: 'Verified Handymen' },
+        { icon: '🚚', val: '200+', label: 'Active Riders' },
+        { icon: '⭐', val: '4.9', label: 'Avg Rating' },
+      ].map((stat, i, arr) => (
+        <React.Fragment key={stat.val}>
+          <View style={styles.trustStat}>
+            <Text style={styles.trustStatIcon}>{stat.icon}</Text>
+            <Text style={[styles.trustStatVal, { color: theme.primary }]}>{stat.val}</Text>
+            <Text style={[styles.trustStatLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>{stat.label}</Text>
+          </View>
+          {i < arr.length - 1 && <View style={[styles.trustDivider, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]} />}
+        </React.Fragment>
+      ))}
+    </View>
+  );
+
+  const renderSearch = () => (
+    <View style={styles.searchSection}>
+      <View style={[
+        styles.searchBox,
+        { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: searchFocused ? theme.primary : (isDark ? '#334155' : '#E2E8F0') },
+        searchFocused && { shadowColor: theme.primary, shadowOpacity: 0.15 }
+      ]}>
+        <Text style={styles.searchBoxIcon}>🔍</Text>
+        <TextInput
+          style={[styles.searchBoxInput, { color: isDark ? '#F1F5F9' : '#1E293B' }]}
+          placeholder="Search products, services, categories..."
+          placeholderTextColor={isDark ? '#475569' : '#94A3B8'}
+          value={searchQuery}
+          onChangeText={handleSearchChange}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          returnKeyType="search"
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults(null); }} style={styles.searchClear}>
+            <Text style={[styles.searchClearText, { color: isDark ? '#64748B' : '#94A3B8' }]}>✕</Text>
+          </TouchableOpacity>
+        )}
+        {searchQuery.length > 0 && (
+          <TouchableOpacity
+            style={[styles.searchBtn, { backgroundColor: theme.primary }]}
+            onPress={() => performSearch(searchQuery)}
+          >
+            <Text style={styles.searchBtnText}>Search</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {searchQuery.length > 0 && (
+        <View style={[styles.searchDropdown, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+          {searchLoading ? (
+            <ActivityIndicator color={theme.primary} style={{ marginVertical: 20 }} />
+          ) : searchResults && (searchResults.products.length > 0 || searchResults.services.length > 0) ? (
+            <>
+              {searchResults.services.length > 0 && (
+                <View>
+                  <Text style={[styles.searchGroupLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>⚡ SERVICES</Text>
+                  {searchResults.services.map(item => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.searchResultRow, { borderBottomColor: isDark ? '#1E293B' : '#F8FAFC' }]}
+                      onPress={() => { setSearchQuery(''); setSearchResults(null); navigation.navigate('Services'); }}
+                    >
+                      <View style={[styles.searchResultIcon, { backgroundColor: theme.primary + '15' }]}>
+                        <Text>⚡</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.searchResultName, { color: isDark ? '#F1F5F9' : '#1E293B' }]} numberOfLines={1}>{item.name}</Text>
+                        <Text style={[styles.searchResultMeta, { color: isDark ? '#64748B' : '#94A3B8' }]}>{item.category}</Text>
+                      </View>
+                      <Text style={[styles.searchResultArrow, { color: theme.primary }]}>→</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {searchResults.products.length > 0 && (
+                <View>
+                  <Text style={[styles.searchGroupLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>📦 PRODUCTS</Text>
+                  {searchResults.products.map(item => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.searchResultRow, { borderBottomColor: isDark ? '#1E293B' : '#F8FAFC' }]}
+                      onPress={() => { setSearchQuery(''); setSearchResults(null); navigation.navigate('ProductDetail', { productId: item.id }); }}
+                    >
+                      <View style={[styles.searchResultIcon, { backgroundColor: '#F59E0B15' }]}>
+                        <Text>📦</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.searchResultName, { color: isDark ? '#F1F5F9' : '#1E293B' }]} numberOfLines={1}>{item.name}</Text>
+                        <Text style={[styles.searchResultMeta, { color: isDark ? '#64748B' : '#94A3B8' }]}>{fmt(item.price)}</Text>
+                      </View>
+                      <Text style={[styles.searchResultArrow, { color: '#F59E0B' }]}>→</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </>
+          ) : (
+            <Text style={[styles.searchEmpty, { color: isDark ? '#64748B' : '#94A3B8' }]}>No results for "{searchQuery}"</Text>
           )}
         </View>
       )}
+    </View>
+  );
 
-      {/* Jiji Premium Spotlights Section */}
-      <View style={styles.spotlightHeader}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>🔥 Premium Spotlight</Text>
-        <Text style={styles.spotlightBadge}>Boosted Ads</Text>
+  const renderSlider = () => (
+    (!slidesLoading || slides.length > 0) && (
+      <View style={styles.sliderSection}>
+        <ScrollView
+          ref={slideScrollViewRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onScroll={handleSliderScroll}
+          scrollEventThrottle={16}
+          style={{ width: slideW }}
+        >
+          {(slides.length > 0 ? slides : PROMO_SLIDES).map(renderSlide)}
+        </ScrollView>
+        {slides.length > 1 && (
+          <View style={styles.dotRow}>
+            {slides.map((_, i) => (
+              <TouchableOpacity key={i} onPress={() => {
+                setActiveSlideIndex(i);
+                slideScrollViewRef.current?.scrollTo({ x: i * slideW, animated: true });
+              }}>
+                <View style={[
+                  styles.dot,
+                  { backgroundColor: i === activeSlideIndex ? theme.primary : (isDark ? '#334155' : '#CBD5E1') },
+                  i === activeSlideIndex && { width: 20 }
+                ]} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+    )
+  );
+
+  const renderSpotlights = () => (
+    <View style={styles.sectionBlock}>
+      <View style={styles.sectionHeader}>
+        <View>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>🔥 Premium Spotlight</Text>
+          <Text style={[styles.sectionSub, { color: isDark ? '#64748B' : '#94A3B8' }]}>Featured & boosted listings</Text>
+        </View>
+        <View style={[styles.sectionBadge, { backgroundColor: '#FFF3E0', borderColor: '#FFCC02' }]}>
+          <Text style={styles.sectionBadgeText}>BOOSTED ADS</Text>
+        </View>
       </View>
 
       {loading ? (
-        <ActivityIndicator size="small" color={theme.primary} style={{ marginVertical: 20 }} />
+        <ActivityIndicator color={theme.primary} style={{ marginVertical: 24 }} />
       ) : promotedListings.length === 0 ? (
-        <View style={[styles.emptySpotlightCard, { borderColor: theme.border }]}>
-          <Text style={styles.emptySpotlightText}>No boosted ads today. Promoted items show here!</Text>
+        <View style={[styles.emptyCard, { borderColor: isDark ? '#334155' : '#E2E8F0', backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }]}>
+          <Text style={styles.emptyCardIcon}>🏷️</Text>
+          <Text style={[styles.emptyCardText, { color: isDark ? '#64748B' : '#94A3B8' }]}>No promoted listings yet</Text>
         </View>
       ) : (
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          contentContainerStyle={styles.carouselContainer}
-        >
-          {promotedListings.map((item) => (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 4, paddingBottom: 4 }}>
+          {promotedListings.map(item => (
             <TouchableOpacity
               key={`${item.itemType}-${item.id}`}
-              style={[styles.spotlightCard, { borderColor: theme.border }]}
+              style={[styles.spotCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}
               onPress={() => {
-                if (item.itemType === 'product') {
-                  navigation.navigate('ProductDetail', { productId: item.id });
-                } else {
-                  // Navigate to the Services list — BookingSetup opens from there
-                  navigation.navigate('Services');
-                }
+                if (item.itemType === 'product') navigation.navigate('ProductDetail', { productId: item.id });
+                else navigation.navigate('Services');
               }}
-              activeOpacity={0.9}
+              activeOpacity={0.88}
             >
               {item.imageUrl ? (
-                <Image source={{ uri: item.imageUrl }} style={styles.spotlightImage} resizeMode="cover" />
+                <Image source={{ uri: item.imageUrl }} style={styles.spotImage} resizeMode="cover" />
               ) : (
-                <View style={styles.spotlightPlaceholder}>
-                  <Text style={styles.spotlightPlaceholderText}>
-                    {item.itemType === 'product' ? '📦 Product' : '⚡ Service'}
-                  </Text>
+                <View style={[styles.spotPlaceholder, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}>
+                  <Text style={styles.spotPlaceholderIcon}>{item.itemType === 'product' ? '📦' : '⚡'}</Text>
                 </View>
               )}
-              <View style={styles.spotlightPromoTag}>
-                <Text style={styles.spotlightPromoTagText}>🔥 Promoted</Text>
+              <View style={styles.spotTag}>
+                <Text style={styles.spotTagText}>🔥 HOT</Text>
               </View>
-              <View style={styles.spotlightContent}>
-                <Text style={styles.spotlightName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.spotlightCategory}>
-                  {item.category || (item.itemType === 'product' ? 'Merchandise' : 'General')}
+              <View style={styles.spotBody}>
+                <Text style={[styles.spotName, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={1}>{item.name}</Text>
+                <Text style={[styles.spotCat, { color: isDark ? '#64748B' : '#94A3B8' }]} numberOfLines={1}>
+                  {item.category || (item.itemType === 'product' ? 'Merchandise' : 'Service')}
                 </Text>
-                <Text style={[styles.spotlightPrice, { color: theme.primary }]}>
-                  ${item.price?.toFixed(2) || item.basePrice?.toFixed(2)}
-                  {item.itemType === 'service' && <Text style={styles.perHourText}>/hr base</Text>}
-                </Text>
+                <View style={styles.spotPriceRow}>
+                  <Text style={[styles.spotPrice, { color: theme.primary }]}>
+                    {fmt(item.price ?? item.basePrice ?? 0)}
+                  </Text>
+                  {item.itemType === 'service' && <Text style={[styles.spotPriceSuffix, { color: isDark ? '#64748B' : '#94A3B8' }]}>/hr</Text>}
+                </View>
               </View>
             </TouchableOpacity>
           ))}
         </ScrollView>
       )}
+    </View>
+  );
 
-
-      {(userInfo?.role === 'ADMIN' || userInfo?.role === 'HANDYMAN') && (
-        <TouchableOpacity 
-          style={[styles.card, { borderLeftColor: theme.secondary, borderColor: theme.border }]} 
-          onPress={() => navigation.navigate('History', { type: 'bookings', role: userInfo.role })}
-          activeOpacity={0.8}
-        >
-          <View style={styles.cardInfo}>
-            <Text style={[styles.cardTitle, { color: theme.secondary }]}>📋 Manage Bookings</Text>
-            <Text style={styles.cardDesc}>
-              {userInfo?.role === 'ADMIN' 
-                ? 'View and manage all platform bookings and job assignments.'
-                : 'View your assigned jobs, track job locations, and mark completions.'}
-            </Text>
+  const renderRiderBanner = () => userInfo?.role === 'RIDER' && (
+    <View style={styles.riderBanner}>
+      <LinearGradient colors={['#0F172A', '#1E3A5F']} style={styles.riderBannerGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+        <View style={styles.riderBannerDecor} />
+        <View style={styles.riderBannerLeft}>
+          <Text style={styles.riderBannerIcon}>🛵</Text>
+          <View>
+            <Text style={styles.riderBannerTitle}>Rider Control Center</Text>
+            <Text style={styles.riderBannerSub}>Manage deliveries & track earnings</Text>
           </View>
-          <View style={styles.chevron}><Text style={styles.chevronText}>→</Text></View>
-        </TouchableOpacity>
-      )}
+        </View>
+        <View style={styles.riderBannerBtns}>
+          <TouchableOpacity
+            style={[styles.riderBannerBtn, { backgroundColor: '#22C55E' }]}
+            onPress={() => navigation.navigate('History', { type: 'orders', role: 'RIDER' })}
+          >
+            <Text style={styles.riderBannerBtnText}>📋 Jobs</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.riderBannerBtn, { backgroundColor: '#3B82F6', marginTop: 8 }]}
+            onPress={() => navigation.navigate('RiderEarnings')}
+          >
+            <Text style={styles.riderBannerBtnText}>💰 Earn</Text>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+    </View>
+  );
 
-
-      {/* Dynamic brand footer */}
-      <View style={styles.footerContainer}>
-        {Platform.OS === 'web' && (
-          <View style={[styles.downloadAppCard, { backgroundColor: theme.card || '#FFFFFF', borderColor: theme.border, width: '100%' }]}>
-            <View style={styles.downloadAppContent}>
-              <Text style={[styles.downloadAppTitle, { color: theme.text }]}>🌐 More Ways to Get the App</Text>
-              <Text style={styles.downloadAppDesc}>
-                Shop, book & track anywhere. Available on Android.
-              </Text>
-              <View style={styles.downloadBtnRow}>
-                {/* Direct Android APK Download */}
-                <TouchableOpacity
-                  style={[styles.storeBadgeBtn, styles.apkDownloadBtn]}
-                  onPress={() => triggerDirectApkDownload(apkUrl)}
-                  activeOpacity={0.85}
-                  accessibilityLabel="Download Android APK File"
-                >
-                  <Text style={styles.storeIcon}>📥</Text>
-                  <View style={styles.storeTextCol}>
-                    <Text style={styles.storeSubtext}>DIRECT FILE</Text>
-                    <Text style={styles.storeTitle}>Android APK</Text>
-                  </View>
-                </TouchableOpacity>
-
-                {/* Direct Android AAB Download */}
-                <TouchableOpacity
-                  style={styles.storeBadgeBtn}
-                  onPress={() => triggerDirectAabDownload(aabUrl)}
-                  activeOpacity={0.85}
-                  accessibilityLabel="Download Android AAB Bundle"
-                >
-                  <Text style={styles.storeIcon}>📦</Text>
-                  <View style={styles.storeTextCol}>
-                    <Text style={styles.storeSubtext}>BUNDLE FILE</Text>
-                    <Text style={styles.storeTitle}>Android AAB</Text>
-                  </View>
-                </TouchableOpacity>
-
-                {/* App Store */}
-                <TouchableOpacity
-                  style={[styles.storeBadgeBtn, styles.appStoreBtn]}
-                  onPress={() => {
-                    Alert.alert(
-                      '📱 FixMart Mobile App',
-                      'Direct Android APK & AAB download will start. iOS App Store coming soon!',
-                      [
-                        { text: 'Download APK', onPress: () => triggerDirectApkDownload(apkUrl) },
-                        { text: 'Download AAB', onPress: () => triggerDirectAabDownload(aabUrl) },
-                        { text: 'Cancel', style: 'cancel' }
-                      ]
-                    );
-                  }}
-                  activeOpacity={0.85}
-                  accessibilityLabel="Download on App Store"
-                >
-                  <Text style={styles.storeIcon}>🍏</Text>
-                  <View style={styles.storeTextCol}>
-                    <Text style={styles.storeSubtext}>DOWNLOAD ON THE</Text>
-                    <Text style={styles.storeTitle}>App Store</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        )}
-        <Text style={styles.footerText}>{footerText}</Text>
+  const renderAdminCard = () => (userInfo?.role === 'ADMIN' || userInfo?.role === 'HANDYMAN') && (
+    <TouchableOpacity
+      style={[styles.adminCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0', borderLeftColor: theme.secondary || theme.primary }]}
+      onPress={() => navigation.navigate('History', { type: 'bookings', role: userInfo?.role })}
+      activeOpacity={0.85}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.adminCardTitle, { color: theme.secondary || theme.primary }]}>📋 Manage Bookings</Text>
+        <Text style={[styles.adminCardDesc, { color: isDark ? '#64748B' : '#94A3B8' }]}>
+          {userInfo?.role === 'ADMIN'
+            ? 'View and manage all platform bookings and job assignments.'
+            : 'View your assigned jobs, track locations, and mark completions.'}
+        </Text>
       </View>
+      <View style={[styles.chevronCircle, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}>
+        <Text style={[styles.chevronText, { color: isDark ? '#94A3B8' : '#64748B' }]}>→</Text>
+      </View>
+    </TouchableOpacity>
+  );
 
-      </ResponsiveContainer>
-    </ScrollView>
+  const renderDownloadBanner = () => Platform.OS === 'web' && (
+    <View style={[styles.downloadBanner, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+      <View style={styles.downloadBannerLeft}>
+        <Text style={styles.downloadBannerIcon}>📱</Text>
+        <View>
+          <Text style={[styles.downloadBannerTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>Get the FixMart App</Text>
+          <Text style={[styles.downloadBannerSub, { color: isDark ? '#64748B' : '#94A3B8' }]}>Shop, book & track on-the-go</Text>
+        </View>
+      </View>
+      <View style={styles.downloadBannerBtns}>
+        <TouchableOpacity
+          style={[styles.downloadBtn, { backgroundColor: '#22C55E' }]}
+          onPress={() => triggerDownload(apkUrl, 'fixmart-latest.apk')}
+        >
+          <Text style={styles.downloadBtnText}>📥 Android APK</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.downloadBtn, { backgroundColor: '#0F172A', marginLeft: 10 }]}
+          onPress={() => triggerDownload(aabUrl, 'fixmart-latest.aab')}
+        >
+          <Text style={styles.downloadBtnText}>📦 Android AAB</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderFooter = () => (
+    <View style={[styles.footer, { borderTopColor: isDark ? '#334155' : '#E2E8F0' }]}>
+      <View style={styles.footerBrand}>
+        <SafeLogo logoUrl={logoUrl} style={{ width: 28, height: 28 }} resizeMode="contain" />
+        <Text style={styles.footerBrandText}>
+          <Text style={{ color: isDark ? '#60A5FA' : '#1B3D6E', fontWeight: '900' }}>Fix</Text>
+          <Text style={{ color: theme.primary, fontWeight: '900' }}>Mart</Text>
+        </Text>
+      </View>
+      <Text style={[styles.footerText, { color: isDark ? '#475569' : '#94A3B8' }]}>{footerText || '© 2025 FixMart. All rights reserved.'}</Text>
+    </View>
+  );
+
+  // ── Main Render ──────────────────────────────────────────────────────────
+  return (
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
+      {/* Sticky Navbar */}
+      {Platform.OS === 'web' ? (
+        <View style={styles.stickyNav}>
+          {isDesktop || isTablet ? renderDesktopNavbar() : renderMobileNavbar()}
+        </View>
+      ) : renderMobileNavbar()}
+
+      {/* Page Content */}
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={[styles.pageContent, Platform.OS === 'web' && styles.pageContentWeb]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <ResponsiveContainer maxWidth={1280}>
+          {/* Hero */}
+          {renderHero()}
+
+          {/* Trust Bar */}
+          {renderTrustBar()}
+
+          {/* Search */}
+          {renderSearch()}
+
+          {/* Rider Banner */}
+          {renderRiderBanner()}
+
+          {/* Slider Carousel */}
+          {renderSlider()}
+
+          {/* Premium Spotlights */}
+          {renderSpotlights()}
+
+          {/* Admin / Handyman Card */}
+          {renderAdminCard()}
+
+          {/* Download App Banner */}
+          {renderDownloadBanner()}
+
+          {/* Footer */}
+          {renderFooter()}
+        </ResponsiveContainer>
+      </ScrollView>
     </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  // ── Hero Grid Section ────────────────────────────────────────────────────
-  heroSection: {
-    alignItems: 'center',
-    paddingVertical: 20,
-    paddingHorizontal: 8,
-    backgroundColor: '#FFFFFF',
+  root: { flex: 1 },
+  stickyNav: { zIndex: 1000, ...Platform.select({ web: { position: 'sticky' as any, top: 0 } }) },
+
+  // ── Desktop Navbar ────────────────────────────────────────────────────────
+  desktopNavbar: {
+    borderBottomWidth: 1,
+    paddingHorizontal: 24,
+    height: 60,
+    justifyContent: 'center',
   },
-  heroLogoRow: {
+  desktopNavInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    maxWidth: 1280,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  desktopNavLinks: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: 32,
+    gap: 4,
+  },
+  navLinkBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  navLinkText: { fontSize: 14, fontWeight: '600' },
+  navLinkActive: { height: 2, borderRadius: 2, marginTop: 3, width: '60%' },
+  desktopNavRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
-  heroLogoImg: {
-    width: 44,
-    height: 44,
-  },
-  heroLogoText: {
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  heroLogoFix: {
-    color: '#1B3D6E',
-  },
-  heroLogoMart: {
-    color: '#22A45D',
-  },
-  actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 10,
-    width: '100%',
-    paddingHorizontal: 4,
-    marginBottom: 20,
-  },
-  actionGridHorizontal: {
-    flexWrap: 'nowrap',
-    maxWidth: 580,
-    alignSelf: 'center',
-  },
-  actionTile: {
-    width: '44%',
-    maxWidth: 125,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+  navIconBtn: {
+    width: 36, height: 36, borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E8E8E8',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2,
+    alignItems: 'center', justifyContent: 'center',
   },
-  actionTileHorizontal: {
-    flex: 1,
-    width: 'auto',
-  },
-  actionIconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  actionEmoji: {
-    fontSize: 20,
-  },
-  actionLabel: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    textAlign: 'center',
-    lineHeight: 14,
-  },
-  taglineBlock: {
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  taglinePrimary: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    textAlign: 'center',
-  },
-  taglineGreen: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#22A45D',
-    textAlign: 'center',
-  },
-  // ── Search ───────────────────────────────────────────────────────────────
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
-    marginBottom: 16,
-    width: '92%',
-    maxWidth: 480,
-    alignSelf: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  searchIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    color: '#1C1C1E',
-    paddingVertical: 10,
-  },
-  clearBtn: {
-    padding: 4,
-  },
-  clearBtnText: {
-    fontSize: 13,
-    color: '#AEAEB2',
-    fontWeight: '700',
-  },
-  searchResultsPanel: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 16,
-    width: '92%',
-    maxWidth: 480,
-    alignSelf: 'center',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  resultGroupLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#8E8E93',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
-  resultRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F2F2F7',
-  },
-  resultIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  resultInfo: {
-    flex: 1,
-  },
-  resultName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1C1C1E',
-    marginBottom: 2,
-  },
-  resultMeta: {
-    fontSize: 12,
-    color: '#8E8E93',
-  },
-  resultArrow: {
-    fontSize: 16,
-    fontWeight: '800',
-    marginLeft: 8,
-  },
-  noResultsText: {
-    fontSize: 13,
-    color: '#8E8E93',
-    textAlign: 'center',
-    paddingVertical: 20,
-    paddingHorizontal: 14,
-  },
-  container: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 20,
-    paddingTop: 10,
-  },
-  brandHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    marginTop: 10,
-  },
-  logoImage: {
-    width: 140,
-    height: 38,
-  },
-  logoText: {
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  profileIndicator: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  profileIndicatorText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  welcomeBanner: {
-    padding: 24,
-    borderRadius: 20,
-    marginBottom: 20,
-    position: 'relative',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 15,
-    elevation: 3,
-  },
-  bannerOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.12)',
-  },
-  welcomeSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  welcomeTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 10,
-    lineHeight: 30,
-  },
-  bannerDesc: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.9)',
-    lineHeight: 18,
-  },
-  statsCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 16,
-    borderRadius: 16,
-    marginBottom: 28,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  statsCol: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statsVal: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  statsLabel: {
-    fontSize: 12,
-    color: '#8E8E93',
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  statsDivider: {
-    width: 1,
-    height: '100%',
-  },
-  spotlightHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  spotlightBadge: {
-    backgroundColor: '#FFF3E0',
-    color: '#FF9500',
-    fontSize: 11,
-    fontWeight: '700',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    textTransform: 'uppercase',
-  },
-  emptySpotlightCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 28,
-  },
-  emptySpotlightText: {
-    fontSize: 13,
-    color: '#8E8E93',
-    textAlign: 'center',
-  },
-  carouselContainer: {
-    paddingRight: 20,
-    paddingBottom: 10,
-  },
-  spotlightCard: {
-    width: 160,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    marginRight: 14,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-    marginBottom: 20,
-  },
-  spotlightImage: {
-    width: '100%',
-    height: 140,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-  spotlightPlaceholder: {
-    width: '100%',
-    height: 100,
-    backgroundColor: '#E9ECEF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  spotlightPlaceholderText: {
-    color: '#ADB5BD',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  spotlightPromoTag: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: '#FF9500',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  spotlightPromoTagText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  spotlightContent: {
-    padding: 10,
-  },
-  spotlightName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    marginBottom: 2,
-  },
-  spotlightCategory: {
-    fontSize: 10,
-    color: '#8E8E93',
-    marginBottom: 6,
-  },
-  spotlightPrice: {
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  perHourText: {
-    fontSize: 9,
-    color: '#8E8E93',
-    fontWeight: '400',
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 16,
+  navIconBtnText: { fontSize: 16 },
+
+  // ── Mobile Navbar ─────────────────────────────────────────────────────────
+  mobileNavbar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderWidth: 1,
-    borderLeftWidth: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  cardInfo: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  cardDesc: {
-    fontSize: 13,
-    color: '#8E8E93',
-    lineHeight: 18,
-  },
-  chevron: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#F2F2F7',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  chevronText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#8E8E93',
-  },
-  footerContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 24,
-    marginBottom: 16,
-  },
-  footerText: {
-    fontSize: 11,
-    color: '#AEAEB2',
-    textAlign: 'center',
-  },
-  sliderWrapper: {
-    marginBottom: 20,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#FFF',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    position: 'relative',
-  },
-  sliderScroll: {
-    height: 180,
-  },
-  slideCard: {
-    height: 180,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  promoSlideGradient: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  promoSlideContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  promoSlideIcon: {
-    fontSize: 42,
-  },
-  promoSlideTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    marginBottom: 4,
-  },
-  promoSlideSub: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontWeight: '500',
-    lineHeight: 18,
-  },
-  promoSlideCtaBtn: {
-    paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
-    marginLeft: 12,
-  },
-  promoSlideCtaText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F2027',
-  },
-  slideImage: {
-    width: '100%',
-    height: '100%',
-  },
-  slidePlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#E5E5EA',
-  },
-  slideOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  slideCaptionContainer: {
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-  },
-  slideCaptionText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '800',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  indicatorContainer: {
-    position: 'absolute',
-    bottom: 8,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    zIndex: 10,
-  },
-  indicatorDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  navHeader: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
     paddingVertical: 12,
-    marginBottom: 16,
-    zIndex: 100,
-  },
-  navHeaderContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-  },
-  logoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexShrink: 1,
-  },
-  headerLogoImage: {
-    width: 36,
-    height: 36,
-    marginRight: 8,
-  },
-  headerTitleBlock: {
-    flexDirection: 'column',
-    justifyContent: 'center',
-    flexShrink: 1,
-  },
-  headerBrandTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    lineHeight: 22,
-  },
-  headerTagline: {
-    fontSize: 9.5,
-    color: '#8E8E93',
-    fontWeight: '500',
-    letterSpacing: 0.1,
-  },
-  desktopNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  navLink: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  navLinkLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#3A3A3C',
-  },
-  activeNavLink: {
-    fontWeight: '700',
-  },
-  mobileNavHeaderRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  hamburgerButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  hamburgerIcon: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  mobileMenuDropdown: {
-    position: 'absolute',
-    top: 50,
-    right: 0,
-    width: 200,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-    zIndex: 999,
-  },
-  mobileMenuItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  mobileMenuText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#1C1C1E',
-  },
-  webHeaderWrapper: {
-    width: '100%',
-    zIndex: 1000,
     borderBottomWidth: 1,
-    paddingHorizontal: 20,
+    zIndex: 100,
+    position: 'relative',
   },
-
-  // ── Download App Card Styles ─────────────────────────────────────────────
-  downloadAppCard: {
-    borderRadius: 20,
+  mobileNavRight: { flexDirection: 'row', alignItems: 'center' },
+  hamburger: {
+    width: 36, height: 36, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  hamburgerText: { fontSize: 18, fontWeight: '700' },
+  mobileDrawer: {
+    position: 'absolute',
+    top: 56, right: 12,
+    width: 220,
+    borderRadius: 14,
     borderWidth: 1,
-    padding: 24,
-    marginTop: 24,
-    marginBottom: 24,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  downloadAppContent: {
-    alignItems: 'center',
-  },
-  downloadAppTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  downloadAppDesc: {
-    fontSize: 14,
-    color: '#8E8E93',
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 20,
-    maxWidth: 480,
-  },
-  downloadBtnRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 12,
-    width: '100%',
-  },
-  storeBadgeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#000000',
-    borderRadius: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    minWidth: 160,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  appStoreBtn: {
-    backgroundColor: '#1C1C1E',
-  },
-  apkDownloadBtn: {
-    backgroundColor: '#2E7D32',
-  },
-  storeIcon: {
-    fontSize: 24,
-    marginRight: 10,
-  },
-  storeTextCol: {
-    flexDirection: 'column',
-  },
-  storeSubtext: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#A1A1A6',
-    letterSpacing: 0.5,
-  },
-  storeTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-
-  // ── Rider Hero Banner Styles ─────────────────────────────────────────────
-  riderHeroBanner: {
-    backgroundColor: '#0F172A',
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  riderHeroHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-    gap: 12,
-  },
-  riderHeroIcon: {
-    fontSize: 36,
-  },
-  riderHeroTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  riderHeroSub: {
-    fontSize: 12,
-    color: '#94A3B8',
-    fontWeight: '500',
-  },
-  riderHeroBtnRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  riderHeroBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  riderHeroBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 13,
-  },
-
-  // ── Mobile/Universal Download Banner ─────────────────────────────────────
-  mobileDownloadBanner: {
-    borderRadius: 20,
-    padding: 20,
-    marginVertical: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    shadowColor: '#000',
+    paddingVertical: 6,
+    zIndex: 999,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.12,
     shadowRadius: 16,
     elevation: 8,
   },
-  mobileDownloadLeft: {
-    flex: 1,
+  drawerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
   },
-  appVersionBadge: {
+  drawerItemIcon: { fontSize: 16, marginRight: 10, width: 24, textAlign: 'center' },
+  drawerItemLabel: { flex: 1, fontSize: 14, fontWeight: '600' },
+  drawerChevron: { fontSize: 18, fontWeight: '300' },
+
+  // ── Shared Nav ────────────────────────────────────────────────────────────
+  navBrand: { flexDirection: 'row', alignItems: 'center' },
+  navBrandText: { fontSize: 20, fontWeight: '900', marginLeft: 8, letterSpacing: -0.5 },
+  navBrandFix: { color: '#1B3D6E' },
+  navBrandMart: { color: '#22A45D' },
+  navAvatar: {
+    width: 36, height: 36, borderRadius: 18,
+    borderWidth: 2,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  navAvatarText: { fontSize: 15, fontWeight: '800' },
+
+  // ── Page Layout ───────────────────────────────────────────────────────────
+  pageContent: { paddingBottom: 40 },
+  pageContentWeb: { paddingTop: 0 },
+
+  // ── Hero ──────────────────────────────────────────────────────────────────
+  heroSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 36,
+    marginBottom: 0,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  heroSectionDesktop: {
+    paddingHorizontal: 48,
+    paddingVertical: 56,
+  },
+  heroBlob1: {
+    position: 'absolute',
+    width: 300, height: 300,
+    borderRadius: 150,
+    top: -80, right: -60,
+  },
+  heroBlob2: {
+    position: 'absolute',
+    width: 200, height: 200,
+    borderRadius: 100,
+    bottom: -40, left: -40,
+  },
+  heroInner: {
+    zIndex: 1,
+  },
+  heroInnerDesktop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 48,
+  },
+  heroLeft: { flex: 1 },
+  heroLeftDesktop: { maxWidth: 520 },
+  heroRight: { marginTop: 28 },
+  heroRightDesktop: { flex: 1, marginTop: 0 },
+
+  heroBrandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  heroBrandName: {
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: -1,
+    marginBottom: 4,
+  },
+  heroBadge: {
+    flexDirection: 'row',
     alignSelf: 'flex-start',
-    backgroundColor: '#22D3EE33',
-    borderColor: '#22D3EE66',
-    borderWidth: 1,
-    borderRadius: 20,
     paddingHorizontal: 10,
     paddingVertical: 3,
-    marginBottom: 8,
+    borderRadius: 20,
+    borderWidth: 1,
   },
-  appVersionText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#22D3EE',
-    letterSpacing: 0.5,
-  },
-  mobileDownloadTitle: {
-    fontSize: 17,
+  heroBadgeText: { fontSize: 11, fontWeight: '700' },
+
+  heroHeadline: {
+    fontSize: 30,
     fontWeight: '900',
+    lineHeight: 38,
+    marginBottom: 12,
+    letterSpacing: -0.5,
+  },
+  heroSubline: {
+    fontSize: 14,
+    lineHeight: 22,
+    fontWeight: '500',
+    marginBottom: 24,
+    maxWidth: 440,
+  },
+
+  heroCtaRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  heroCtaPrimary: {
+    paddingHorizontal: 20,
+    paddingVertical: 13,
+    borderRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  heroCtaPrimaryText: {
     color: '#FFFFFF',
-    marginBottom: 4,
+    fontSize: 14,
+    fontWeight: '800',
   },
-  mobileDownloadDesc: {
-    fontSize: 12,
-    color: '#94A3B8',
-    lineHeight: 17,
+  heroCtaSecondary: {
+    paddingHorizontal: 20,
+    paddingVertical: 13,
+    borderRadius: 12,
+    borderWidth: 1.5,
   },
-  apkMainBtn: {
-    backgroundColor: '#22C55E',
+  heroCtaSecondaryText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  // ── Quick Action Tiles ─────────────────────────────────────────────────────
+  quickActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  quickActionsGridMobile: {
+    justifyContent: 'center',
+  },
+  quickTile: {
+    width: 148,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    flexDirection: 'column',
+    gap: 8,
+  },
+  quickTileDesktop: {
+    flex: 1,
+    width: 'auto' as any,
+    minWidth: 110,
+  },
+  quickTileIcon: {
+    width: 44, height: 44, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  quickTileEmoji: { fontSize: 22 },
+  quickTileLabel: { fontSize: 13, fontWeight: '800' },
+  quickTileArrow: {
+    alignSelf: 'flex-start',
+    width: 28, height: 28, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  quickTileArrowText: { fontSize: 14, fontWeight: '800' },
+
+  // ── Trust Bar ────────────────────────────────────────────────────────────
+  trustBar: {
+    flexDirection: 'row',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  trustStat: { alignItems: 'center', flex: 1 },
+  trustStatIcon: { fontSize: 18, marginBottom: 2 },
+  trustStatVal: { fontSize: 18, fontWeight: '900' },
+  trustStatLabel: { fontSize: 10, fontWeight: '600', textAlign: 'center' },
+  trustDivider: { width: 1, height: 36 },
+
+  // ── Search ────────────────────────────────────────────────────────────────
+  searchSection: { paddingHorizontal: 20, paddingTop: 20, zIndex: 50 },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  searchBoxIcon: { fontSize: 16, marginRight: 8 },
+  searchBoxInput: { flex: 1, fontSize: 14, fontWeight: '500', paddingVertical: 8 },
+  searchClear: { padding: 6 },
+  searchClearText: { fontSize: 13, fontWeight: '700' },
+  searchBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 9,
+    marginLeft: 6,
+  },
+  searchBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+  searchDropdown: {
+    marginTop: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 5,
+  },
+  searchGroupLabel: {
+    fontSize: 10, fontWeight: '800', letterSpacing: 0.6,
+    paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4,
+  },
+  searchResultRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  searchResultIcon: {
+    width: 34, height: 34, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 10,
+  },
+  searchResultName: { fontSize: 14, fontWeight: '600', marginBottom: 1 },
+  searchResultMeta: { fontSize: 12 },
+  searchResultArrow: { fontSize: 16, fontWeight: '700', marginLeft: 6 },
+  searchEmpty: { textAlign: 'center', fontSize: 13, paddingVertical: 20 },
+
+  // ── Slider ────────────────────────────────────────────────────────────────
+  sliderSection: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  slideCard: { height: 200, position: 'relative', overflow: 'hidden' },
+  slideImage: { width: '100%', height: '100%' },
+  slideCaptionContainer: { position: 'absolute', bottom: 20, left: 20, right: 20 },
+  slideCaptionText: {
+    color: '#FFF', fontSize: 18, fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  promoSlideGradient: {
+    flex: 1, justifyContent: 'center', paddingHorizontal: 20, paddingVertical: 20,
+  },
+  slideDecor1: {
+    position: 'absolute', width: 180, height: 180, borderRadius: 90,
+    top: -60, right: -30,
+  },
+  slideDecor2: {
+    position: 'absolute', width: 120, height: 120, borderRadius: 60,
+    bottom: -30, left: -20,
+  },
+  promoSlideContent: { flexDirection: 'row', alignItems: 'center', zIndex: 1 },
+  promoSlideIconWrap: {
+    width: 56, height: 56, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  promoSlideIcon: { fontSize: 28 },
+  promoSlideTitle: { fontSize: 20, fontWeight: '900', color: '#FFFFFF', marginBottom: 4 },
+  promoSlideSub: { fontSize: 12, color: 'rgba(255,255,255,0.85)', fontWeight: '500', lineHeight: 17 },
+  promoSlideCtaBtn: {
+    paddingHorizontal: 14, paddingVertical: 9,
+    borderRadius: 20, marginLeft: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 5, elevation: 3,
+  },
+  promoSlideCtaText: { fontSize: 12, fontWeight: '800' },
+  promoSlideCtaArrow: { fontSize: 16, fontWeight: '900' },
+  dotRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 110,
-    shadowColor: '#22C55E',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    gap: 6,
+    paddingVertical: 10,
   },
-  apkMainBtnIcon: {
-    fontSize: 22,
+  dot: {
+    width: 6, height: 6, borderRadius: 3,
+  },
+
+  // ── Section ───────────────────────────────────────────────────────────────
+  sectionBlock: {
+    marginTop: 28,
+    paddingHorizontal: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: { fontSize: 20, fontWeight: '900' },
+  sectionSub: { fontSize: 12, marginTop: 2, fontWeight: '500' },
+  sectionBadge: {
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 8, borderWidth: 1,
+  },
+  sectionBadgeText: {
+    fontSize: 9, fontWeight: '800', color: '#D97706', letterSpacing: 0.5,
+  },
+
+  // ── Spotlight Cards ────────────────────────────────────────────────────────
+  emptyCard: {
+    borderWidth: 1, borderStyle: 'dashed',
+    borderRadius: 16, padding: 32,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 8,
+  },
+  emptyCardIcon: { fontSize: 32, marginBottom: 8 },
+  emptyCardText: { fontSize: 13, fontWeight: '600' },
+
+  spotCard: {
+    width: 168,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginRight: 14,
     marginBottom: 4,
+    overflow: 'hidden',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
-  apkMainBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    textAlign: 'center',
+  spotImage: { width: '100%', height: 130 },
+  spotPlaceholder: { width: '100%', height: 100, alignItems: 'center', justifyContent: 'center' },
+  spotPlaceholderIcon: { fontSize: 28 },
+  spotTag: {
+    position: 'absolute', top: 8, left: 8,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6,
   },
+  spotTagText: { color: '#FFF', fontSize: 9, fontWeight: '800' },
+  spotBody: { padding: 12 },
+  spotName: { fontSize: 13, fontWeight: '800', marginBottom: 2 },
+  spotCat: { fontSize: 11, marginBottom: 8 },
+  spotPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 2 },
+  spotPrice: { fontSize: 16, fontWeight: '900' },
+  spotPriceSuffix: { fontSize: 10 },
+
+  // ── Rider Banner ──────────────────────────────────────────────────────────
+  riderBanner: {
+    marginHorizontal: 20,
+    marginTop: 20,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  riderBannerGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 18,
+    gap: 12,
+  },
+  riderBannerDecor: {
+    position: 'absolute',
+    width: 150, height: 150, borderRadius: 75,
+    backgroundColor: '#FFFFFF08',
+    top: -50, right: -20,
+  },
+  riderBannerLeft: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  riderBannerIcon: { fontSize: 34 },
+  riderBannerTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
+  riderBannerSub: { color: '#94A3B8', fontSize: 12, marginTop: 2 },
+  riderBannerBtns: { gap: 0 },
+  riderBannerBtn: {
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 10, alignItems: 'center', minWidth: 90,
+  },
+  riderBannerBtnText: { color: '#FFF', fontSize: 12, fontWeight: '800' },
+
+  // ── Admin Card ────────────────────────────────────────────────────────────
+  adminCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginTop: 20,
+    padding: 18,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderLeftWidth: 5,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  adminCardTitle: { fontSize: 15, fontWeight: '800', marginBottom: 4 },
+  adminCardDesc: { fontSize: 13, lineHeight: 18 },
+  chevronCircle: {
+    width: 34, height: 34, borderRadius: 17,
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 12,
+  },
+  chevronText: { fontSize: 18, fontWeight: '700' },
+
+  // ── Download Banner ────────────────────────────────────────────────────────
+  downloadBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 16,
+    marginHorizontal: 20,
+    marginTop: 24,
+    padding: 20,
+    borderRadius: 18,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  downloadBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  downloadBannerIcon: { fontSize: 36 },
+  downloadBannerTitle: { fontSize: 17, fontWeight: '900' },
+  downloadBannerSub: { fontSize: 12, marginTop: 2 },
+  downloadBannerBtns: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  downloadBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  downloadBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
+
+  // ── Footer ────────────────────────────────────────────────────────────────
+  footer: {
+    marginTop: 32,
+    marginHorizontal: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    alignItems: 'center',
+    paddingBottom: 10,
+  },
+  footerBrand: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  footerBrandText: { fontSize: 18, fontWeight: '900', letterSpacing: -0.5 },
+  footerText: { fontSize: 12, textAlign: 'center', lineHeight: 18 },
 });

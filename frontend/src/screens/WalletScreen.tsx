@@ -1,4 +1,5 @@
 // @ts-nocheck
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useEffect, useState, useContext } from 'react';
 import { Picker } from '@react-native-picker/picker';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,7 +16,8 @@ import { SettingsContext } from '../context/SettingsContext';
 
 export default function WalletScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
-  const { theme } = useContext(SettingsContext);
+  const { theme, colorMode } = useContext(SettingsContext);
+  const isDark = colorMode === 'dark';
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>({ balance: 0, pendingBalance: 0, transactions: [], withdrawals: [] });
@@ -168,71 +170,106 @@ export default function WalletScreen({ navigation }: any) {
       }
     }
 
+    const txIcon = item.logType === 'withdrawal' ? '📤' : (item.amount > 0 ? '📥' : '💸');
     return (
       <Animated.View entering={FadeIn.duration(300)}>
         <Swipeable
-          renderRightActions={(progress, dragX) => (
+          renderRightActions={() => (
             <View style={styles.swipeAction}>
               <Text style={styles.swipeActionText}>Delete</Text>
             </View>
           )}
-          onSwipeableRightOpen={() => { Alert.alert('Delete', 'Delete action triggered for this item.'); }}
+          onSwipeableRightOpen={() => Alert.alert('Delete', 'Delete action triggered for this item.')}
         >
-          <BlurView intensity={20} style={[styles.logCard, { borderColor: theme.border, backgroundColor: 'rgba(255,255,255,0.1)' }]} tint="light">
-            <View style={styles.logRow}>
-              <Text style={[styles.logTitle, { color: theme.text }]} numberOfLines={1}>
-                {title}
-              </Text>
-              <Text style={[styles.logAmount, { color }]}>
-                {isNegative ? '-' : '+'}₦{absAmount.toFixed(2)}
-              </Text>
+          <View style={[styles.logCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+            <View style={[styles.logIconWrap, { backgroundColor: color + '15' }]}>
+              <Text style={styles.logIconText}>{txIcon}</Text>
             </View>
-            <View style={styles.logSubRow}>
-              <Text style={styles.logDate}>{dateStr}</Text>
-              <Text style={styles.logTypeBadge}>
-                {item.logType === 'withdrawal' ? 'Payout' : item.type.replace('_', ' ')}
-              </Text>
+            <View style={{ flex: 1 }}>
+              <View style={styles.logRow}>
+                <Text style={[styles.logTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={1}>{title}</Text>
+                <Text style={[styles.logAmount, { color }]}>{isNegative ? '−' : '+'}₦{absAmount.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</Text>
+              </View>
+              <View style={styles.logSubRow}>
+                <Text style={[styles.logDate, { color: isDark ? '#475569' : '#94A3B8' }]}>{dateStr}</Text>
+                <View style={[styles.logTypePill, { backgroundColor: color + '18' }]}>
+                  <Text style={[styles.logTypeBadge, { color }]}>
+                    {item.logType === 'withdrawal' ? 'Payout' : (item.type || '').replace(/_/g, ' ')}
+                  </Text>
+                </View>
+              </View>
             </View>
-          </BlurView>
+          </View>
         </Swipeable>
       </Animated.View>
     );
   };
 
+  const totalActivity = activityLog.length;
+  const totalIn = activityLog.filter((i: any) => i.logType === 'transaction' && i.amount > 0).reduce((s: number, i: any) => s + i.amount, 0);
+  const totalOut = activityLog.filter((i: any) => i.logType === 'withdrawal' || i.amount < 0).reduce((s: number, i: any) => s + Math.abs(i.amount), 0);
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Balance Panel */}
-      <LinearGradient colors={['#008080', '#00bfff']} style={styles.balanceCard}>
-        <Text style={styles.balanceHeader}>Cleared Balance</Text>
-        <Text style={styles.balanceValue}>₦{data.balance.toFixed(2)}</Text>
-        
-        <View style={styles.pendingRow}>
-          <Text style={styles.pendingLabel}>Pending Clearance:</Text>
-          <Text style={styles.pendingValue}>₦{data.pendingBalance.toFixed(2)}</Text>
+    <View style={[styles.container, { backgroundColor: isDark ? '#0F172A' : '#F1F5F9' }]}>
+      {/* ── Balance Card ──────────────────────────────────────────────────── */}
+      <LinearGradient
+        colors={isDark ? ['#0F2C18', '#1A5C32', '#22A45D'] : ['#22A45D', '#16A34A', '#15803D']}
+        style={styles.balanceCard}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+      >
+        {/* Decorative circles */}
+        <View style={styles.balanceDecor1} />
+        <View style={styles.balanceDecor2} />
+
+        <Text style={styles.balanceHeader}>💳 Wallet Balance</Text>
+        <Text style={styles.balanceValue}>₦{data.balance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</Text>
+
+        <View style={styles.balanceMeta}>
+          <View style={styles.balanceMetaItem}>
+            <Text style={styles.balanceMetaLabel}>⏳ Pending</Text>
+            <Text style={styles.balanceMetaValue}>₦{data.pendingBalance.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</Text>
+          </View>
+          <View style={styles.balanceMetaDivider} />
+          <View style={styles.balanceMetaItem}>
+            <Text style={styles.balanceMetaLabel}>📈 Money In</Text>
+            <Text style={styles.balanceMetaValue}>₦{totalIn.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</Text>
+          </View>
+          <View style={styles.balanceMetaDivider} />
+          <View style={styles.balanceMetaItem}>
+            <Text style={styles.balanceMetaLabel}>📤 Withdrawn</Text>
+            <Text style={styles.balanceMetaValue}>₦{totalOut.toLocaleString('en-NG', { minimumFractionDigits: 2 })}</Text>
+          </View>
         </View>
 
-        <TouchableOpacity 
-          style={styles.withdrawBtn} 
+        <TouchableOpacity
+          style={[styles.withdrawBtn, { opacity: data.balance <= 0 ? 0.5 : 1 }]}
           onPress={() => setModalVisible(true)}
           disabled={data.balance <= 0}
+          activeOpacity={0.85}
         >
-          <Text style={[styles.withdrawBtnText, { color: theme.primary }]}>Withdraw Funds</Text>
+          <Text style={styles.withdrawBtnText}>💸 Withdraw Funds</Text>
         </TouchableOpacity>
       </LinearGradient>
 
-      {/* Activity Log Section */}
+      {/* ── Quick Actions Row ─────────────────────────────────────────────── */}
+      <View style={[styles.quickRow, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+        {[
+          { icon: '🔄', label: 'Refresh', onPress: onRefresh },
+          { icon: '⚙️', label: 'Filter', onPress: () => setFilterModalVisible(true) },
+          { icon: '📥', label: 'Export CSV', onPress: exportCsv },
+        ].map(btn => (
+          <TouchableOpacity key={btn.label} style={styles.quickBtn} onPress={btn.onPress}>
+            <Text style={styles.quickBtnIcon}>{btn.icon}</Text>
+            <Text style={[styles.quickBtnLabel, { color: theme.primary }]}>{btn.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* ── Activity Header ───────────────────────────────────────────────── */}
       <View style={styles.activityHeader}>
-        <Text style={[styles.activityTitle, { color: theme.text }]}>Transaction Activity</Text>
-        <View style={styles.activityHeaderButtons}>
-          <TouchableOpacity onPress={() => setFilterModalVisible(true)} style={styles.headerBtn}>
-            <Text style={{ color: theme.primary, fontWeight: '700' }}>⚙️ Filter</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onRefresh} style={styles.headerBtn}>
-            <Text style={{ color: theme.primary, fontWeight: '700' }}>🔄 Refresh</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={exportCsv} style={styles.headerBtn}>
-            <Text style={{ color: theme.primary, fontWeight: '700' }}>📥 Export CSV</Text>
-          </TouchableOpacity>
+        <View>
+          <Text style={[styles.activityTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>Transaction History</Text>
+          <Text style={[styles.activitySub, { color: isDark ? '#64748B' : '#94A3B8' }]}>{totalActivity} record{totalActivity !== 1 ? 's' : ''} · {filterType !== 'All' ? filterType : 'All types'}</Text>
         </View>
       </View>
 
@@ -399,124 +436,73 @@ export default function WalletScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 20,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  container: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // Balance Card
   balanceCard: {
-    padding: 24,
-    borderRadius: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 6,
-    marginBottom: 28,
+    margin: 16, marginBottom: 0,
+    padding: 24, borderRadius: 24, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 20, elevation: 8,
   },
-  balanceHeader: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontSize: 14,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+  balanceDecor1: {
+    position: 'absolute', width: 220, height: 220, borderRadius: 110,
+    backgroundColor: 'rgba(255,255,255,0.07)', top: -80, right: -60,
   },
-  balanceValue: {
-    color: '#FFF',
-    fontSize: 36,
-    fontWeight: '900',
-    marginVertical: 10,
+  balanceDecor2: {
+    position: 'absolute', width: 140, height: 140, borderRadius: 70,
+    backgroundColor: 'rgba(255,255,255,0.05)', bottom: -40, left: -30,
   },
-  pendingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  pendingLabel: {
-    color: 'rgba(255, 255, 255, 0.75)',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  pendingValue: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '800',
-    marginLeft: 6,
-  },
+  balanceHeader: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 },
+  balanceValue: { color: '#FFF', fontSize: 42, fontWeight: '900', letterSpacing: -1, marginBottom: 16 },
+  balanceMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  balanceMetaItem: { flex: 1, alignItems: 'center' },
+  balanceMetaLabel: { color: 'rgba(255,255,255,0.65)', fontSize: 10, fontWeight: '700', marginBottom: 2 },
+  balanceMetaValue: { color: '#FFF', fontSize: 13, fontWeight: '800' },
+  balanceMetaDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.2)' },
   withdrawBtn: {
-    backgroundColor: '#FFF',
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    paddingVertical: 14, borderRadius: 14, alignItems: 'center',
   },
-  withdrawBtnText: {
-    fontSize: 15,
-    fontWeight: '800',
+  withdrawBtnText: { fontSize: 15, fontWeight: '900', color: '#15803D' },
+
+  // Quick actions
+  quickRow: {
+    flexDirection: 'row', marginHorizontal: 16, marginTop: 12, marginBottom: 4,
+    borderRadius: 16, borderWidth: 1, overflow: 'hidden',
   },
+  quickBtn: { flex: 1, alignItems: 'center', paddingVertical: 12, gap: 3 },
+  quickBtnIcon: { fontSize: 18 },
+  quickBtnLabel: { fontSize: 10, fontWeight: '700' },
+
+  // Activity Header
   activityHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 12,
   },
-  activityTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  listContainer: {
-    paddingBottom: 20,
-  },
+  activityTitle: { fontSize: 17, fontWeight: '900' },
+  activitySub: { fontSize: 11, fontWeight: '500', marginTop: 2 },
+
+  listContainer: { paddingHorizontal: 12, paddingBottom: 30 },
+
+  // Log cards
   logCard: {
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 12,
-    borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: 14, borderRadius: 16, marginBottom: 8, borderWidth: 1,
+    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
-  logRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  logTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    flex: 1,
-    marginRight: 12,
-  },
-  logAmount: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  logSubRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  logDate: {
-    fontSize: 12,
-    color: '#8E8E93',
-  },
-  logTypeBadge: {
-    fontSize: 10,
-    color: '#8E8E93',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#8E8E93',
-  },
+  logIconWrap: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  logIconText: { fontSize: 18 },
+  logRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  logTitle: { fontSize: 14, fontWeight: '700', flex: 1, marginRight: 8 },
+  logAmount: { fontSize: 14, fontWeight: '900' },
+  logSubRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  logDate: { fontSize: 11 },
+  logTypePill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  logTypeBadge: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 },
+
+  emptyContainer: { alignItems: 'center', paddingVertical: 40 },
+  emptyText: { fontSize: 14, color: '#8E8E93' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',

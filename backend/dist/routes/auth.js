@@ -35,7 +35,7 @@ const router = (0, express_1.Router)();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-dummy-key';
 // Register User
 router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const { email, password, name, role, phone, opayPhone, specialty, address, latitude, longitude, identityNumber, kycReferenceId } = req.body;
+    const { email, password, name, role, phone, opayPhone, specialty, address, latitude, longitude, identityNumber, kycReferenceId, country, currency, } = req.body;
     if (!email || !password || !name) {
         return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -46,6 +46,31 @@ router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, functio
     try {
         const existingUser = yield prisma_1.default.user.findUnique({ where: { email } });
         if (existingUser) {
+            if (!existingUser.passwordHash) {
+                // Guest user converting to a full registered account post-checkout!
+                const salt = yield bcrypt_1.default.genSalt(10);
+                const passwordHash = yield bcrypt_1.default.hash(password, salt);
+                let bvnHash = null;
+                if (identityNumber) {
+                    bvnHash = crypto_1.default.createHash('sha256').update(identityNumber).digest('hex');
+                }
+                const updatedUser = yield prisma_1.default.user.update({
+                    where: { email },
+                    data: {
+                        passwordHash,
+                        name: name || existingUser.name,
+                        phone: phone || existingUser.phone,
+                        address: address || existingUser.address,
+                        bvnHash: bvnHash || existingUser.bvnHash,
+                    },
+                });
+                const token = jsonwebtoken_1.default.sign({ userId: updatedUser.id, role: updatedUser.role }, JWT_SECRET, { expiresIn: '7d' });
+                const { passwordHash: _ } = updatedUser, userResponse = __rest(updatedUser, ["passwordHash"]);
+                return res.status(200).json({
+                    token,
+                    user: Object.assign(Object.assign({}, userResponse), { requiresKYC: (updatedUser.role === 'VENDOR' || updatedUser.role === 'HANDYMAN' || updatedUser.role === 'RIDER') && updatedUser.verificationStatus === 'UNVERIFIED' }),
+                });
+            }
             return res.status(400).json({ error: 'User already exists' });
         }
         const salt = yield bcrypt_1.default.genSalt(10);
@@ -82,6 +107,8 @@ router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, functio
                 kycReferenceId: kycReferenceId || null,
                 kycSubmittedAt: kycReferenceId ? new Date() : null,
                 verificationStatus,
+                country: country || 'United States',
+                currency: currency || 'USD',
             },
         });
         const token = jsonwebtoken_1.default.sign({ userId: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });
@@ -275,6 +302,8 @@ router.get('/me', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void
                 vehicleType: true,
                 licensePlate: true,
                 riderStatus: true,
+                country: true,
+                currency: true,
                 createdAt: true,
             },
         });
@@ -320,6 +349,43 @@ router.patch('/location', auth_1.authenticateToken, (req, res) => __awaiter(void
     }
     catch (error) {
         res.status(500).json({ error: 'Failed to update location' });
+    }
+}));
+// Update Current User Profile (name, phone, address, country, currency)
+router.patch('/profile', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    if (!userId)
+        return res.status(401).json({ error: 'Unauthorized' });
+    const { name, phone, address, country, currency } = req.body;
+    try {
+        const updatedUser = yield prisma_1.default.user.update({
+            where: { id: userId },
+            data: {
+                name: name || undefined,
+                phone: phone !== undefined ? phone : undefined,
+                address: address !== undefined ? address : undefined,
+                country: country || undefined,
+                currency: currency || undefined,
+            },
+            select: {
+                id: true,
+                name: true,
+                email: true,
+                role: true,
+                phone: true,
+                address: true,
+                profileImage: true,
+                country: true,
+                currency: true,
+                verificationStatus: true,
+            },
+        });
+        res.json(updatedUser);
+    }
+    catch (error) {
+        console.error('PATCH /auth/profile error:', error);
+        res.status(500).json({ error: 'Failed to update profile' });
     }
 }));
 exports.default = router;
