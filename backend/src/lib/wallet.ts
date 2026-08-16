@@ -31,20 +31,29 @@ export async function createEscrowForPaidItem(checkoutType: 'booking' | 'order' 
         throw new Error('Booking not found');
       }
 
+      // Determine transaction amount
+      let transactionAmount = paidAmount;
+      if (transactionAmount === undefined) {
+        transactionAmount = booking.isSplitPayment ? booking.totalPrice / 2 : booking.totalPrice;
+      }
+
       if (!booking.handymanId) {
-        throw new Error('Booking has no handyman assigned');
+        // Handyman is not yet assigned; record amountPaid and defer escrow until assignment
+        await tx.booking.update({
+          where: { id },
+          data: {
+            amountPaid: {
+              increment: transactionAmount,
+            },
+          },
+        });
+        return null;
       }
 
       const existingEscrows = await tx.escrow.findMany({
         where: { bookingId: id },
       });
       const totalEscrowed = existingEscrows.reduce((sum, e) => sum + e.amount, 0);
-
-      // Determine transaction amount
-      let transactionAmount = paidAmount;
-      if (transactionAmount === undefined) {
-        transactionAmount = booking.isSplitPayment ? booking.totalPrice / 2 : booking.totalPrice;
-      }
 
       if (totalEscrowed >= booking.totalPrice) {
         return existingEscrows[existingEscrows.length - 1];

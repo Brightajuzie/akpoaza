@@ -309,13 +309,11 @@ export default function AppNavigator() {
           component={CheckoutScreen} 
           options={{ title: 'Checkout' }}
         />
-        {isVendorOrAdmin && (
-          <Stack.Screen 
-            name="Admin" 
-            component={AdminScreen} 
-            options={{ title: 'Vendor & Admin Hub', headerShown: false }}
-          />
-        )}
+        <Stack.Screen 
+          name="Admin" 
+          component={AdminScreen} 
+          options={{ title: 'Vendor & Admin Hub', headerShown: false }}
+        />
         <Stack.Screen 
           name="ProductDetail" 
           component={ProductDetailScreen} 

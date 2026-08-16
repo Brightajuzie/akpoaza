@@ -3,11 +3,18 @@ import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, 
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
 import MapComponent from '../components/MapComponent';
 
 export default function HistoryScreen({ route, navigation }: any) {
   const { userInfo, userToken } = useContext(AuthContext);
-  const { theme } = useContext(SettingsContext);
+  const { theme, colorMode } = useContext(SettingsContext);
+  const { fmt } = useCurrency();
+  const isDark = colorMode === 'dark';
+  const cardBg = isDark ? '#1E293B' : '#FFFFFF';
+  const borderColor = isDark ? '#334155' : '#E2E8F0';
+  const textColor = isDark ? '#F1F5F9' : '#0F172A';
+  const subtextColor = isDark ? '#94A3B8' : '#64748B';
 
   const type = route.params?.type || 'orders';
   const currentRole = route.params?.role || userInfo?.role || 'CUSTOMER';

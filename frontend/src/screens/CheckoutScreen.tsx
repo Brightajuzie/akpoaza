@@ -1,7 +1,7 @@
 import React, { useState, useContext, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ActivityIndicator, ScrollView, TextInput, Modal, useWindowDimensions,
+  ActivityIndicator, ScrollView, TextInput, Modal, useWindowDimensions, Platform
 } from 'react-native';
 import { useStripe } from '@stripe/stripe-react-native';
 import apiClient from '../api/client';
@@ -170,6 +170,11 @@ export default function CheckoutScreen({ route, navigation }: any) {
   };
 
   const handleStripePayment = async () => {
+    // If running on Web or native Stripe sheet is not available, use webview/sandbox checkout
+    if (Platform.OS === 'web' || typeof initPaymentSheet !== 'function') {
+      return handleWebViewPayment('STRIPE');
+    }
+
     setLoadingProvider('STRIPE');
     try {
       const recId = await ensureRecordCreated('STRIPE');
@@ -179,13 +184,26 @@ export default function CheckoutScreen({ route, navigation }: any) {
         checkoutType, id: recId, provider: 'STRIPE',
         isSplit: isRemainingPayment ? true : isSplit, currency, localAmount,
       });
-      const { clientSecret } = response.data;
+      const { clientSecret, authorizationUrl } = response.data;
+
+      if (!clientSecret || clientSecret === 'mock_stripe_client_secret') {
+        if (authorizationUrl) {
+          setActiveProvider('STRIPE');
+          setPaymentUrl(authorizationUrl);
+          return;
+        }
+      }
 
       const initSheet = await initPaymentSheet({
         paymentIntentClientSecret: clientSecret, merchantDisplayName: 'FixMart',
       });
 
       if (initSheet.error) {
+        if (authorizationUrl) {
+          setActiveProvider('STRIPE');
+          setPaymentUrl(authorizationUrl);
+          return;
+        }
         Alert.alert('Setup Error', initSheet.error.message);
         setLoadingProvider(null); return;
       }
@@ -203,7 +221,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
     }
   };
 
-  const handleWebViewPayment = async (provider: 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY') => {
+  const handleWebViewPayment = async (provider: 'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY') => {
     setLoadingProvider(provider);
     try {
       const recId = await ensureRecordCreated(provider);
@@ -215,8 +233,9 @@ export default function CheckoutScreen({ route, navigation }: any) {
       });
 
       let redirectUrl: string | null = null;
-      if (provider === 'PAYSTACK') redirectUrl = response.data.authorizationUrl;
-      else if (provider === 'FLUTTERWAVE') redirectUrl = response.data.paymentLink;
+      if (provider === 'STRIPE') redirectUrl = response.data.authorizationUrl;
+      else if (provider === 'PAYSTACK') redirectUrl = response.data.authorizationUrl;
+      else if (provider === 'FLUTTERWAVE') redirectUrl = response.data.paymentLink || response.data.authorizationUrl;
       else if (provider === 'OPAY') redirectUrl = response.data.authorizationUrl;
 
       if (redirectUrl) {

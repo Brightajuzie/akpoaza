@@ -16,8 +16,13 @@ export default function ProfileScreen({ navigation }: any) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width >= 768;
   const { logout, userToken, userInfo, refreshUser } = useContext(AuthContext);
-  const { theme } = useContext(SettingsContext);
-  const { activeCountry, setCountry, countries } = useCurrency();
+  const { theme, colorMode } = useContext(SettingsContext);
+  const { fmt, activeCountry, setCountry, countries } = useCurrency();
+  const isDark = colorMode === 'dark';
+  const cardBg = isDark ? '#1E293B' : '#FFFFFF';
+  const borderColor = isDark ? '#334155' : '#E2E8F0';
+  const textColor = isDark ? '#F1F5F9' : '#0F172A';
+  const subtextColor = isDark ? '#94A3B8' : '#64748B';
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(false);
@@ -340,25 +345,124 @@ export default function ProfileScreen({ navigation }: any) {
       {renderVerificationBanner()}
       
       {/* Header Profile Info */}
-      <View style={styles.header}>
-        <View style={[styles.avatarPlaceholder, { backgroundColor: theme.primary, shadowColor: theme.primary }]}>
-          <Text style={styles.avatarText}>{profile.name.charAt(0).toUpperCase()}</Text>
+      <View style={[styles.header, { backgroundColor: cardBg, borderColor: borderColor }]}>
+        <View style={[styles.avatarRing, { borderColor: theme.primary + '60' }]}>
+          <View style={[styles.avatarPlaceholder, { backgroundColor: theme.primary, shadowColor: theme.primary }]}>
+            <Text style={styles.avatarText}>{profile.name.charAt(0).toUpperCase()}</Text>
+          </View>
         </View>
-        <Text style={styles.name}>{profile.name}</Text>
-        <Text style={styles.email}>{profile.email}</Text>
+        <Text style={[styles.name, { color: textColor }]}>{profile.name}</Text>
+        <Text style={[styles.email, { color: subtextColor }]}>{profile.email}</Text>
+        {profile.phone ? <Text style={[styles.phoneText, { color: subtextColor }]}>📞 {profile.phone}</Text> : null}
         <View style={styles.badgeRow}>
-          <View style={[styles.roleBadge, { backgroundColor: theme.primary + '15' }]}>
+          <View style={[styles.roleBadge, { backgroundColor: theme.primary + '20' }]}>
             <Text style={[styles.roleText, { color: theme.primary }]}>{profile.role}</Text>
           </View>
           {renderVerificationBadge()}
         </View>
       </View>
 
+      {/* Role-specific Quick Actions Dashboard */}
+      {profile.role === 'CUSTOMER' && (
+        <View style={[styles.dashboardSection, { backgroundColor: cardBg, borderColor: borderColor }]}>
+          <Text style={[styles.dashboardTitle, { color: textColor }]}>Quick Actions</Text>
+          <View style={styles.quickGrid}>
+            {[
+              { icon: '🛒', label: 'Shop', sub: 'Browse products', onPress: () => navigation.navigate('Shop') },
+              { icon: '🔧', label: 'Book Fix', sub: 'Hire handyman', onPress: () => navigation.navigate('Services') },
+              { icon: '🚚', label: 'Send Parcel', sub: 'Courier delivery', onPress: () => navigation.navigate('BookParcel') },
+              { icon: '📋', label: 'My Orders', sub: 'Track & history', onPress: () => navigation.navigate('History', { type: 'orders', role: 'CUSTOMER' }) },
+              { icon: '💳', label: 'Wallet', sub: 'Pay & balance', onPress: () => navigation.navigate('Wallet') },
+              { icon: '📖', label: 'Bookings', sub: 'Service history', onPress: () => navigation.navigate('History', { type: 'bookings', role: 'CUSTOMER' }) },
+            ].map((item, i) => (
+              <TouchableOpacity key={i} style={[styles.quickTile, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: borderColor }]} onPress={item.onPress} activeOpacity={0.75}>
+                <Text style={styles.quickTileIcon}>{item.icon}</Text>
+                <Text style={[styles.quickTileLabel, { color: textColor }]}>{item.label}</Text>
+                <Text style={[styles.quickTileSub, { color: subtextColor }]}>{item.sub}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {profile.role === 'VENDOR' && (
+        <View style={[styles.dashboardSection, { backgroundColor: cardBg, borderColor: borderColor }]}>
+          <Text style={[styles.dashboardTitle, { color: textColor }]}>Vendor Dashboard</Text>
+          <View style={styles.quickGrid}>
+            {[
+              { icon: '🏪', label: 'My Catalog', sub: 'Manage listings', onPress: () => navigation.navigate('Admin') },
+              { icon: '➕', label: 'Add Product', sub: 'List new item', onPress: () => navigation.navigate('Admin') },
+              { icon: '📦', label: 'Orders', sub: 'Customer orders', onPress: () => navigation.navigate('History', { type: 'orders', role: 'VENDOR' }) },
+              { icon: '💳', label: 'Wallet', sub: 'Payouts & balance', onPress: () => navigation.navigate('Wallet') },
+              { icon: '🛡️', label: 'KYC Status', sub: 'Verification', onPress: () => navigation.navigate('KYCStatus') },
+              { icon: '📊', label: 'Earnings', sub: 'Sales report', onPress: () => navigation.navigate('History', { type: 'orders', role: 'VENDOR' }) },
+            ].map((item, i) => (
+              <TouchableOpacity key={i} style={[styles.quickTile, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: borderColor }]} onPress={item.onPress} activeOpacity={0.75}>
+                <Text style={styles.quickTileIcon}>{item.icon}</Text>
+                <Text style={[styles.quickTileLabel, { color: textColor }]}>{item.label}</Text>
+                <Text style={[styles.quickTileSub, { color: subtextColor }]}>{item.sub}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {profile.role === 'HANDYMAN' && (
+        <View style={[styles.dashboardSection, { backgroundColor: cardBg, borderColor: borderColor }]}>
+          <Text style={[styles.dashboardTitle, { color: textColor }]}>Service Provider Hub</Text>
+          <View style={styles.quickGrid}>
+            {[
+              { icon: '📋', label: 'My Jobs', sub: 'Active & history', onPress: () => navigation.navigate('History', { type: 'bookings', role: 'HANDYMAN' }) },
+              { icon: '💳', label: 'Wallet', sub: 'Earnings & payout', onPress: () => navigation.navigate('Wallet') },
+              { icon: '📊', label: 'Analytics', sub: 'Performance stats', onPress: () => {} },
+              { icon: '🛡️', label: 'KYC Status', sub: 'Verify identity', onPress: () => navigation.navigate('KYCStatus') },
+              { icon: '⭐', label: 'My Ratings', sub: 'Customer reviews', onPress: () => navigation.navigate('History', { type: 'bookings', role: 'HANDYMAN' }) },
+              { icon: '📍', label: 'Location', sub: 'Live sharing', onPress: () => {} },
+            ].map((item, i) => (
+              <TouchableOpacity key={i} style={[styles.quickTile, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: borderColor }]} onPress={item.onPress} activeOpacity={0.75}>
+                <Text style={styles.quickTileIcon}>{item.icon}</Text>
+                <Text style={[styles.quickTileLabel, { color: textColor }]}>{item.label}</Text>
+                <Text style={[styles.quickTileSub, { color: subtextColor }]}>{item.sub}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {profile.role === 'RIDER' && (
+        <View style={[styles.dashboardSection, { backgroundColor: cardBg, borderColor: borderColor }]}>
+          <Text style={[styles.dashboardTitle, { color: textColor }]}>Rider Hub</Text>
+          <View style={styles.quickGrid}>
+            {[
+              { icon: '🛵', label: 'Earnings', sub: 'Trips & payouts', onPress: () => navigation.navigate('RiderEarnings') },
+              { icon: '📦', label: 'Deliveries', sub: 'Active & history', onPress: () => navigation.navigate('History', { type: 'orders', role: 'RIDER', tab: 'parcels' }) },
+              { icon: '💳', label: 'Wallet', sub: 'Balance & withdraw', onPress: () => navigation.navigate('Wallet') },
+              { icon: '🚗', label: 'Vehicle', sub: 'Registration info', onPress: () => {} },
+              { icon: '🛡️', label: 'KYC Status', sub: 'Verify identity', onPress: () => navigation.navigate('KYCStatus') },
+              { icon: '📍', label: 'Location', sub: 'Live sharing', onPress: () => {} },
+            ].map((item, i) => (
+              <TouchableOpacity key={i} style={[styles.quickTile, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: borderColor }]} onPress={item.onPress} activeOpacity={0.75}>
+                <Text style={styles.quickTileIcon}>{item.icon}</Text>
+                <Text style={[styles.quickTileLabel, { color: textColor }]}>{item.label}</Text>
+                <Text style={[styles.quickTileSub, { color: subtextColor }]}>{item.sub}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
       {/* Live Location Sharing Panel for Handymen, Vendors, and Riders */}
       {(profile.role === 'HANDYMAN' || profile.role === 'VENDOR' || profile.role === 'RIDER') && (
-        <View style={[styles.trackingCard, { borderColor: theme.border }]}>
+        <View style={[styles.trackingCard, { backgroundColor: cardBg, borderColor: isOnline ? theme.primary + '60' : borderColor }]}>
           <View style={styles.trackingHeader}>
-            <Text style={styles.trackingTitle}>Live Location Sharing</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.trackingTitle, { color: textColor }]}>Live Location Sharing</Text>
+              <Text style={[styles.trackingDesc, { color: subtextColor, marginTop: 2 }]}>
+                {isOnline
+                  ? '🟢 Active — Your location is being broadcast to active bookings'
+                  : '🔴 Inactive — Toggle to start sharing your location'}
+              </Text>
+            </View>
             <TouchableOpacity
               style={[styles.switchContainer, isOnline ? { backgroundColor: theme.primary } : styles.switchOff]}
               onPress={toggleOnlineStatus}
@@ -366,38 +470,47 @@ export default function ProfileScreen({ navigation }: any) {
               <View style={[styles.switchThumb, isOnline ? styles.switchThumbOn : styles.switchThumbOff]} />
             </TouchableOpacity>
           </View>
-          <Text style={styles.trackingDesc}>
-            {isOnline 
-              ? '🟢 Active. Simulating transit route to show customer on map.' 
-              : '🔴 Inactive. Toggle switch to share location and start receiving jobs.'}
-          </Text>
+          {isOnline && (
+            <View style={[styles.locationPill, { backgroundColor: theme.primary + '18' }]}>
+              <Text style={[styles.locationPillText, { color: theme.primary }]}>📡 Broadcasting every 5s</Text>
+            </View>
+          )}
         </View>
       )}
 
       {/* Wallet Preview Card */}
       {(profile.role === 'HANDYMAN' || profile.role === 'VENDOR' || profile.role === 'RIDER') && (
-        <TouchableOpacity 
-          style={[styles.walletPreviewCard, { borderColor: theme.border, backgroundColor: theme.primary + '0B' }]}
+        <TouchableOpacity
+          style={[styles.walletPreviewCard, { backgroundColor: cardBg, borderColor: borderColor }]}
           onPress={() => navigation.navigate('Wallet')}
           activeOpacity={0.8}
         >
-          <View style={styles.walletPreviewHeader}>
-            <Text style={[styles.walletPreviewTitle, { color: theme.text }]}>💳 Virtual Wallet</Text>
-            <Text style={{ color: theme.primary, fontWeight: '800', fontSize: 13 }}>View &amp; Withdraw →</Text>
-          </View>
-          <View style={styles.walletPreviewStats}>
-            <View style={styles.walletPreviewStat}>
-              <Text style={styles.walletPreviewLabel}>Withdrawable</Text>
-              <Text style={[styles.walletPreviewVal, { color: '#34C759' }]}>
-                ₦{walletPreview?.balance !== undefined ? walletPreview.balance.toFixed(2) : '---'}
-              </Text>
+          <View style={[styles.walletPreviewInner, { backgroundColor: theme.primary }]}>
+            <View style={styles.walletPreviewHeader}>
+              <View>
+                <Text style={styles.walletPreviewLabel}>Available Balance</Text>
+                <Text style={styles.walletBigAmount}>
+                  {walletPreview?.balance !== undefined ? fmt(walletPreview.balance) : '---'}
+                </Text>
+              </View>
+              <View style={styles.walletManageBtn}>
+                <Text style={styles.walletManageBtnText}>Manage →</Text>
+              </View>
             </View>
-            <View style={[styles.walletPreviewDivider, { backgroundColor: theme.border }]} />
-            <View style={styles.walletPreviewStat}>
-              <Text style={styles.walletPreviewLabel}>Pending Hold</Text>
-              <Text style={[styles.walletPreviewVal, { color: '#FF9500' }]}>
-                ₦{walletPreview?.pendingBalance !== undefined ? walletPreview.pendingBalance.toFixed(2) : '---'}
-              </Text>
+            <View style={styles.walletPreviewStats}>
+              <View style={styles.walletPreviewStat}>
+                <Text style={styles.walletPreviewLabelLight}>Pending Hold</Text>
+                <Text style={styles.walletPreviewValLight}>
+                  {walletPreview?.pendingBalance !== undefined ? fmt(walletPreview.pendingBalance) : '---'}
+                </Text>
+              </View>
+              <View style={[styles.walletPreviewDivider, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
+              <View style={styles.walletPreviewStat}>
+                <Text style={styles.walletPreviewLabelLight}>Total Earned</Text>
+                <Text style={styles.walletPreviewValLight}>
+                  {walletPreview?.totalEarned !== undefined ? fmt(walletPreview.totalEarned) : '---'}
+                </Text>
+              </View>
             </View>
           </View>
         </TouchableOpacity>
@@ -405,9 +518,9 @@ export default function ProfileScreen({ navigation }: any) {
 
       {/* Handyman Earnings Analytics Card */}
       {profile.role === 'HANDYMAN' && (
-        <View style={[styles.analyticsCard, { borderColor: theme.border }]}>
+        <View style={[styles.analyticsCard, { backgroundColor: cardBg, borderColor: borderColor }]}>
           <View style={styles.analyticsHeader}>
-            <Text style={styles.cardTitle}>📊 Earnings Analytics</Text>
+            <Text style={[styles.cardTitle, { color: textColor }]}>📊 Earnings Analytics</Text>
             {analyticsLoading && <ActivityIndicator size="small" color={theme.primary} />}
           </View>
 
@@ -492,66 +605,70 @@ export default function ProfileScreen({ navigation }: any) {
       )}
 
       {profile.role === 'RIDER' && (
-        <View style={[styles.card, { borderColor: theme.border }]}>
-          <Text style={styles.cardTitle}>Vehicle Registration</Text>
-          <Text style={styles.label}>Vehicle Type:</Text>
-          <Text style={styles.valueText}>{profile.vehicleType || 'Not Registered'}</Text>
-          <Text style={styles.label}>License Plate:</Text>
-          <Text style={styles.valueText}>{profile.licensePlate || 'Not Registered'}</Text>
+        <View style={[styles.card, { backgroundColor: cardBg, borderColor: borderColor }]}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>🚗 Vehicle Registration</Text>
+          <View style={styles.vehicleRow}>
+            <View style={styles.vehicleItem}>
+              <Text style={[styles.label, { color: subtextColor }]}>Vehicle Type</Text>
+              <Text style={[styles.valueText, { color: textColor }]}>{profile.vehicleType || 'Not set'}</Text>
+            </View>
+            <View style={styles.vehicleItem}>
+              <Text style={[styles.label, { color: subtextColor }]}>License Plate</Text>
+              <Text style={[styles.valueText, { color: textColor }]}>{profile.licensePlate || 'Not set'}</Text>
+            </View>
+          </View>
         </View>
       )}
 
       {/* Location / GPS Settings Card */}
-      <View style={[styles.card, { borderColor: theme.border }]}>
-        <Text style={styles.cardTitle}>GPS Location Details</Text>
-        <Text style={styles.label}>Home Base Address:</Text>
-        <Text style={styles.valueText}>{profile.address || 'No address set'}</Text>
-        
+      <View style={[styles.card, { backgroundColor: cardBg, borderColor: borderColor }]}>
+        <Text style={[styles.cardTitle, { color: textColor }]}>📍 GPS Location Details</Text>
+        <Text style={[styles.label, { color: subtextColor }]}>Home Base Address</Text>
+        <Text style={[styles.valueText, { color: textColor }]}>{profile.address || 'No address set'}</Text>
         {hasCoordinates ? (
-          <View style={[styles.coordinatesRow, { backgroundColor: theme.background }]}>
-            <Text style={styles.coordinatesLabel}>
-              Latitude: <Text style={[styles.coordinatesVal, { color: theme.primary }]}>{profile.latitude.toFixed(6)}</Text>
-            </Text>
-            <Text style={styles.coordinatesLabel}>
-              Longitude: <Text style={[styles.coordinatesVal, { color: theme.primary }]}>{profile.longitude.toFixed(6)}</Text>
-            </Text>
+          <View style={[styles.coordinatesRow, { backgroundColor: isDark ? '#0F172A' : '#F1F5F9' }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.coordinatesLabel, { color: subtextColor }]}>Latitude</Text>
+              <Text style={[styles.coordinatesVal, { color: theme.primary }]}>{profile.latitude.toFixed(6)}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.coordinatesLabel, { color: subtextColor }]}>Longitude</Text>
+              <Text style={[styles.coordinatesVal, { color: theme.primary }]}>{profile.longitude.toFixed(6)}</Text>
+            </View>
           </View>
         ) : (
-          <Text style={styles.subLabel}>Set your location address during sign-up to enable distance matchmaking.</Text>
+          <Text style={[styles.subLabel, { color: subtextColor }]}>Set your address during sign-up to enable distance matchmaking.</Text>
         )}
       </View>
 
       {/* Theme & Appearance Preference Card */}
-      <View style={[styles.card, { borderColor: theme.border }]}>
-        <Text style={styles.cardTitle}>🎨 App Theme & Appearance</Text>
-        <Text style={[styles.subLabel, { marginBottom: 8 }]}>
-          Choose between Light and Dark mode appearance for comfortable viewing.
+      <View style={[styles.card, { backgroundColor: cardBg, borderColor: borderColor }]}>
+        <Text style={[styles.cardTitle, { color: textColor }]}>🎨 App Theme & Appearance</Text>
+        <Text style={[styles.subLabel, { color: subtextColor, marginBottom: 12 }]}>
+          Choose between Light and Dark mode for comfortable viewing.
         </Text>
         <ThemeToggle />
       </View>
 
       {/* Country & Currency Preference Card */}
-      <View style={[styles.card, { borderColor: theme.border }]}>
-        <Text style={styles.cardTitle}>🌍 Country & Currency</Text>
-        <Text style={[styles.subLabel, { marginBottom: 12 }]}>
-          All prices and payments will be shown and charged in your selected country's currency.
+      <View style={[styles.card, { backgroundColor: cardBg, borderColor: borderColor }]}>
+        <Text style={[styles.cardTitle, { color: textColor }]}>🌍 Country & Currency</Text>
+        <Text style={[styles.subLabel, { color: subtextColor, marginBottom: 12 }]}>
+          Prices and payments are shown in your selected currency.
         </Text>
         <TouchableOpacity
-          style={[
-            styles.countrySelector,
-            { borderColor: theme.border, backgroundColor: theme.background },
-          ]}
+          style={[styles.countrySelector, { borderColor: borderColor, backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]}
           onPress={() => setShowCountryModal(true)}
           activeOpacity={0.8}
         >
           <Text style={styles.countryFlag}>{activeCountry.flag}</Text>
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={[styles.countryName, { color: theme.text }]}>{activeCountry.country}</Text>
+            <Text style={[styles.countryName, { color: textColor }]}>{activeCountry.country}</Text>
             <Text style={[styles.currencyTag, { color: theme.primary }]}>
               {activeCountry.currency} · {activeCountry.symbol}
             </Text>
           </View>
-          <Text style={{ color: theme.lightText, fontSize: 18 }}>›</Text>
+          <Text style={{ color: subtextColor, fontSize: 20 }}>›</Text>
         </TouchableOpacity>
       </View>
 
@@ -625,14 +742,14 @@ export default function ProfileScreen({ navigation }: any) {
       )}
 
       {/* Security & Biometric Login Card */}
-      <View style={[styles.card, { borderColor: theme.border }]}>
-        <Text style={styles.cardTitle}>🔐 Security & Authentication</Text>
+      <View style={[styles.card, { backgroundColor: cardBg, borderColor: borderColor }]}>
+        <Text style={[styles.cardTitle, { color: textColor }]}>🔐 Security & Authentication</Text>
         <View style={styles.trackingHeader}>
           <View style={{ flex: 1, marginRight: 12 }}>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: textColor }}>
               {Platform.OS === 'ios' ? 'Face ID / Touch ID Login' : 'Fingerprint / Biometric Login'}
             </Text>
-            <Text style={{ fontSize: 12, color: theme.lightText, marginTop: 2 }}>
+            <Text style={{ fontSize: 12, color: subtextColor, marginTop: 2 }}>
               {biometricAvailable
                 ? 'Sign in quickly without typing your password.'
                 : 'Not available or enrolled on this device.'}
@@ -649,73 +766,76 @@ export default function ProfileScreen({ navigation }: any) {
       </View>
 
       {/* Navigation Options List */}
-      <View style={[styles.section, { borderColor: theme.border }]}>
+      <View style={[styles.section, { backgroundColor: cardBg, borderColor: borderColor }]}>
+        <Text style={[styles.sectionHeading, { color: subtextColor }]}>Account</Text>
+
         {profile.role === 'VENDOR' ? (
-          <TouchableOpacity 
-            style={[styles.menuItem, { borderBottomColor: theme.border }]} 
-            onPress={() => navigation.navigate('History', { type: 'orders', role: profile.role })}
-          >
-            <Text style={styles.menuItemText}>Product Sales Activity</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('History', { type: 'orders', role: profile.role })}>
+            <Text style={styles.menuItemIcon}>📦</Text>
+            <Text style={[styles.menuItemText, { color: textColor }]}>Product Sales Activity</Text>
+            <Text style={[styles.menuItemChevron, { color: subtextColor }]}>›</Text>
           </TouchableOpacity>
         ) : profile.role === 'RIDER' ? (
-          <TouchableOpacity 
-            style={[styles.menuItem, { borderBottomColor: theme.border }]} 
-            onPress={() => navigation.navigate('History', { type: 'orders', role: profile.role })}
-          >
-            <Text style={styles.menuItemText}>Deliveries / Dispatches</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('History', { type: 'orders', role: profile.role })}>
+            <Text style={styles.menuItemIcon}>🚚</Text>
+            <Text style={[styles.menuItemText, { color: textColor }]}>Deliveries & Dispatches</Text>
+            <Text style={[styles.menuItemChevron, { color: subtextColor }]}>›</Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity 
-            style={[styles.menuItem, { borderBottomColor: theme.border }]} 
-            onPress={() => navigation.navigate('History', { type: 'orders', role: profile.role })}
-          >
-            <Text style={styles.menuItemText}>Order History</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('History', { type: 'orders', role: profile.role })}>
+            <Text style={styles.menuItemIcon}>🛒</Text>
+            <Text style={[styles.menuItemText, { color: textColor }]}>Order History</Text>
+            <Text style={[styles.menuItemChevron, { color: subtextColor }]}>›</Text>
           </TouchableOpacity>
         )}
 
         {profile.role !== 'VENDOR' && profile.role !== 'RIDER' && (
-          <TouchableOpacity 
-            style={[styles.menuItem, { borderBottomColor: theme.border }]} 
-            onPress={() => navigation.navigate('History', { type: 'bookings', role: profile.role })}
-          >
-            <Text style={styles.menuItemText}>
-              {profile.role === 'HANDYMAN' ? 'Assigned Jobs / Tickets' : 'Booking History'}
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('History', { type: 'bookings', role: profile.role })}>
+            <Text style={styles.menuItemIcon}>📋</Text>
+            <Text style={[styles.menuItemText, { color: textColor }]}>
+              {profile.role === 'HANDYMAN' ? 'Assigned Jobs & Tickets' : 'Booking History'}
             </Text>
+            <Text style={[styles.menuItemChevron, { color: subtextColor }]}>›</Text>
           </TouchableOpacity>
         )}
 
         {(profile.role === 'VENDOR' || profile.role === 'HANDYMAN' || profile.role === 'RIDER') && (
-          <TouchableOpacity 
-            style={[styles.menuItem, { borderBottomColor: theme.border }]} 
-            onPress={() => navigation.navigate('Wallet')}
-          >
-            <Text style={styles.menuItemText}>💳 Virtual Platform Wallet</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('Wallet')}>
+            <Text style={styles.menuItemIcon}>💳</Text>
+            <Text style={[styles.menuItemText, { color: textColor }]}>Virtual Platform Wallet</Text>
+            <Text style={[styles.menuItemChevron, { color: subtextColor }]}>›</Text>
+          </TouchableOpacity>
+        )}
+
+        {profile.role === 'RIDER' && (
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('RiderEarnings')}>
+            <Text style={styles.menuItemIcon}>🛵</Text>
+            <Text style={[styles.menuItemText, { color: textColor }]}>Rider Earnings & Trips</Text>
+            <Text style={[styles.menuItemChevron, { color: subtextColor }]}>›</Text>
           </TouchableOpacity>
         )}
 
         {(profile.role === 'VENDOR' || profile.role === 'HANDYMAN' || profile.role === 'RIDER') && (
-          <TouchableOpacity 
-            style={[styles.menuItem, { borderBottomColor: theme.border }]} 
-            onPress={() => navigation.navigate('KYCStatus')}
-          >
-            <Text style={styles.menuItemText}>🛡️ Identity Verification Status</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('KYCStatus')}>
+            <Text style={styles.menuItemIcon}>🛡️</Text>
+            <Text style={[styles.menuItemText, { color: textColor }]}>Identity Verification (KYC)</Text>
+            <Text style={[styles.menuItemChevron, { color: subtextColor }]}>›</Text>
           </TouchableOpacity>
         )}
 
         {(profile.role === 'ADMIN' || profile.role === 'VENDOR') && (
-          <TouchableOpacity 
-            style={[styles.menuItem, { borderBottomColor: theme.border }]} 
-            onPress={() => navigation.navigate('Admin')}
-          >
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('Admin')}>
+            <Text style={styles.menuItemIcon}>{profile.role === 'ADMIN' ? '⚙️' : '🏪'}</Text>
             <Text style={[styles.menuItemText, { color: theme.primary }]}>
-              {profile.role === 'ADMIN' ? 'Admin Control Panel' : 'Manage Catalog'}
+              {profile.role === 'ADMIN' ? 'Admin Control Panel' : 'Manage Product Catalog'}
             </Text>
+            <Text style={[styles.menuItemChevron, { color: theme.primary }]}>›</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      <TouchableOpacity style={styles.logoutButton} onPress={logout}>
-        <Text style={styles.logoutButtonText}>Log Out</Text>
+      <TouchableOpacity style={[styles.logoutButton, { backgroundColor: isDark ? '#1E293B' : '#FFF', borderColor: '#EF4444' }]} onPress={logout}>
+        <Text style={{ color: '#EF4444', fontSize: 16, fontWeight: '700' }}>🚪 Log Out</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -755,20 +875,36 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 28,
-    marginTop: 12,
+    marginBottom: 20,
+    marginTop: 4,
+    borderRadius: 20,
+    padding: 28,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2,
   },
-  avatarPlaceholder: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+  avatarRing: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 3,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  avatarPlaceholder: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    justifyContent: 'center',
+    alignItems: 'center',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 4,
   },
   avatarText: {
     fontSize: 36,
@@ -778,13 +914,15 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#1C1C1E',
     marginBottom: 4,
   },
   email: {
     fontSize: 14,
-    color: '#8E8E93',
-    marginBottom: 12,
+    marginBottom: 4,
+  },
+  phoneText: {
+    fontSize: 13,
+    marginBottom: 10,
   },
   roleBadge: {
     paddingHorizontal: 12,
@@ -798,7 +936,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   trackingCard: {
-    backgroundColor: '#FFF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
@@ -813,20 +950,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   trackingTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#1C1C1E',
   },
   trackingDesc: {
-    fontSize: 13,
-    color: '#8E8E93',
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  locationPill: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  locationPillText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   card: {
-    backgroundColor: '#FFF',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
@@ -840,8 +985,63 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1C1C1E',
+    marginBottom: 14,
+  },
+  dashboardSection: {
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  dashboardTitle: {
+    fontSize: 17,
+    fontWeight: '800',
     marginBottom: 16,
+    letterSpacing: -0.3,
+  },
+  quickGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  quickTile: {
+    width: '31%',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  quickTileIcon: {
+    fontSize: 26,
+    marginBottom: 6,
+  },
+  quickTileLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  quickTileSub: {
+    fontSize: 10,
+    textAlign: 'center',
+    lineHeight: 13,
+  },
+  vehicleRow: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  vehicleItem: {
+    flex: 1,
   },
   label: {
     fontSize: 12,
@@ -876,8 +1076,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   section: {
-    backgroundColor: '#FFF',
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: 'hidden',
     marginBottom: 24,
     borderWidth: 1,
@@ -887,15 +1086,34 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 2,
   },
+  sectionHeading: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 8,
+  },
   menuItem: {
-    padding: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 18,
     borderBottomWidth: 1,
-    backgroundColor: '#FFF',
+  },
+  menuItemIcon: {
+    fontSize: 18,
+    width: 30,
   },
   menuItemText: {
+    flex: 1,
     fontSize: 15,
-    color: '#1C1C1E',
     fontWeight: '600',
+  },
+  menuItemChevron: {
+    fontSize: 20,
+    fontWeight: '300',
   },
   logoutButton: {
     backgroundColor: '#FFF',
@@ -1080,25 +1298,49 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   walletPreviewCard: {
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 20,
     marginBottom: 20,
     borderWidth: 1,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  walletPreviewInner: {
+    padding: 22,
+    borderRadius: 18,
+  },
+  walletBigAmount: {
+    fontSize: 30,
+    fontWeight: '900',
+    color: '#FFF',
+    letterSpacing: -0.5,
+    marginTop: 4,
+  },
+  walletManageBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  walletManageBtnText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   walletPreviewHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
+    alignItems: 'flex-start',
+    marginBottom: 20,
   },
   walletPreviewTitle: {
     fontSize: 16,
     fontWeight: '800',
+    color: '#FFF',
   },
   walletPreviewStats: {
     flexDirection: 'row',
@@ -1109,15 +1351,29 @@ const styles = StyleSheet.create({
   },
   walletPreviewLabel: {
     fontSize: 11,
-    color: '#8E8E93',
+    color: 'rgba(255,255,255,0.7)',
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
+  walletPreviewLabelLight: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 3,
+  },
   walletPreviewVal: {
     fontSize: 18,
     fontWeight: '900',
+    color: '#FFF',
+  },
+  walletPreviewValLight: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFF',
   },
   walletPreviewDivider: {
     width: 1,

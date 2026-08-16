@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useState, useRef, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
-  ActivityIndicator, TextInput, useWindowDimensions, Platform, Linking, Alert, Animated
+  ActivityIndicator, TextInput, useWindowDimensions, Platform, Linking, Alert, Animated, Modal
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuthContext } from '../context/AuthContext';
@@ -64,7 +64,7 @@ const NAV_LINKS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
-  const { theme, logoUrl, footerText, apkUrl, aabUrl, colorMode } = useContext(SettingsContext);
+  const { theme, logoUrl, footerText, apkUrl, colorMode } = useContext(SettingsContext);
   const { fmt } = useCurrency();
   const { width } = useWindowDimensions();
 
@@ -86,6 +86,8 @@ export default function HomeScreen({ navigation }: any) {
   const [searchLoading, setSearchLoading] = useState(false);
   const searchDebounceRef = useRef<any>(null);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [showVendorModal, setShowVendorModal] = useState(false);
+  const [vendorModalType, setVendorModalType] = useState<'REGISTER' | 'UPGRADE' | 'KYC'>('REGISTER');
 
   const heroFadeAnim = useRef(new Animated.Value(0)).current;
   const heroSlideAnim = useRef(new Animated.Value(24)).current;
@@ -110,25 +112,26 @@ export default function HomeScreen({ navigation }: any) {
 
   const handleSellPress = () => {
     if (!userInfo) {
-      return Alert.alert('🏪 Vendor Registration Required', 'You must register as a vendor before you can sell.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Register as Vendor', onPress: () => navigation.navigate('Signup', { role: 'VENDOR', initialRole: 'VENDOR' }) },
-      ]);
+      setVendorModalType('REGISTER');
+      setShowVendorModal(true);
+      return;
     }
-    if (userInfo.role === 'VENDOR' && userInfo.kycStatus && !['VERIFIED', 'APPROVED'].includes(userInfo.kycStatus)) {
-      return Alert.alert('⏳ Verification Pending', 'Complete your vendor verification first.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Complete Verification', onPress: () => navigation.navigate('KYCVerification', { role: 'VENDOR' }) },
-      ]);
-    }
-    if (userInfo.role === 'VENDOR' || userInfo.role === 'ADMIN') {
+    if (userInfo.role === 'VENDOR') {
+      if (userInfo.kycStatus && !['VERIFIED', 'APPROVED'].includes(userInfo.kycStatus)) {
+        setVendorModalType('KYC');
+        setShowVendorModal(true);
+        return;
+      }
       navigation.navigate('Admin', { activeTab: 'products', action: 'add' });
-    } else {
-      Alert.alert('🏪 Vendor Required', 'Register as a vendor to sell.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Register', onPress: () => navigation.navigate('KYCVerification', { role: 'VENDOR' }) },
-      ]);
+      return;
     }
+    if (userInfo.role === 'ADMIN') {
+      navigation.navigate('Admin', { activeTab: 'products', action: 'add' });
+      return;
+    }
+    // For CUSTOMER, HANDYMAN, RIDER wishing to list items for sale
+    setVendorModalType('UPGRADE');
+    setShowVendorModal(true);
   };
 
   const handleActionPress = (screen: string) => {
@@ -142,6 +145,21 @@ export default function HomeScreen({ navigation }: any) {
       Animated.timing(heroFadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
       Animated.timing(heroSlideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
     ]).start();
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const paymentStatus = urlParams.get('payment_status');
+        const ref = urlParams.get('ref');
+        if (paymentStatus === 'success') {
+          Alert.alert('✅ Payment Confirmed', `Your payment was completed and verified!\nReference: ${ref || 'Successful'}`);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (paymentStatus === 'cancelled') {
+          Alert.alert('Payment Cancelled', 'Your transaction was cancelled. Feel free to try again.');
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      } catch (e) {}
+    }
   }, []);
 
   useEffect(() => {
@@ -208,11 +226,12 @@ export default function HomeScreen({ navigation }: any) {
 
   // ── Sub-renders ──────────────────────────────────────────────────────────
   const slideW = Math.min(width, 1200) - 40;
+  const slideH = isDesktop ? 400 : isTablet ? 280 : 200;
 
   const renderSlide = (slide: any) => {
     if (slide.imageUrl) {
       return (
-        <View key={slide.id} style={[styles.slideCard, { width: slideW }]}>
+        <View key={slide.id} style={[styles.slideCard, { width: slideW, height: slideH }]}>
           <Image source={{ uri: slide.imageUrl }} style={styles.slideImage} resizeMode="cover" />
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={StyleSheet.absoluteFill} />
           {slide.caption && (
@@ -228,7 +247,7 @@ export default function HomeScreen({ navigation }: any) {
       <TouchableOpacity
         key={slide.id}
         activeOpacity={0.92}
-        style={[styles.slideCard, { width: slideW }]}
+        style={[styles.slideCard, { width: slideW, height: slideH }]}
         onPress={() => {
           if (!slide.action) return;
           if (slide.action === 'Products') navigation.navigate('Products');
@@ -238,8 +257,8 @@ export default function HomeScreen({ navigation }: any) {
       >
         <LinearGradient colors={colors as any} style={styles.promoSlideGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
           {/* decorative circles */}
-          <View style={[styles.slideDecor1, { backgroundColor: (slide.accent || '#FFF') + '18' }]} />
-          <View style={[styles.slideDecor2, { backgroundColor: (slide.accent || '#FFF') + '10' }]} />
+          <View style={[styles.slideDecor1, { backgroundColor: (slide.accent || '#FFF') + '18', width: isDesktop ? 300 : 180, height: isDesktop ? 300 : 180, borderRadius: isDesktop ? 150 : 90 }]} />
+          <View style={[styles.slideDecor2, { backgroundColor: (slide.accent || '#FFF') + '10', width: isDesktop ? 200 : 120, height: isDesktop ? 200 : 120, borderRadius: isDesktop ? 100 : 60 }]} />
           <View style={styles.promoSlideContent}>
             <View style={[styles.promoSlideIconWrap, { backgroundColor: (slide.accent || '#FFF') + '22' }]}>
               <Text style={styles.promoSlideIcon}>{slide.icon || '🛍️'}</Text>
@@ -358,6 +377,7 @@ export default function HomeScreen({ navigation }: any) {
         <View style={[styles.mobileDrawer, { backgroundColor: theme.card, borderColor: theme.border, shadowColor: isDark ? '#000' : '#888' }]}>
           {[
             { icon: '🏠', label: 'Home', screen: 'HomeTab' },
+            { icon: '🏷️', label: 'Sell on FixMart', screen: '__sell__' },
             { icon: '📦', label: 'Products', screen: 'Products' },
             { icon: '⚡', label: 'Services', screen: 'Services' },
             { icon: '🚚', label: 'Book Rider', screen: 'BookParcel' },
@@ -368,12 +388,24 @@ export default function HomeScreen({ navigation }: any) {
           ].map(item => (
             <TouchableOpacity
               key={item.screen}
-              style={[styles.drawerItem, { borderBottomColor: theme.border }]}
-              onPress={() => { setMenuOpen(false); navigation.navigate(item.screen); }}
+              style={[
+                styles.drawerItem,
+                { borderBottomColor: theme.border },
+                item.screen === '__sell__' && { backgroundColor: theme.primary + '14' }
+              ]}
+              onPress={() => {
+                setMenuOpen(false);
+                if (item.screen === '__sell__') handleSellPress();
+                else navigation.navigate(item.screen);
+              }}
             >
               <Text style={styles.drawerItemIcon}>{item.icon}</Text>
-              <Text style={[styles.drawerItemLabel, { color: theme.text }]}>{item.label}</Text>
-              <Text style={[styles.drawerChevron, { color: theme.lightText || '#8E8E93' }]}>›</Text>
+              <Text style={[
+                styles.drawerItemLabel,
+                { color: item.screen === '__sell__' ? theme.primary : theme.text },
+                item.screen === '__sell__' && { fontWeight: '800' }
+              ]}>{item.label}</Text>
+              <Text style={[styles.drawerChevron, { color: item.screen === '__sell__' ? theme.primary : (theme.lightText || '#8E8E93') }]}>›</Text>
             </TouchableOpacity>
           ))}
           {userInfo?.role === 'RIDER' && (
@@ -746,12 +778,7 @@ export default function HomeScreen({ navigation }: any) {
         >
           <Text style={styles.downloadBtnText}>📥 Android APK</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.downloadBtn, { backgroundColor: '#0F172A', marginLeft: 10 }]}
-          onPress={() => triggerDownload(aabUrl, 'fixmart-latest.aab')}
-        >
-          <Text style={styles.downloadBtnText}>📦 Android AAB</Text>
-        </TouchableOpacity>
+
       </View>
     </View>
   );
@@ -769,9 +796,138 @@ export default function HomeScreen({ navigation }: any) {
     </View>
   );
 
+  const renderVendorModal = () => (
+    <Modal
+      visible={showVendorModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowVendorModal(false)}
+    >
+      <View style={styles.vendorModalOverlay}>
+        <View style={[styles.vendorModalCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+          <View style={[styles.vendorModalIconCircle, { backgroundColor: theme.primary + '18' }]}>
+            <Text style={styles.vendorModalEmoji}>
+              {vendorModalType === 'KYC' ? '⏳' : '🏪'}
+            </Text>
+          </View>
+
+          <Text style={[styles.vendorModalTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
+            {vendorModalType === 'REGISTER'
+              ? 'Become a Seller on FixMart'
+              : vendorModalType === 'UPGRADE'
+              ? 'Start Selling on FixMart'
+              : 'Vendor Verification Pending'}
+          </Text>
+
+          <Text style={[styles.vendorModalSubtitle, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+            {vendorModalType === 'REGISTER'
+              ? 'List and sell your tools, equipment, materials & hardware to thousands of buyers across Nigeria.'
+              : vendorModalType === 'UPGRADE'
+              ? 'Activate your seller privileges to list products, manage inventory, and receive customer payments directly in your wallet.'
+              : 'Your vendor account requires identity verification before your product listings go live to buyers.'}
+          </Text>
+
+          <View style={styles.vendorModalActions}>
+            {vendorModalType === 'REGISTER' && (
+              <>
+                <TouchableOpacity
+                  style={[styles.vendorModalBtnPrimary, { backgroundColor: theme.primary }]}
+                  onPress={() => {
+                    setShowVendorModal(false);
+                    navigation.navigate('Signup', { role: 'VENDOR', initialRole: 'VENDOR' });
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.vendorModalBtnPrimaryText}>🚀 Register as Vendor</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.vendorModalBtnSecondary, { borderColor: isDark ? '#334155' : '#E2E8F0', backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]}
+                  onPress={() => {
+                    setShowVendorModal(false);
+                    navigation.navigate('Login');
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.vendorModalBtnSecondaryText, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
+                    🔐 Log In to Existing Account
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {vendorModalType === 'UPGRADE' && (
+              <>
+                <TouchableOpacity
+                  style={[styles.vendorModalBtnPrimary, { backgroundColor: theme.primary }]}
+                  onPress={() => {
+                    setShowVendorModal(false);
+                    navigation.navigate('KYCVerification', { role: 'VENDOR' });
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.vendorModalBtnPrimaryText}>🚀 Complete Seller Setup</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.vendorModalBtnSecondary, { borderColor: isDark ? '#334155' : '#E2E8F0', backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]}
+                  onPress={() => {
+                    setShowVendorModal(false);
+                    navigation.navigate('Login');
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.vendorModalBtnSecondaryText, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
+                    👤 Switch Account
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {vendorModalType === 'KYC' && (
+              <>
+                <TouchableOpacity
+                  style={[styles.vendorModalBtnPrimary, { backgroundColor: theme.primary }]}
+                  onPress={() => {
+                    setShowVendorModal(false);
+                    navigation.navigate('KYCVerification', { role: 'VENDOR' });
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.vendorModalBtnPrimaryText}>⚡ Complete KYC Verification</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.vendorModalBtnSecondary, { borderColor: isDark ? '#334155' : '#E2E8F0', backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]}
+                  onPress={() => {
+                    setShowVendorModal(false);
+                    navigation.navigate('KYCStatus');
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.vendorModalBtnSecondaryText, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
+                    📊 Check Status
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              style={styles.vendorModalCancelBtn}
+              onPress={() => setShowVendorModal(false)}
+            >
+              <Text style={[styles.vendorModalCancelText, { color: isDark ? '#64748B' : '#94A3B8' }]}>Keep Browsing</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   // ── Main Render ──────────────────────────────────────────────────────────
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
+      {renderVendorModal()}
       {/* Sticky Navbar */}
       {Platform.OS === 'web' ? (
         <View style={styles.stickyNav}>
@@ -1144,7 +1300,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
   },
-  slideCard: { height: 200, position: 'relative', overflow: 'hidden' },
+  slideCard: { position: 'relative', overflow: 'hidden' },
   slideImage: { width: '100%', height: '100%' },
   slideCaptionContainer: { position: 'absolute', bottom: 20, left: 20, right: 20 },
   slideCaptionText: {
@@ -1345,4 +1501,87 @@ const styles = StyleSheet.create({
   footerBrand: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
   footerBrandText: { fontSize: 18, fontWeight: '900', letterSpacing: -0.5 },
   footerText: { fontSize: 12, textAlign: 'center', lineHeight: 18 },
+
+  // ── Vendor Modal ──────────────────────────────────────────────────────────
+  vendorModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 9999,
+  },
+  vendorModalCard: {
+    width: '100%',
+    maxWidth: 440,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 28,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  vendorModalIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  vendorModalEmoji: { fontSize: 32 },
+  vendorModalTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: -0.3,
+  },
+  vendorModalSubtitle: {
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  vendorModalActions: { width: '100%', gap: 10 },
+  vendorModalBtnPrimary: {
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  vendorModalBtnPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  vendorModalBtnSecondary: {
+    width: '100%',
+    paddingVertical: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  vendorModalBtnSecondaryText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  vendorModalCancelBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  vendorModalCancelText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
 });

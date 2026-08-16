@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, ActivityIndicator, View, Platform, Text } from 'react-native';
+import { StyleSheet, ActivityIndicator, View, Platform, Text, TouchableOpacity } from 'react-native';
 
 let WebView: any = null;
 if (Platform.OS !== 'web') {
@@ -12,7 +12,7 @@ if (Platform.OS !== 'web') {
 
 interface PaymentWebViewProps {
   url: string;
-  provider?: 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY' | null;
+  provider?: 'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY' | null;
   onPaymentSuccess: (reference: string) => void;
   onPaymentCancel: () => void;
 }
@@ -24,7 +24,14 @@ interface PaymentWebViewProps {
 function extractReference(url: string, provider?: string | null): string {
   try {
     const parsed = new URL(url);
-    if (provider === 'PAYSTACK') {
+    if (provider === 'STRIPE') {
+      return (
+        parsed.searchParams.get('reference') ||
+        parsed.searchParams.get('payment_intent') ||
+        parsed.searchParams.get('session_id') ||
+        'STRIPE_REF'
+      );
+    } else if (provider === 'PAYSTACK') {
       // Paystack: ?reference=xxx or ?trxref=xxx
       return (
         parsed.searchParams.get('reference') ||
@@ -36,6 +43,7 @@ function extractReference(url: string, provider?: string | null): string {
       return (
         parsed.searchParams.get('transaction_id') ||
         parsed.searchParams.get('tx_ref') ||
+        parsed.searchParams.get('reference') ||
         'FLW_REF'
       );
     } else if (provider === 'OPAY') {
@@ -61,12 +69,18 @@ function isSuccessUrl(url: string): boolean {
     url.includes('payment/callback') ||
     url.includes('payment/success') ||
     url.includes('/checkout/success') ||
+    url.includes('/api/payments/paystack/callback') ||
+    url.includes('/api/payments/flutterwave/callback') ||
+    url.includes('/api/payments/stripe/verify') ||
+    url.includes('/api/payments/opay/verify') ||
     // Paystack status=success
-    (url.includes('paystack') && url.includes('status=success')) ||
+    (url.includes('paystack') && (url.includes('status=success') || url.includes('callback'))) ||
     // Flutterwave status=successful
-    (url.includes('flutterwave') && url.includes('status=successful')) ||
+    (url.includes('flutterwave') && (url.includes('status=successful') || url.includes('status=success') || url.includes('callback'))) ||
     // OPay success indicators
-    (url.includes('opay') && (url.includes('status=SUCCESS') || url.includes('/opay/verify') || url.includes('status=success')))
+    (url.includes('opay') && (url.includes('status=SUCCESS') || url.includes('/opay/verify') || url.includes('status=success'))) ||
+    // Stripe success indicators
+    (url.includes('stripe') && (url.includes('status=success') || url.includes('verify') || url.includes('payment_intent_client_secret')))
   );
 }
 
@@ -105,11 +119,23 @@ export default function PaymentWebView({
 
   if (Platform.OS === 'web') {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator color="#007AFF" size="large" />
-        <Text style={{ marginTop: 15, color: '#6C757D' }}>
-          Redirecting to payment gateway...
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+        <ActivityIndicator color="#22A45D" size="large" />
+        <Text style={{ marginTop: 16, color: '#64748B', fontWeight: '600', fontSize: 16 }}>
+          Redirecting to {provider || 'payment'} gateway...
         </Text>
+        <TouchableOpacity
+          style={{ marginTop: 24, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: '#22A45D' }}
+          onPress={() => { window.location.href = url; }}
+        >
+          <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>Click here if not redirected automatically</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{ marginTop: 12, paddingVertical: 8 }}
+          onPress={onPaymentCancel}
+        >
+          <Text style={{ color: '#EF4444', fontWeight: '600' }}>Cancel Payment</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -117,7 +143,7 @@ export default function PaymentWebView({
   if (!WebView) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator color="#007AFF" size="large" />
+        <ActivityIndicator color="#22A45D" size="large" />
         <Text style={{ marginTop: 15, color: '#6C757D' }}>Loading payment gateway…</Text>
       </View>
     );
@@ -128,13 +154,22 @@ export default function PaymentWebView({
       <WebView
         source={{ uri: url }}
         onNavigationStateChange={handleNavigationStateChange}
+        onMessage={(event: any) => {
+          try {
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data && data.status === 'success') {
+              onPaymentSuccess(data.reference || extractReference(url, provider));
+            }
+          } catch (e) {
+            // Ignore non-JSON messages
+          }
+        }}
         startInLoadingState={true}
         renderLoading={() => (
-          <ActivityIndicator color="#007AFF" size="large" style={styles.loader} />
+          <ActivityIndicator color="#22A45D" size="large" style={styles.loader} />
         )}
         javaScriptEnabled={true}
         domStorageEnabled={true}
-        // Allow gateway-originated redirects back to deep-link callbacks
         originWhitelist={['*']}
       />
     </View>

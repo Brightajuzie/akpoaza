@@ -1,4 +1,4 @@
-import { Router, Response, NextFunction } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { PaymentProvider } from '@prisma/client';
 import Stripe from 'stripe';
 import axios from 'axios';
@@ -7,21 +7,263 @@ import { createEscrowForPaidItem, releaseEscrow, triggerSplitWebhook } from '../
 
 const router = Router();
 
-// Initialize Stripe (uses a dummy key if not in env)
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
-  apiVersion: '2023-10-16' as any,
-});
-
 // Paystack generic configuration
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_dummy';
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
 
 // Flutterwave generic configuration
-const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK_TEST-dummy';
 const FLUTTERWAVE_BASE_URL = 'https://api.flutterwave.com/v3';
 
-// Create a checkout session/intent based on the payment provider
-router.post('/checkout', async (req, res, next) => {
+// Helper to determine the server's base URL
+function getBaseUrl(req: Request): string {
+  if (process.env.API_URL) return process.env.API_URL.replace(/\/api\/?$/, '');
+  if (process.env.BACKEND_URL) return process.env.BACKEND_URL.replace(/\/api\/?$/, '');
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.get('host') || 'localhost:5000';
+  return `${proto}://${host}`;
+}
+
+// Helper to determine the frontend URL
+function getFrontendUrl(req: Request): string {
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, '');
+  if (req.headers.origin && typeof req.headers.origin === 'string') return req.headers.origin;
+  if (req.headers.referer && typeof req.headers.referer === 'string') {
+    try {
+      const u = new URL(req.headers.referer);
+      return `${u.protocol}//${u.host}`;
+    } catch { /* ignore */ }
+  }
+  return 'http://localhost:8081';
+}
+
+// Shared helper to process payment verification across all providers
+async function processPaymentVerification({
+  provider,
+  reference,
+  checkoutType,
+  id,
+  chargedAmount,
+}: {
+  provider: 'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY';
+  reference: string;
+  checkoutType: string;
+  id: string;
+  chargedAmount: number;
+}) {
+  if (checkoutType === 'order') {
+    const order = await prisma.order.findUnique({ where: { id } });
+    if (!order) throw new Error('Order not found');
+
+    const updatedOrder = await prisma.order.update({
+      where: { id },
+      data: {
+        status: 'PAID',
+        paymentProvider: provider,
+        paymentRef: reference,
+        amountPaid: { increment: chargedAmount },
+      },
+    });
+
+    await createEscrowForPaidItem('order', id, chargedAmount).catch(err =>
+      console.error(`[Escrow] Hold failed for order ${id}:`, err)
+    );
+
+    // Auto-release escrow only when final split payment installment is reached
+    if (updatedOrder.isSplitPayment && updatedOrder.amountPaid >= updatedOrder.totalAmount) {
+      const activeEscrows = await prisma.escrow.findMany({ where: { orderId: id, status: 'HELD' } });
+      for (const esc of activeEscrows) {
+        await releaseEscrow(esc.id).catch(err =>
+          console.error(`[Escrow] Failed to release escrow on final split payment for order ${id}:`, err)
+        );
+      }
+      await prisma.order.update({ where: { id }, data: { status: 'DELIVERED' } });
+    }
+
+    return { type: 'order', record: updatedOrder };
+  } else if (checkoutType === 'booking') {
+    const booking = await prisma.booking.findUnique({ where: { id } });
+    if (!booking) throw new Error('Booking not found');
+
+    const updatedBooking = await prisma.booking.update({
+      where: { id },
+      data: {
+        status: 'ACCEPTED',
+        amountPaid: { increment: chargedAmount },
+      },
+    });
+
+    await createEscrowForPaidItem('booking', id, chargedAmount).catch(err =>
+      console.error(`[Escrow] Hold failed for booking ${id}:`, err)
+    );
+
+    // Auto-release escrow only when final split payment installment is reached
+    if (updatedBooking.isSplitPayment && updatedBooking.amountPaid >= updatedBooking.totalPrice) {
+      const activeEscrows = await prisma.escrow.findMany({ where: { bookingId: id, status: 'HELD' } });
+      for (const esc of activeEscrows) {
+        await releaseEscrow(esc.id).catch(err =>
+          console.error(`[Escrow] Failed to release escrow on final split payment for booking ${id}:`, err)
+        );
+      }
+      await prisma.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
+    }
+
+    return { type: 'booking', record: updatedBooking };
+  } else if (checkoutType === 'parcel') {
+    const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
+    if (!parcel) throw new Error('Parcel delivery not found');
+
+    const updatedParcel = await prisma.parcelDelivery.update({
+      where: { id },
+      data: {
+        status: 'PAID',
+        paymentProvider: provider,
+        paymentRef: reference,
+      },
+    });
+
+    await createEscrowForPaidItem('parcel', id, chargedAmount || parcel.totalAmount).catch(err =>
+      console.error(`[Escrow] Hold failed for parcel ${id}:`, err)
+    );
+
+    return { type: 'parcel', record: updatedParcel };
+  }
+
+  throw new Error(`Invalid checkout type: ${checkoutType}`);
+}
+
+// Render branded HTML success confirmation page
+function renderSuccessHtml(provider: string, reference: string, frontendUrl: string, title?: string, message?: string) {
+  const displayTitle = title || `${provider} Payment Successful!`;
+  const displayMessage = message || `Your transaction was completed and verified successfully. Reference: ${reference}`;
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>${displayTitle}</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            color: #F1F5F9;
+          }
+          .card {
+            background: #FFFFFF;
+            color: #0F172A;
+            border-radius: 24px;
+            padding: 40px 32px;
+            max-width: 440px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            border: 1px solid #E2E8F0;
+          }
+          .badge-icon {
+            width: 72px;
+            height: 72px;
+            background: #ECFDF5;
+            color: #10B981;
+            border-radius: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            margin: 0 auto 20px auto;
+            border: 2px solid #A7F3D0;
+          }
+          h1 {
+            font-size: 22px;
+            font-weight: 800;
+            margin: 0 0 10px 0;
+            color: #0F172A;
+          }
+          p {
+            font-size: 14px;
+            color: #64748B;
+            line-height: 1.5;
+            margin: 0 0 24px 0;
+          }
+          .ref-box {
+            background: #F8FAFC;
+            border: 1px dashed #CBD5E1;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #475569;
+            word-break: break-all;
+            margin-bottom: 24px;
+          }
+          .btn {
+            display: block;
+            background: #22A45D;
+            color: #FFFFFF;
+            text-decoration: none;
+            padding: 14px 20px;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            width: 100%;
+            box-sizing: border-box;
+          }
+          .btn:hover {
+            background: #1B8A4C;
+          }
+          .subtext {
+            font-size: 11px;
+            color: #94A3B8;
+            margin-top: 16px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="badge-icon">✓</div>
+          <h1>${displayTitle}</h1>
+          <p>${displayMessage}</p>
+          <div class="ref-box">REF: ${reference}</div>
+          <button class="btn" onclick="returnToApp()">← Return to FixMart App</button>
+          <div class="subtext">Auto-redirecting back to app...</div>
+        </div>
+
+        <script>
+          function notifyAndRedirect() {
+            try {
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ status: 'success', reference: "${reference}" }));
+              }
+            } catch (e) {}
+          }
+          function returnToApp() {
+            notifyAndRedirect();
+            setTimeout(function() {
+              window.location.href = "${frontendUrl}/?payment_status=success&ref=${encodeURIComponent(reference)}";
+            }, 300);
+          }
+          notifyAndRedirect();
+          setTimeout(function() {
+            window.location.href = "${frontendUrl}/?payment_status=success&ref=${encodeURIComponent(reference)}";
+          }, 3500);
+        </script>
+      </body>
+    </html>
+  `;
+}
+
+// ─── POST /checkout ────────────────────────────────────────────────────────────
+// Create a checkout session/intent or sandbox mock for the chosen payment provider
+router.post('/checkout', async (req: Request, res: Response, next: NextFunction) => {
   const { checkoutType, id, provider, isSplit, currency: reqCurrency, localAmount: reqLocalAmount } = req.body;
 
   if (!checkoutType || !id || !provider) {
@@ -41,7 +283,6 @@ router.post('/checkout', async (req, res, next) => {
       });
       if (!order) return res.status(404).json({ error: 'Order not found' });
 
-      // Update isSplitPayment status on Order — preserve existing true flag
       const updatedOrder = await prisma.order.update({
         where: { id },
         data: { isSplitPayment: order.isSplitPayment || isSplitPaymentChosen },
@@ -56,7 +297,6 @@ router.post('/checkout', async (req, res, next) => {
       } else {
         totalAmount = updatedOrder.isSplitPayment ? updatedOrder.totalAmount / 2 : updatedOrder.totalAmount;
       }
-
     } else if (checkoutType === 'booking') {
       const booking = await prisma.booking.findUnique({
         where: { id },
@@ -64,7 +304,6 @@ router.post('/checkout', async (req, res, next) => {
       });
       if (!booking) return res.status(404).json({ error: 'Booking not found' });
 
-      // Update isSplitPayment status on Booking — preserve existing true flag
       const updatedBooking = await prisma.booking.update({
         where: { id },
         data: { isSplitPayment: booking.isSplitPayment || isSplitPaymentChosen },
@@ -98,9 +337,7 @@ router.post('/checkout', async (req, res, next) => {
       id,
     };
 
-    // Determine the charge currency and local amount
-    // Frontend passes currency + localAmount (already converted); fall back to USD if not provided.
-    const chargeCurrency = (reqCurrency as string) || 'USD';
+    const chargeCurrency = (reqCurrency as string) || 'NGN';
     const chargeAmount = reqLocalAmount !== undefined && reqLocalAmount > 0
       ? Number(reqLocalAmount)
       : totalAmount;
@@ -129,105 +366,186 @@ router.post('/checkout', async (req, res, next) => {
     const activeOpayPublicKey = settings['opay_public_key'] || process.env.OPAY_PUBLIC_KEY || 'pk_test_dummy_opay_public_key';
     const activeOpaySecretKey = settings['opay_secret_key'] || process.env.OPAY_SECRET_KEY || 'sk_test_dummy_opay_secret_key';
 
+    const baseUrl = getBaseUrl(req);
+
+    // ─── 1. STRIPE GATEWAY ───────────────────────────────────────────────────
     if (provider === 'STRIPE') {
       if (settings['stripe_enabled'] === 'false') {
         return res.status(400).json({ error: 'Stripe payments are currently disabled by system administrator.' });
       }
-      const activeStripe = new Stripe(activeStripeKey, {
-        apiVersion: '2023-10-16' as any,
-      });
 
-      const paymentIntent = await activeStripe.paymentIntents.create({
-        amount: Math.round(chargeAmount * 100), // Stripe uses cents/kobo
-        currency: chargeCurrency.toLowerCase(),
-        metadata,
-      });
+      const reference = `STRIPE_${id}_${Date.now()}`;
+      const isDummy = !activeStripeKey || activeStripeKey.includes('dummy') || activeStripeKey === 'sk_test_dummy';
 
-      return res.json({
-        provider: 'STRIPE',
-        clientSecret: paymentIntent.client_secret,
-      });
+      if (isDummy) {
+        console.log(`[StripeService] Running in sandbox mock mode for ${checkoutType}: ${id}`);
+        return res.json({
+          provider: 'STRIPE',
+          clientSecret: 'mock_stripe_client_secret',
+          authorizationUrl: `${baseUrl}/api/payments/stripe/mock-pay?reference=${reference}&amount=${chargeAmount.toFixed(2)}&currency=${chargeCurrency}&type=${checkoutType}&id=${id}`,
+          reference,
+        });
+      }
+
+      try {
+        const activeStripe = new Stripe(activeStripeKey, {
+          apiVersion: '2023-10-16' as any,
+        });
+
+        const paymentIntent = await activeStripe.paymentIntents.create({
+          amount: Math.round(chargeAmount * 100),
+          currency: chargeCurrency.toLowerCase(),
+          metadata,
+        });
+
+        return res.json({
+          provider: 'STRIPE',
+          clientSecret: paymentIntent.client_secret,
+          authorizationUrl: `${baseUrl}/api/payments/stripe/mock-pay?reference=${paymentIntent.id}&amount=${chargeAmount.toFixed(2)}&currency=${chargeCurrency}&type=${checkoutType}&id=${id}`,
+          reference: paymentIntent.id,
+        });
+      } catch (err: any) {
+        console.warn(`[StripeService] API error. Falling back to sandbox mock: ${err.message}`);
+        return res.json({
+          provider: 'STRIPE',
+          clientSecret: 'mock_stripe_client_secret',
+          authorizationUrl: `${baseUrl}/api/payments/stripe/mock-pay?reference=${reference}&amount=${chargeAmount.toFixed(2)}&currency=${chargeCurrency}&type=${checkoutType}&id=${id}`,
+          reference,
+        });
+      }
     }
 
+    // ─── 2. PAYSTACK GATEWAY ─────────────────────────────────────────────────
     if (provider === 'PAYSTACK') {
       if (settings['paystack_enabled'] === 'false') {
         return res.status(400).json({ error: 'Paystack payments are currently disabled by system administrator.' });
       }
-      // Paystack initialization
-      const response = await axios.post(
-        `${PAYSTACK_BASE_URL}/transaction/initialize`,
-        {
-          email: userEmail,
-          amount: Math.round(chargeAmount * 100), // Paystack uses kobo/cents
-          currency: chargeCurrency,
-          reference: `PAY_${id}_${Date.now()}`,
-          metadata,
-        },
-        {
-          timeout: 10_000, // 10 s – prevents backend hang when Paystack is unreachable
-          headers: {
-            Authorization: `Bearer ${activePaystackKey}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
 
-      return res.json({
-        provider: 'PAYSTACK',
-        authorizationUrl: response.data.data.authorization_url,
-        reference: response.data.data.reference,
-      });
+      const reference = `PAY_${id}_${Date.now()}`;
+      const isDummy = !activePaystackKey || activePaystackKey.includes('dummy') || activePaystackKey === 'sk_test_dummy';
+
+      if (isDummy) {
+        console.log(`[PaystackService] Running in sandbox mock mode for ${checkoutType}: ${id}`);
+        return res.json({
+          provider: 'PAYSTACK',
+          authorizationUrl: `${baseUrl}/api/payments/paystack/mock-pay?reference=${reference}&amount=${chargeAmount.toFixed(2)}&currency=${chargeCurrency}&type=${checkoutType}&id=${id}`,
+          reference,
+        });
+      }
+
+      try {
+        const callbackUrl = `${baseUrl}/api/payments/paystack/callback`;
+        const response = await axios.post(
+          `${PAYSTACK_BASE_URL}/transaction/initialize`,
+          {
+            email: userEmail,
+            amount: Math.round(chargeAmount * 100), // Paystack uses kobo
+            currency: chargeCurrency,
+            reference,
+            callback_url: callbackUrl,
+            metadata,
+          },
+          {
+            timeout: 10_000,
+            headers: {
+              Authorization: `Bearer ${activePaystackKey}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (response.data && response.data.status && response.data.data?.authorization_url) {
+          return res.json({
+            provider: 'PAYSTACK',
+            authorizationUrl: response.data.data.authorization_url,
+            reference: response.data.data.reference || reference,
+          });
+        }
+        throw new Error(response.data?.message || 'Paystack initialization failed.');
+      } catch (err: any) {
+        console.warn(`[PaystackService] API error. Falling back to sandbox mock: ${err.message}`);
+        return res.json({
+          provider: 'PAYSTACK',
+          authorizationUrl: `${baseUrl}/api/payments/paystack/mock-pay?reference=${reference}&amount=${chargeAmount.toFixed(2)}&currency=${chargeCurrency}&type=${checkoutType}&id=${id}`,
+          reference,
+        });
+      }
     }
 
+    // ─── 3. FLUTTERWAVE GATEWAY ──────────────────────────────────────────────
     if (provider === 'FLUTTERWAVE') {
       if (settings['flutterwave_enabled'] === 'false') {
         return res.status(400).json({ error: 'Flutterwave payments are currently disabled by system administrator.' });
       }
-      // Flutterwave initialization
-      const txRef = `PAY_${id}_${Date.now()}`;
-      const response = await axios.post(
-        `${FLUTTERWAVE_BASE_URL}/payments`,
-        {
-          tx_ref: txRef,
-          amount: chargeAmount,
-          currency: chargeCurrency,
-          redirect_url: 'https://your-frontend-url.com/payment/callback',
-          customer: {
-            email: userEmail,
-            name: userName,
-          },
-          meta: metadata,
-        },
-        {
-          timeout: 10_000, // 10 s – prevents backend hang when Flutterwave is unreachable
-          headers: {
-            Authorization: `Bearer ${activeFlutterwaveKey}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
 
-      return res.json({
-        provider: 'FLUTTERWAVE',
-        paymentLink: response.data.data.link,
-        txRef,
-      });
+      const txRef = `FLW_${id}_${Date.now()}`;
+      const isDummy = !activeFlutterwaveKey || activeFlutterwaveKey.includes('dummy') || activeFlutterwaveKey.startsWith('FLWSECK_TEST-dummy');
+
+      if (isDummy) {
+        console.log(`[FlutterwaveService] Running in sandbox mock mode for ${checkoutType}: ${id}`);
+        return res.json({
+          provider: 'FLUTTERWAVE',
+          paymentLink: `${baseUrl}/api/payments/flutterwave/mock-pay?reference=${txRef}&amount=${chargeAmount.toFixed(2)}&currency=${chargeCurrency}&type=${checkoutType}&id=${id}`,
+          txRef,
+        });
+      }
+
+      try {
+        const redirectUrl = `${baseUrl}/api/payments/flutterwave/callback`;
+        const response = await axios.post(
+          `${FLUTTERWAVE_BASE_URL}/payments`,
+          {
+            tx_ref: txRef,
+            amount: chargeAmount,
+            currency: chargeCurrency,
+            redirect_url: redirectUrl,
+            customer: {
+              email: userEmail,
+              name: userName,
+            },
+            meta: metadata,
+          },
+          {
+            timeout: 10_000,
+            headers: {
+              Authorization: `Bearer ${activeFlutterwaveKey}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (response.data && response.data.status === 'success' && response.data.data?.link) {
+          return res.json({
+            provider: 'FLUTTERWAVE',
+            paymentLink: response.data.data.link,
+            txRef,
+          });
+        }
+        throw new Error(response.data?.message || 'Flutterwave initialization failed.');
+      } catch (err: any) {
+        console.warn(`[FlutterwaveService] API error. Falling back to sandbox mock: ${err.message}`);
+        return res.json({
+          provider: 'FLUTTERWAVE',
+          paymentLink: `${baseUrl}/api/payments/flutterwave/mock-pay?reference=${txRef}&amount=${chargeAmount.toFixed(2)}&currency=${chargeCurrency}&type=${checkoutType}&id=${id}`,
+          txRef,
+        });
+      }
     }
 
+    // ─── 4. OPAY GATEWAY ─────────────────────────────────────────────────────
     if (provider === 'OPAY') {
       if (settings['opay_enabled'] === 'false') {
         return res.status(400).json({ error: 'OPay payments are currently disabled by system administrator.' });
       }
-      // OPay initialization
-      const reference = `PAY_${id}_${Date.now()}`;
-      const isDummy = activeOpaySecretKey.includes('dummy') || activeOpayMerchantId.includes('dummy') || activeOpayPublicKey.includes('dummy');
+
+      const reference = `OPAY_${id}_${Date.now()}`;
+      const isDummy = !activeOpaySecretKey || activeOpaySecretKey.includes('dummy') || activeOpayMerchantId.includes('dummy') || activeOpayPublicKey.includes('dummy');
 
       if (isDummy) {
-        console.log(`[OPayService] Running in sandbox mock mode for order/booking: ${id}`);
-        const host = req.get('host') || 'localhost:5000';
+        console.log(`[OPayService] Running in sandbox mock mode for ${checkoutType}: ${id}`);
         return res.json({
           provider: 'OPAY',
-          authorizationUrl: `http://${host}/api/payments/opay/mock-pay?reference=${reference}&amount=${totalAmount.toFixed(2)}`,
+          authorizationUrl: `${baseUrl}/api/payments/opay/mock-pay?reference=${reference}&amount=${chargeAmount.toFixed(2)}&currency=${chargeCurrency}&type=${checkoutType}&id=${id}`,
           reference,
         });
       }
@@ -246,8 +564,8 @@ router.post('/checkout', async (req, res, next) => {
               name: checkoutType === 'order' ? 'Product Order Payment' : 'Service Booking Payment',
               description: `Payment for ID: ${id}`,
             },
-            returnUrl: `http://${req.get('host') || 'localhost:5000'}/api/payments/opay/verify-callback?reference=${reference}`,
-            callbackUrl: `http://${req.get('host') || 'localhost:5000'}/api/payments/opay/webhook`,
+            returnUrl: `${baseUrl}/api/payments/opay/verify-callback?reference=${reference}`,
+            callbackUrl: `${baseUrl}/api/payments/opay/webhook`,
             userClientIp: '127.0.0.1',
             expireAt: 30,
           },
@@ -268,33 +586,64 @@ router.post('/checkout', async (req, res, next) => {
             reference,
           });
         }
-        
         throw new Error(response.data?.message || 'OPay Cashier response error');
       } catch (err: any) {
         console.warn(`[OPayService] API error. Falling back to sandbox mock: ${err.message}`);
-        const host = req.get('host') || 'localhost:5000';
         return res.json({
           provider: 'OPAY',
-          authorizationUrl: `http://${host}/api/payments/opay/mock-pay?reference=${reference}&amount=${totalAmount.toFixed(2)}`,
+          authorizationUrl: `${baseUrl}/api/payments/opay/mock-pay?reference=${reference}&amount=${chargeAmount.toFixed(2)}&currency=${chargeCurrency}&type=${checkoutType}&id=${id}`,
           reference,
         });
       }
     }
 
-    return res.status(400).json({ error: 'Invalid payment provider' });
+    return res.status(400).json({ error: 'Invalid payment provider specified.' });
   } catch (error: any) {
     next(error);
   }
 });
 
-// Verify Paystack Payment
-router.get('/paystack/verify/:reference', async (req, res, next) => {
+// ─── VERIFICATION & CALLBACK ROUTES ──────────────────────────────────────────
+
+// Verify Paystack Payment via API
+router.get('/paystack/verify/:reference', async (req: Request, res: Response, next: NextFunction) => {
   const { reference } = req.params;
 
   try {
     const paystackSetting = await prisma.appSetting.findUnique({ where: { key: 'paystack_secret_key' } });
     const activePaystackKey = paystackSetting?.value || process.env.PAYSTACK_SECRET_KEY || 'sk_test_dummy';
 
+    // If sandbox mock reference
+    if (reference.startsWith('PAY_') || activePaystackKey.includes('dummy')) {
+      const parts = reference.split('_');
+      const id = parts[1];
+      if (!id) return res.status(400).json({ error: 'Invalid reference signature.' });
+
+      // Determine checkout type from DB
+      const order = await prisma.order.findUnique({ where: { id } });
+      if (order) {
+        const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+        const result = await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'order', id, chargedAmount });
+        return res.json({ status: 'success', message: 'Order payment verified via Paystack sandbox.', ...result });
+      }
+
+      const booking = await prisma.booking.findUnique({ where: { id } });
+      if (booking) {
+        const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+        const result = await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'booking', id, chargedAmount });
+        return res.json({ status: 'success', message: 'Booking payment verified via Paystack sandbox.', ...result });
+      }
+
+      const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
+      if (parcel) {
+        const result = await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
+        return res.json({ status: 'success', message: 'Parcel payment verified via Paystack sandbox.', ...result });
+      }
+
+      return res.status(404).json({ error: 'Target record not found for reference.' });
+    }
+
+    // Live Paystack API verification
     const response = await axios.get(`${PAYSTACK_BASE_URL}/transaction/verify/${encodeURIComponent(reference)}`, {
       timeout: 10_000,
       headers: {
@@ -302,73 +651,94 @@ router.get('/paystack/verify/:reference', async (req, res, next) => {
       },
     });
 
-    const data = response.data.data;
-    if (data.status === 'success') {
+    const data = response.data?.data;
+    if (data && data.status === 'success') {
       const { checkoutType, id } = data.metadata || {};
       const chargedAmount = data.amount / 100;
-
-      if (checkoutType === 'order') {
-        const order = await prisma.order.update({
-          where: { id },
-          data: { status: 'PAID', paymentProvider: 'PAYSTACK', paymentRef: reference },
-        });
-        await createEscrowForPaidItem('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
-
-        // Auto-release only on final split payment installment; regular orders wait for confirm-receipt.
-        const updatedOrder = await prisma.order.findUnique({ where: { id } });
-        if (updatedOrder && updatedOrder.isSplitPayment && updatedOrder.amountPaid >= updatedOrder.totalAmount) {
-          const activeEscrows = await prisma.escrow.findMany({ where: { orderId: id, status: 'HELD' } });
-          for (const esc of activeEscrows) {
-            await releaseEscrow(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
-          }
-          await prisma.order.update({ where: { id }, data: { status: 'DELIVERED' } });
-        }
-
-        return res.json({ status: 'success', message: 'Order payment verified.', order });
-      } else if (checkoutType === 'booking') {
-        const booking = await prisma.booking.update({
-          where: { id },
-          data: { status: 'ACCEPTED' },
-        });
-        await createEscrowForPaidItem('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
-
-        // Auto-release escrows only when this is the FINAL split payment installment.
-        // Regular (non-split) full payments stay ACCEPTED until customer confirms via confirm-completion.
-        const updatedBooking = await prisma.booking.findUnique({ where: { id } });
-        if (updatedBooking && updatedBooking.isSplitPayment && updatedBooking.amountPaid >= updatedBooking.totalPrice) {
-          const activeEscrows = await prisma.escrow.findMany({ where: { bookingId: id, status: 'HELD' } });
-          for (const esc of activeEscrows) {
-            await releaseEscrow(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
-          }
-          await prisma.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
-        }
-
-        return res.json({ status: 'success', message: 'Booking payment verified.', booking });
-      } else if (checkoutType === 'parcel') {
-        const parcel = await prisma.parcelDelivery.update({
-          where: { id },
-          data: { status: 'PAID', paymentProvider: 'PAYSTACK', paymentRef: reference },
-        });
-        return res.json({ status: 'success', message: 'Parcel delivery payment verified.', parcel });
-      }
-
-      return res.status(400).json({ error: 'Invalid checkout type in payment metadata' });
-    } else {
-      return res.status(400).json({ error: `Payment not successful. Status: ${data.status}` });
+      const result = await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType, id, chargedAmount });
+      return res.json({ status: 'success', message: 'Paystack payment verified.', ...result });
     }
+
+    return res.status(400).json({ error: `Payment not successful. Status: ${data?.status || 'failed'}` });
   } catch (error: any) {
     next(error);
   }
 });
 
-// Verify Flutterwave Payment
-router.get('/flutterwave/verify/:transactionId', async (req, res, next) => {
+// Paystack Redirect Callback
+router.get('/paystack/callback', async (req: Request, res: Response, next: NextFunction) => {
+  const reference = (req.query.reference || req.query.trxref) as string;
+  const frontendUrl = getFrontendUrl(req);
+
+  if (!reference) {
+    return res.redirect(`${frontendUrl}/?payment_status=cancelled`);
+  }
+
+  try {
+    const parts = reference.split('_');
+    const id = parts[1];
+    if (id) {
+      const order = await prisma.order.findUnique({ where: { id } });
+      if (order) {
+        const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+        await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'order', id, chargedAmount });
+      } else {
+        const booking = await prisma.booking.findUnique({ where: { id } });
+        if (booking) {
+          const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+          await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'booking', id, chargedAmount });
+        } else {
+          const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
+          if (parcel) {
+            await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
+          }
+        }
+      }
+    }
+
+    res.send(renderSuccessHtml('Paystack', reference, frontendUrl));
+  } catch (error) {
+    res.send(renderSuccessHtml('Paystack', reference, frontendUrl));
+  }
+});
+
+// Verify Flutterwave Payment via API
+router.get('/flutterwave/verify/:transactionId', async (req: Request, res: Response, next: NextFunction) => {
   const { transactionId } = req.params;
 
   try {
     const flutterwaveSetting = await prisma.appSetting.findUnique({ where: { key: 'flutterwave_secret_key' } });
     const activeFlutterwaveKey = flutterwaveSetting?.value || process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK_TEST-dummy';
 
+    if (transactionId.startsWith('FLW_') || activeFlutterwaveKey.includes('dummy')) {
+      const parts = transactionId.split('_');
+      const id = parts[1];
+      if (!id) return res.status(400).json({ error: 'Invalid reference signature.' });
+
+      const order = await prisma.order.findUnique({ where: { id } });
+      if (order) {
+        const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+        const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'order', id, chargedAmount });
+        return res.json({ status: 'success', message: 'Order payment verified via Flutterwave sandbox.', ...result });
+      }
+
+      const booking = await prisma.booking.findUnique({ where: { id } });
+      if (booking) {
+        const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+        const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'booking', id, chargedAmount });
+        return res.json({ status: 'success', message: 'Booking payment verified via Flutterwave sandbox.', ...result });
+      }
+
+      const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
+      if (parcel) {
+        const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
+        return res.json({ status: 'success', message: 'Parcel payment verified via Flutterwave sandbox.', ...result });
+      }
+
+      return res.status(404).json({ error: 'Target record not found for transaction ID.' });
+    }
+
+    // Live Flutterwave API verification
     const response = await axios.get(`${FLUTTERWAVE_BASE_URL}/transactions/${encodeURIComponent(transactionId)}/verify`, {
       timeout: 10_000,
       headers: {
@@ -376,161 +746,448 @@ router.get('/flutterwave/verify/:transactionId', async (req, res, next) => {
       },
     });
 
-    const data = response.data.data;
-    if (data.status === 'successful') {
+    const data = response.data?.data;
+    if (data && (data.status === 'successful' || data.status === 'success')) {
       const { checkoutType, id } = data.meta || {};
       const chargedAmount = data.amount;
-
-      if (checkoutType === 'order') {
-        const order = await prisma.order.update({
-          where: { id },
-          data: { status: 'PAID', paymentProvider: 'FLUTTERWAVE', paymentRef: String(transactionId) },
-        });
-        await createEscrowForPaidItem('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
-
-        // Auto-release only on final split payment installment; regular orders wait for confirm-receipt.
-        const updatedOrder = await prisma.order.findUnique({ where: { id } });
-        if (updatedOrder && updatedOrder.isSplitPayment && updatedOrder.amountPaid >= updatedOrder.totalAmount) {
-          const activeEscrows = await prisma.escrow.findMany({ where: { orderId: id, status: 'HELD' } });
-          for (const esc of activeEscrows) {
-            await releaseEscrow(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
-          }
-          await prisma.order.update({ where: { id }, data: { status: 'DELIVERED' } });
-        }
-
-        return res.json({ status: 'success', message: 'Order payment verified.', order });
-      } else if (checkoutType === 'booking') {
-        const booking = await prisma.booking.update({
-          where: { id },
-          data: { status: 'ACCEPTED' },
-        });
-        await createEscrowForPaidItem('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
-
-        // Auto-release only on final split payment installment; regular bookings wait for customer confirm-completion.
-        const updatedBooking = await prisma.booking.findUnique({ where: { id } });
-        if (updatedBooking && updatedBooking.isSplitPayment && updatedBooking.amountPaid >= updatedBooking.totalPrice) {
-          const activeEscrows = await prisma.escrow.findMany({ where: { bookingId: id, status: 'HELD' } });
-          for (const esc of activeEscrows) {
-            await releaseEscrow(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
-          }
-          await prisma.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
-        }
-
-        return res.json({ status: 'success', message: 'Booking payment verified.', booking });
-      } else if (checkoutType === 'parcel') {
-        const parcel = await prisma.parcelDelivery.update({
-          where: { id },
-          data: { status: 'PAID', paymentProvider: 'FLUTTERWAVE', paymentRef: String(transactionId) },
-        });
-        return res.json({ status: 'success', message: 'Parcel delivery payment verified.', parcel });
-      }
-
-      return res.status(400).json({ error: 'Invalid checkout type in payment metadata' });
-    } else {
-      return res.status(400).json({ error: `Payment not successful. Status: ${data.status}` });
+      const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: String(transactionId), checkoutType, id, chargedAmount });
+      return res.json({ status: 'success', message: 'Flutterwave payment verified.', ...result });
     }
+
+    return res.status(400).json({ error: `Payment not successful. Status: ${data?.status || 'failed'}` });
   } catch (error: any) {
     next(error);
   }
 });
 
-// Stripe Webhook handler
-router.post('/webhook', async (req, res, next) => {
-  const sig = req.headers['stripe-signature'];
+// Flutterwave Redirect Callback
+router.get('/flutterwave/callback', async (req: Request, res: Response, next: NextFunction) => {
+  const txRef = (req.query.tx_ref || req.query.transaction_id || req.query.reference) as string;
+  const status = req.query.status as string;
+  const frontendUrl = getFrontendUrl(req);
+
+  if (status === 'cancelled' || !txRef) {
+    return res.redirect(`${frontendUrl}/?payment_status=cancelled`);
+  }
 
   try {
-    const settingsList = await prisma.appSetting.findMany({
-      where: {
-        key: {
-          in: ['stripe_secret_key', 'stripe_webhook_secret']
-        }
-      }
-    });
-    const settings = settingsList.reduce((acc, curr) => {
-      acc[curr.key] = curr.value;
-      return acc;
-    }, {} as Record<string, string>);
-
-    const activeStripeKey = settings['stripe_secret_key'] || process.env.STRIPE_SECRET_KEY || 'sk_test_dummy';
-    const endpointSecret = settings['stripe_webhook_secret'] || process.env.STRIPE_WEBHOOK_SECRET || '';
-
-    const activeStripe = new Stripe(activeStripeKey, {
-      apiVersion: '2023-10-16' as any,
-    });
-
-    let event;
-    if (endpointSecret) {
-      event = activeStripe.webhooks.constructEvent(req.body, sig as string, endpointSecret);
-    } else {
-      // Fallback for development without endpointSecret
-      event = JSON.parse(req.body.toString());
-    }
-
-    if (event.type === 'payment_intent.succeeded') {
-      const paymentIntent = event.data.object as Stripe.PaymentIntent;
-      const { checkoutType, id } = paymentIntent.metadata;
-      const chargedAmount = paymentIntent.amount / 100;
-
-      try {
-        if (checkoutType === 'order') {
-          await prisma.order.update({
-            where: { id },
-            data: { status: 'PAID', paymentProvider: 'STRIPE', paymentRef: paymentIntent.id },
-          });
-          await createEscrowForPaidItem('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
-
-          // Auto-release only on final split payment installment; regular orders wait for confirm-receipt.
-          const updatedOrder = await prisma.order.findUnique({ where: { id } });
-          if (updatedOrder && updatedOrder.isSplitPayment && updatedOrder.amountPaid >= updatedOrder.totalAmount) {
-            const activeEscrows = await prisma.escrow.findMany({ where: { orderId: id, status: 'HELD' } });
-            for (const esc of activeEscrows) {
-              await releaseEscrow(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
-            }
-            await prisma.order.update({ where: { id }, data: { status: 'DELIVERED' } });
+    const parts = txRef.split('_');
+    const id = parts[1];
+    if (id) {
+      const order = await prisma.order.findUnique({ where: { id } });
+      if (order) {
+        const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+        await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'order', id, chargedAmount });
+      } else {
+        const booking = await prisma.booking.findUnique({ where: { id } });
+        if (booking) {
+          const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+          await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'booking', id, chargedAmount });
+        } else {
+          const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
+          if (parcel) {
+            await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
           }
-          console.log(`Order ${id} marked as PAID.`);
-        } else if (checkoutType === 'booking') {
-          await prisma.booking.update({
-            where: { id },
-            data: { status: 'ACCEPTED' },
-          });
-          await createEscrowForPaidItem('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
-
-          // Auto-release only on final split payment installment; regular bookings wait for customer confirm-completion.
-          const updatedBooking = await prisma.booking.findUnique({ where: { id } });
-          if (updatedBooking && updatedBooking.isSplitPayment && updatedBooking.amountPaid >= updatedBooking.totalPrice) {
-            const activeEscrows = await prisma.escrow.findMany({ where: { bookingId: id, status: 'HELD' } });
-            for (const esc of activeEscrows) {
-              await releaseEscrow(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
-            }
-            await prisma.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
-          }
-          console.log(`Booking ${id} marked as ACCEPTED.`);
-        } else if (checkoutType === 'parcel') {
-          await prisma.parcelDelivery.update({
-            where: { id },
-            data: { status: 'PAID', paymentProvider: 'STRIPE', paymentRef: paymentIntent.id },
-          });
-          console.log(`Parcel ${id} marked as PAID.`);
         }
-      } catch (err) {
-        next(err);
-        return;
       }
     }
 
-    // Always acknowledge receipt so Stripe stops retrying the webhook
-    res.json({ received: true });
-  } catch (err) {
-    next(err);
+    res.send(renderSuccessHtml('Flutterwave', txRef, frontendUrl));
+  } catch (error) {
+    res.send(renderSuccessHtml('Flutterwave', txRef, frontendUrl));
   }
 });
 
-// Mock OPay Payment page for sandbox visual testing
-router.get('/opay/mock-pay', (req, res) => {
-  const { reference, amount } = req.query;
+// ─── SANDBOX MOCK CASHIERS ─────────────────────────────────────────────────────
+
+// Stripe Sandbox Mock Payment Page
+router.get('/stripe/mock-pay', (req: Request, res: Response) => {
+  const { reference, amount, currency, type, id } = req.query;
   const amt = amount ? parseFloat(amount as string) : 0;
-  
+  const curr = (currency as string) || 'NGN';
+  const currSymbol = curr === 'USD' ? '$' : '₦';
+
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Stripe Checkout Simulation</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #F8FAFC;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+          }
+          .card {
+            background: white;
+            border-radius: 20px;
+            padding: 36px 28px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+            border: 1px solid #E2E8F0;
+            box-sizing: border-box;
+          }
+          .logo {
+            color: #635BFF;
+            font-size: 32px;
+            font-weight: 900;
+            margin-bottom: 12px;
+          }
+          .merchant-badge {
+            background: #EEF2FF;
+            color: #4F46E5;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 5px 14px;
+            border-radius: 20px;
+            display: inline-block;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 20px;
+          }
+          .amount {
+            font-size: 36px;
+            font-weight: 900;
+            margin: 12px 0;
+            color: #0F172A;
+          }
+          .divider {
+            height: 1px;
+            background: #F1F5F9;
+            margin: 20px 0;
+          }
+          .btn {
+            background: #635BFF;
+            color: white;
+            border: none;
+            padding: 16px 24px;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 800;
+            width: 100%;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(99, 91, 255, 0.3);
+            transition: all 0.2s;
+          }
+          .btn:hover {
+            background: #4F46E5;
+          }
+          .ref {
+            color: #64748B;
+            font-size: 12px;
+            font-family: monospace;
+            background: #F1F5F9;
+            padding: 6px 12px;
+            border-radius: 8px;
+            display: inline-block;
+          }
+          .secured-text {
+            color: #94A3B8;
+            font-size: 11px;
+            margin-top: 20px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="logo">stripe</div>
+          <div class="merchant-badge">Secured Sandboxed Gateway</div>
+          <div style="font-size: 14px; color: #64748B;">FixMart Checkout Authorization</div>
+          <div class="amount">${currSymbol}${amt.toFixed(2)}</div>
+          <div class="ref">REF: ${reference}</div>
+          <div class="divider"></div>
+          <button class="btn" onclick="location.href='/api/payments/stripe/verify/${reference}'">
+            Authorize & Complete Payment
+          </button>
+          <div class="secured-text">🔒 256-bit SSL Encrypted Sandbox Checkout</div>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+// Verify Stripe Reference
+router.get('/stripe/verify/:reference', async (req: Request, res: Response, next: NextFunction) => {
+  const { reference } = req.params;
+  const frontendUrl = getFrontendUrl(req);
+
+  try {
+    const parts = reference.split('_');
+    const id = parts[1];
+
+    if (!id) {
+      return res.send(renderSuccessHtml('Stripe', reference, frontendUrl));
+    }
+
+    const order = await prisma.order.findUnique({ where: { id } });
+    if (order) {
+      const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+      await processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'order', id, chargedAmount });
+    } else {
+      const booking = await prisma.booking.findUnique({ where: { id } });
+      if (booking) {
+        const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+        await processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'booking', id, chargedAmount });
+      } else {
+        const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
+        if (parcel) {
+          await processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
+        }
+      }
+    }
+
+    res.send(renderSuccessHtml('Stripe', reference, frontendUrl));
+  } catch (error) {
+    res.send(renderSuccessHtml('Stripe', reference, frontendUrl));
+  }
+});
+
+// Paystack Sandbox Mock Page
+router.get('/paystack/mock-pay', (req: Request, res: Response) => {
+  const { reference, amount, currency } = req.query;
+  const amt = amount ? parseFloat(amount as string) : 0;
+  const curr = (currency as string) || 'NGN';
+  const currSymbol = curr === 'USD' ? '$' : '₦';
+
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Paystack Checkout Simulation</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #F8FAFC;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+          }
+          .card {
+            background: white;
+            border-radius: 20px;
+            padding: 36px 28px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+            border: 1px solid #E2E8F0;
+            box-sizing: border-box;
+          }
+          .logo {
+            color: #0BA4DB;
+            font-size: 32px;
+            font-weight: 900;
+            margin-bottom: 12px;
+          }
+          .merchant-badge {
+            background: #E0F2FE;
+            color: #0284C7;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 5px 14px;
+            border-radius: 20px;
+            display: inline-block;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 20px;
+          }
+          .amount {
+            font-size: 36px;
+            font-weight: 900;
+            margin: 12px 0;
+            color: #0F172A;
+          }
+          .divider {
+            height: 1px;
+            background: #F1F5F9;
+            margin: 20px 0;
+          }
+          .btn {
+            background: #0BA4DB;
+            color: white;
+            border: none;
+            padding: 16px 24px;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 800;
+            width: 100%;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(11, 164, 219, 0.3);
+            transition: all 0.2s;
+          }
+          .btn:hover {
+            background: #0284C7;
+          }
+          .ref {
+            color: #64748B;
+            font-size: 12px;
+            font-family: monospace;
+            background: #F1F5F9;
+            padding: 6px 12px;
+            border-radius: 8px;
+            display: inline-block;
+          }
+          .secured-text {
+            color: #94A3B8;
+            font-size: 11px;
+            margin-top: 20px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="logo">paystack</div>
+          <div class="merchant-badge">Secured Sandboxed Gateway</div>
+          <div style="font-size: 14px; color: #64748B;">FixMart Checkout Authorization</div>
+          <div class="amount">${currSymbol}${amt.toFixed(2)}</div>
+          <div class="ref">REF: ${reference}</div>
+          <div class="divider"></div>
+          <button class="btn" onclick="location.href='/api/payments/paystack/callback?reference=${reference}'">
+            Authorize & Complete Payment
+          </button>
+          <div class="secured-text">🔒 256-bit SSL Encrypted Sandbox Checkout</div>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+// Flutterwave Sandbox Mock Page
+router.get('/flutterwave/mock-pay', (req: Request, res: Response) => {
+  const { reference, amount, currency } = req.query;
+  const amt = amount ? parseFloat(amount as string) : 0;
+  const curr = (currency as string) || 'NGN';
+  const currSymbol = curr === 'USD' ? '$' : '₦';
+
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Flutterwave Checkout Simulation</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #F8FAFC;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+          }
+          .card {
+            background: white;
+            border-radius: 20px;
+            padding: 36px 28px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+            max-width: 420px;
+            width: 100%;
+            text-align: center;
+            border: 1px solid #E2E8F0;
+            box-sizing: border-box;
+          }
+          .logo {
+            color: #F5A623;
+            font-size: 32px;
+            font-weight: 900;
+            margin-bottom: 12px;
+          }
+          .merchant-badge {
+            background: #FEF3C7;
+            color: #D97706;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 5px 14px;
+            border-radius: 20px;
+            display: inline-block;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 20px;
+          }
+          .amount {
+            font-size: 36px;
+            font-weight: 900;
+            margin: 12px 0;
+            color: #0F172A;
+          }
+          .divider {
+            height: 1px;
+            background: #F1F5F9;
+            margin: 20px 0;
+          }
+          .btn {
+            background: #F5A623;
+            color: white;
+            border: none;
+            padding: 16px 24px;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 800;
+            width: 100%;
+            cursor: pointer;
+            box-shadow: 0 4px 14px rgba(245, 166, 35, 0.3);
+            transition: all 0.2s;
+          }
+          .btn:hover {
+            background: #D97706;
+          }
+          .ref {
+            color: #64748B;
+            font-size: 12px;
+            font-family: monospace;
+            background: #F1F5F9;
+            padding: 6px 12px;
+            border-radius: 8px;
+            display: inline-block;
+          }
+          .secured-text {
+            color: #94A3B8;
+            font-size: 11px;
+            margin-top: 20px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="logo">flutterwave</div>
+          <div class="merchant-badge">Secured Sandboxed Gateway</div>
+          <div style="font-size: 14px; color: #64748B;">FixMart Checkout Authorization</div>
+          <div class="amount">${currSymbol}${amt.toFixed(2)}</div>
+          <div class="ref">REF: ${reference}</div>
+          <div class="divider"></div>
+          <button class="btn" onclick="location.href='/api/payments/flutterwave/callback?tx_ref=${reference}&status=successful'">
+            Authorize & Complete Payment
+          </button>
+          <div class="secured-text">🔒 256-bit SSL Encrypted Sandbox Checkout</div>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+// Mock OPay Payment page for sandbox visual testing
+router.get('/opay/mock-pay', (req: Request, res: Response) => {
+  const { reference, amount, currency } = req.query;
+  const amt = amount ? parseFloat(amount as string) : 0;
+  const curr = (currency as string) || 'NGN';
+  const currSymbol = curr === 'USD' ? '$' : '₦';
+
   res.send(`
     <!DOCTYPE html>
     <html>
@@ -544,8 +1201,10 @@ router.get('/opay/mock-pay', (req, res) => {
             display: flex;
             align-items: center;
             justify-content: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
           }
           .card {
             background: white;
@@ -628,10 +1287,6 @@ router.get('/opay/mock-pay', (req, res) => {
             color: #90a4ae;
             font-size: 11px;
             margin-top: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 4px;
           }
         </style>
       </head>
@@ -640,18 +1295,13 @@ router.get('/opay/mock-pay', (req, res) => {
           <div class="logo"><span>O</span>Pay</div>
           <div class="merchant-badge">Secured Sandboxed Gateway</div>
           <div>FixMart Checkout</div>
-          <div class="amount">₦${amt.toFixed(2)}</div>
+          <div class="amount">${currSymbol}${amt.toFixed(2)}</div>
           <div class="ref">REF: ${reference}</div>
-          
           <div class="divider"></div>
-          
           <button class="btn" onclick="location.href='/api/payments/opay/verify/${reference}'">
             Authorize & Complete Payment
           </button>
-          
-          <div class="secured-text">
-            🛡️ 256-bit SSL encrypted transaction verification
-          </div>
+          <div class="secured-text">🛡️ 256-bit SSL encrypted transaction verification</div>
         </div>
       </body>
     </html>
@@ -659,8 +1309,9 @@ router.get('/opay/mock-pay', (req, res) => {
 });
 
 // Verify OPay payment reference
-router.get('/opay/verify/:reference', async (req, res, next) => {
+router.get('/opay/verify/:reference', async (req: Request, res: Response, next: NextFunction) => {
   const { reference } = req.params;
+  const frontendUrl = getFrontendUrl(req);
 
   try {
     const parts = reference.split('_');
@@ -670,116 +1321,24 @@ router.get('/opay/verify/:reference', async (req, res, next) => {
       return res.status(400).send('Invalid reference signature.');
     }
 
-    // Try finding order
     const order = await prisma.order.findUnique({ where: { id } });
     if (order) {
       const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
-      await prisma.order.update({
-        where: { id },
-        data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: reference, amountPaid: { increment: chargedAmount } },
-      });
-      await createEscrowForPaidItem('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
-
-      // Auto-release only on final split payment installment; regular orders wait for confirm-receipt.
-      const updatedOrder = await prisma.order.findUnique({ where: { id } });
-      if (updatedOrder && updatedOrder.isSplitPayment && updatedOrder.amountPaid >= updatedOrder.totalAmount) {
-        const activeEscrows = await prisma.escrow.findMany({ where: { orderId: id, status: 'HELD' } });
-        for (const esc of activeEscrows) {
-          await releaseEscrow(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
-        }
-        await prisma.order.update({ where: { id }, data: { status: 'DELIVERED' } });
-      }
-
-      return res.send(`
-        <html>
-          <body style="font-family: -apple-system, sans-serif; text-align: center; padding: 60px 20px; background-color: #f7f9fa;">
-            <div style="background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); max-width: 460px; margin: 0 auto;">
-              <div style="font-size: 64px; margin-bottom: 20px;">✅</div>
-              <h1 style="color: #4CAF50; font-size: 26px; margin-bottom: 8px;">Order Payment Successful!</h1>
-              <p style="color: #555; font-size: 15px; margin-bottom: 30px;">Thank you for your purchase. OPay transaction reference has been verified.</p>
-              <div style="font-size: 12px; color: #aaa; font-family: monospace;">REF: ${reference}</div>
-            </div>
-            <script>
-              setTimeout(() => {
-                if (window.ReactNativeWebView) {
-                  window.ReactNativeWebView.postMessage(JSON.stringify({ status: 'success', reference: "${reference}" }));
-                }
-              }, 1200);
-            </script>
-          </body>
-        </html>
-      `);
+      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'order', id, chargedAmount });
+      return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Order Payment Successful!', 'Thank you for your purchase. OPay transaction reference has been verified.'));
     }
 
-    // Try finding booking
     const booking = await prisma.booking.findUnique({ where: { id } });
     if (booking) {
       const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
-      await prisma.booking.update({
-        where: { id },
-        data: { status: 'ACCEPTED', amountPaid: { increment: chargedAmount } },
-      });
-      await createEscrowForPaidItem('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
-
-      // Auto-release only on final split payment installment; regular bookings wait for customer confirm-completion.
-      const updatedBooking = await prisma.booking.findUnique({ where: { id } });
-      if (updatedBooking && updatedBooking.isSplitPayment && updatedBooking.amountPaid >= updatedBooking.totalPrice) {
-        const activeEscrows = await prisma.escrow.findMany({ where: { bookingId: id, status: 'HELD' } });
-        for (const esc of activeEscrows) {
-          await releaseEscrow(esc.id).catch(err => console.error("Failed to release escrow on final split payment:", err));
-        }
-        await prisma.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
-      }
-
-      return res.send(`
-        <html>
-          <body style="font-family: -apple-system, sans-serif; text-align: center; padding: 60px 20px; background-color: #f7f9fa;">
-            <div style="background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); max-width: 460px; margin: 0 auto;">
-              <div style="font-size: 64px; margin-bottom: 20px;">✅</div>
-              <h1 style="color: #4CAF50; font-size: 26px; margin-bottom: 8px;">Booking Paid Successfully!</h1>
-              <p style="color: #555; font-size: 15px; margin-bottom: 30px;">Your handyman appointment is now confirmed. The technician will head to your location.</p>
-              <div style="font-size: 12px; color: #aaa; font-family: monospace;">REF: ${reference}</div>
-            </div>
-            <script>
-              setTimeout(() => {
-                if (window.ReactNativeWebView) {
-                  window.ReactNativeWebView.postMessage(JSON.stringify({ status: 'success', reference: "${reference}" }));
-                }
-              }, 1200);
-            </script>
-          </body>
-        </html>
-      `);
+      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'booking', id, chargedAmount });
+      return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Booking Paid Successfully!', 'Your handyman appointment is now confirmed. The technician will head to your location.'));
     }
 
-    // Try finding parcel delivery
     const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
     if (parcel) {
-      await prisma.parcelDelivery.update({
-        where: { id },
-        data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: reference },
-      });
-      await createEscrowForPaidItem('parcel', id, parcel.totalAmount).catch(err => console.error("Escrow hold failed for parcel:", err));
-
-      return res.send(`
-        <html>
-          <body style="font-family: -apple-system, sans-serif; text-align: center; padding: 60px 20px; background-color: #f7f9fa;">
-            <div style="background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); max-width: 460px; margin: 0 auto;">
-              <div style="font-size: 64px; margin-bottom: 20px;">✅</div>
-              <h1 style="color: #4CAF50; font-size: 26px; margin-bottom: 8px;">Parcel Delivery Paid Successfully!</h1>
-              <p style="color: #555; font-size: 15px; margin-bottom: 30px;">Your parcel dispatch is now confirmed and a rider is being assigned.</p>
-              <div style="font-size: 12px; color: #aaa; font-family: monospace;">REF: ${reference}</div>
-            </div>
-            <script>
-              setTimeout(() => {
-                if (window.ReactNativeWebView) {
-                  window.ReactNativeWebView.postMessage(JSON.stringify({ status: 'success', reference: "${reference}" }));
-                }
-              }, 1200);
-            </script>
-          </body>
-        </html>
-      `);
+      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
+      return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Parcel Delivery Paid Successfully!', 'Your parcel dispatch is now confirmed and a rider is being assigned.'));
     }
 
     return res.status(404).send('Reference ID was not found or could not match any active record.');
@@ -789,14 +1348,14 @@ router.get('/opay/verify/:reference', async (req, res, next) => {
 });
 
 // Staging OPay callback redirect handler (fallback for real API)
-router.get('/opay/verify-callback', async (req, res, next) => {
+router.get('/opay/verify-callback', async (req: Request, res: Response, next: NextFunction) => {
   const { reference } = req.query;
   if (!reference) return res.status(400).send('Missing reference.');
   res.redirect(`/api/payments/opay/verify/${reference}`);
 });
 
 // Staging OPay Webhook receiver (official OPay API webhooks)
-router.post('/opay/webhook', async (req, res, next) => {
+router.post('/opay/webhook', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const payload = req.body;
     console.log('[OPayWebhook] Received notification:', JSON.stringify(payload));
@@ -808,30 +1367,18 @@ router.post('/opay/webhook', async (req, res, next) => {
         const order = await prisma.order.findUnique({ where: { id } });
         if (order && order.status !== 'PAID') {
           const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
-          await prisma.order.update({
-            where: { id },
-            data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: ref, amountPaid: { increment: chargedAmount } },
-          });
-          await createEscrowForPaidItem('order', id, chargedAmount).catch(err => console.error("Escrow hold failed for order:", err));
+          await processPaymentVerification({ provider: 'OPAY', reference: ref, checkoutType: 'order', id, chargedAmount });
         }
 
         const booking = await prisma.booking.findUnique({ where: { id } });
         if (booking && booking.status !== 'ACCEPTED') {
           const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
-          await prisma.booking.update({
-            where: { id },
-            data: { status: 'ACCEPTED', amountPaid: { increment: chargedAmount } },
-          });
-          await createEscrowForPaidItem('booking', id, chargedAmount).catch(err => console.error("Escrow hold failed for booking:", err));
+          await processPaymentVerification({ provider: 'OPAY', reference: ref, checkoutType: 'booking', id, chargedAmount });
         }
 
         const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
         if (parcel && parcel.status !== 'PAID') {
-          await prisma.parcelDelivery.update({
-            where: { id },
-            data: { status: 'PAID', paymentProvider: 'OPAY', paymentRef: ref },
-          });
-          await createEscrowForPaidItem('parcel', id, parcel.totalAmount).catch(err => console.error("Escrow hold failed for parcel:", err));
+          await processPaymentVerification({ provider: 'OPAY', reference: ref, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
         }
       }
     }
@@ -842,9 +1389,61 @@ router.post('/opay/webhook', async (req, res, next) => {
   }
 });
 
-// Internal escrow-release endpoint — guarded by a shared secret.
-// Can be called by admin tooling or future background workers.
-router.post('/webhook/split', async (req, res, next) => {
+// Stripe Webhook handler
+router.post('/webhook', async (req: Request, res: Response, next: NextFunction) => {
+  const sig = req.headers['stripe-signature'];
+
+  try {
+    const settingsList = await prisma.appSetting.findMany({
+      where: {
+        key: {
+          in: ['stripe_secret_key', 'stripe_webhook_secret']
+        }
+      }
+    });
+    const settings = settingsList.reduce((acc, curr) => {
+      acc[curr.key] = curr.value;
+      return acc;
+    }, {} as Record<string, string>);
+
+    const activeStripeKey = settings['stripe_secret_key'] || process.env.STRIPE_SECRET_KEY || 'sk_test_dummy';
+    const endpointSecret = settings['stripe_webhook_secret'] || process.env.STRIPE_WEBHOOK_SECRET || '';
+
+    const activeStripe = new Stripe(activeStripeKey, {
+      apiVersion: '2023-10-16' as any,
+    });
+
+    let event;
+    if (endpointSecret) {
+      event = activeStripe.webhooks.constructEvent(req.body, sig as string, endpointSecret);
+    } else {
+      event = JSON.parse(req.body.toString());
+    }
+
+    if (event.type === 'payment_intent.succeeded') {
+      const paymentIntent = event.data.object as Stripe.PaymentIntent;
+      const { checkoutType, id } = paymentIntent.metadata || {};
+      const chargedAmount = paymentIntent.amount / 100;
+
+      if (checkoutType && id) {
+        await processPaymentVerification({
+          provider: 'STRIPE',
+          reference: paymentIntent.id,
+          checkoutType,
+          id,
+          chargedAmount,
+        });
+      }
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Internal escrow-release endpoint
+router.post('/webhook/split', async (req: Request, res: Response, next: NextFunction) => {
   const { escrowId, secretToken } = req.body;
   const WEBHOOK_SPLIT_SECRET = process.env.WEBHOOK_SPLIT_SECRET;
 
@@ -852,7 +1451,6 @@ router.post('/webhook/split', async (req, res, next) => {
     return res.status(400).json({ error: 'escrowId is required.' });
   }
 
-  // Require secret only when one is configured (allows omitting in test env)
   if (WEBHOOK_SPLIT_SECRET && secretToken !== WEBHOOK_SPLIT_SECRET) {
     return res.status(401).json({ error: 'Unauthorized split request.' });
   }

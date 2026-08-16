@@ -24,7 +24,7 @@ const AI_FILTERS = [
 
 export default function AdminScreen() {
   const { userInfo } = useContext(AuthContext);
-  const { theme, settings, updateSettings, colorMode } = useContext(SettingsContext);
+  const { theme, settings, updateSettings, colorMode, aabUrl } = useContext(SettingsContext);
   const { fmt } = useCurrency();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -1396,13 +1396,13 @@ export default function AdminScreen() {
                     );
                   })}
 
-                  {/* 🌐 Live Vercel App Link (Accessible without login prompt) */}
+                  {/* 📦 AAB Download Link */}
                   <TouchableOpacity
                     style={[styles.adminVercelLinkBtn, { backgroundColor: theme.primary + '12', borderColor: theme.primary + '30' }]}
-                    onPress={() => Linking.openURL('https://fixmart.vercel.app')}
+                    onPress={() => Linking.openURL(aabUrl)}
                     activeOpacity={0.8}
                   >
-                    <Text style={[styles.adminVercelLinkText, { color: theme.primary }]}>🌐 fixmart.vercel.app ↗</Text>
+                    <Text style={[styles.adminVercelLinkText, { color: theme.primary }]}>📦 Download AAB ↓</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -1489,21 +1489,54 @@ export default function AdminScreen() {
         </View>
       )}
 
+      {/* Navigation bar for Vendors & Non-Admins (Fixed on top with Back Button) */}
+      {!isAdmin && (
+        <View style={[styles.adminNavBarFixed, { backgroundColor: theme.card || '#FFFFFF', borderBottomColor: theme.border }]}>
+          <ResponsiveContainer style={{ flex: 0 }}>
+            <View style={styles.adminNavSingleLineContainer}>
+              <TouchableOpacity 
+                style={styles.adminNavBrand}
+                onPress={() => {
+                  try {
+                    if (navigation.canGoBack()) navigation.goBack();
+                    else navigation.navigate('Main', { screen: 'HomeTab' });
+                  } catch {
+                    navigation.navigate('HomeTab');
+                  }
+                }}
+                activeOpacity={0.7}
+                accessibilityLabel="Go Back to Store"
+              >
+                <Text style={[styles.adminNavBrandIcon, { color: theme.primary }]}>←</Text>
+                <Text style={[styles.adminNavBrandText, { color: theme.text || '#1C1C1E' }]}>Back to FixMart</Text>
+              </TouchableOpacity>
 
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 'auto', gap: 8 }}>
+                <View style={[styles.adminDesktopTabPill, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}>
+                  <Text style={styles.adminTabPillIcon}>🏪</Text>
+                  <Text style={[styles.adminTabPillText, { color: theme.primary, fontWeight: '800' }]}>Vendor Hub</Text>
+                </View>
+              </View>
+            </View>
+          </ResponsiveContainer>
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={[styles.scrollContent, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]} keyboardShouldPersistTaps="handled">
         <ResponsiveContainer>
 
         {/* ── Executive Metrics Summary Grid ── */}
         <View style={styles.metricsGridRow}>
-          {[
+          {(isAdmin ? [
             { icon: '📦', label: 'Inventory', value: products.length, color: theme.primary, tab: 'products' },
             { icon: '⚡', label: 'Services', value: services.length, color: '#3B82F6', tab: 'services' },
             { icon: '📋', label: 'Bookings', value: bookings.length, color: '#8B5CF6', tab: 'bookings' },
             { icon: '👥', label: 'Users', value: users.length, color: '#EC4899', tab: 'users' },
             { icon: '🛒', label: 'Orders', value: orders.length, color: '#F59E0B', tab: 'orders' },
             { icon: '🔍', label: 'KYC Reviews', value: kycReviews.length, color: '#EF4444', tab: 'kyc' },
-          ].map(m => (
+          ] : [
+            { icon: '📦', label: 'My Listed Products', value: products.length, color: theme.primary, tab: 'products' },
+          ]).map(m => (
             <TouchableOpacity
               key={m.label}
               style={[
