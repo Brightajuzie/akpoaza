@@ -2,7 +2,7 @@ import React, { useEffect, useState, useContext, useRef } from 'react';
 import {
   View, Text, FlatList, StyleSheet, ActivityIndicator,
   TouchableOpacity, Alert, TextInput, Modal,
-  KeyboardAvoidingView, Platform, useWindowDimensions,
+  KeyboardAvoidingView, Platform, useWindowDimensions, RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import apiClient from '../api/client';
@@ -30,6 +30,8 @@ export default function ServicesScreen({ navigation }: any) {
   const [services, setServices] = useState<any[]>([]);
   const [filteredServices, setFilteredServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -49,28 +51,40 @@ export default function ServicesScreen({ navigation }: any) {
   const [typing, setTyping] = useState(false);
   const chatListRef = useRef<FlatList>(null);
 
-  const fetchServices = async () => {
+  // ── Fetch ratings silently in background after services load ──────────────
+  const fetchRatings = async (data: any[]) => {
+    if (!data.length) return;
+    const results = await Promise.allSettled(
+      data.map((s: any) =>
+        apiClient.get(`/reviews/service/${s.id}`).then(r => ({ id: s.id, data: r.data }))
+      )
+    );
+    const map: Record<string, { averageRating: number | null; count: number }> = {};
+    results.forEach(r => {
+      if (r.status === 'fulfilled') map[r.value.id] = r.value.data;
+    });
+    setRatingsMap(map);
+  };
+
+  const fetchServices = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) setRefreshing(true);
+      else setLoading(true);
+      setError(null);
+
       const res = await apiClient.get('/services');
       const data = res.data;
       setServices(data);
       setFilteredServices(data);
 
-      const ratings = await Promise.allSettled(
-        data.map((s: any) =>
-          apiClient.get(`/reviews/service/${s.id}`).then(r => ({ id: s.id, data: r.data }))
-        )
-      );
-      const map: Record<string, { averageRating: number | null; count: number }> = {};
-      ratings.forEach(r => {
-        if (r.status === 'fulfilled') map[r.value.id] = r.value.data;
-      });
-      setRatingsMap(map);
-    } catch (e) {
+      // ── Show cards immediately, then fill in ratings in the background ──
+      fetchRatings(data);
+    } catch (e: any) {
       console.error('Failed to fetch services', e);
+      setError('Could not load services. Please check your connection and try again.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -81,9 +95,10 @@ export default function ServicesScreen({ navigation }: any) {
   useEffect(() => {
     let result = services;
     if (search.trim()) {
+      const q = search.toLowerCase();
       result = result.filter(s =>
-        s.name.toLowerCase().includes(search.toLowerCase()) ||
-        s.description.toLowerCase().includes(search.toLowerCase())
+        (s.name ?? '').toLowerCase().includes(q) ||
+        (s.description ?? '').toLowerCase().includes(q)
       );
     }
     if (selectedCategory !== 'All') {
@@ -286,6 +301,18 @@ export default function ServicesScreen({ navigation }: any) {
           <ActivityIndicator size="large" color={theme.primary} />
           <Text style={[styles.loadingText, { color: isDark ? '#64748B' : '#94A3B8' }]}>Loading services...</Text>
         </View>
+      ) : error ? (
+        <View style={styles.loadingWrap}>
+          <Text style={styles.emptyIcon}>⚠️</Text>
+          <Text style={[styles.emptyTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>Failed to load</Text>
+          <Text style={[styles.emptySub, { color: isDark ? '#64748B' : '#94A3B8' }]}>{error}</Text>
+          <TouchableOpacity
+            style={[styles.emptyReset, { backgroundColor: theme.primary }]}
+            onPress={() => fetchServices()}
+          >
+            <Text style={styles.emptyResetText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <FlatList
           key={`svc-${numColumns}`}
@@ -295,6 +322,14 @@ export default function ServicesScreen({ navigation }: any) {
           contentContainerStyle={[styles.list, { paddingBottom: 110 }]}
           showsVerticalScrollIndicator={false}
           renderItem={renderServiceCard}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => fetchServices(true)}
+              colors={[theme.primary]}
+              tintColor={theme.primary}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <Text style={styles.emptyIcon}>🔍</Text>

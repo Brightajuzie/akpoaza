@@ -776,7 +776,8 @@ export default function HomeScreen({ navigation }: any) {
           style={[styles.downloadBtn, { backgroundColor: '#22C55E' }]}
           onPress={() => triggerDownload(apkUrl, 'fixmart-latest.apk')}
         >
-          <Text style={styles.downloadBtnText}>📥 Android APK</Text>
+          <Text style={styles.downloadBtnText}>📥 Android</Text>
+          <Text style={[styles.downloadBtnText, { fontSize: 10, fontWeight: '500', opacity: 0.85 }]}>v2.0.0 · ~89 MB</Text>
         </TouchableOpacity>
 
       </View>
@@ -1486,6 +1487,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 10,
+    alignItems: 'center',
   },
   downloadBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
 
