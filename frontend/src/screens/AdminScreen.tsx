@@ -2832,7 +2832,8 @@ export default function AdminScreen() {
                       </View>
                     )}
                   </View>
-                ))
+                );
+              })
             )}
           </View>
         )}

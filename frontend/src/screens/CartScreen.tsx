@@ -45,9 +45,12 @@ export default function CartScreen({ route, navigation }: any) {
       return;
     }
     setLoading(true);
-    try {
       const res = await apiClient.post('/orders/checkout', { paymentProvider: 'NONE', items: productItems });
-      const orderId = res.data.order?.id || 'dummy-order';
+      const orderId = res.data.order?.id;
+      if (!orderId) {
+        Alert.alert('Error', 'Failed to initialize order checkout.');
+        return;
+      }
       navigation.navigate('Checkout', { checkoutType: 'order', id: orderId, amount: productTotal });
     } catch (e) {
       Alert.alert('Error', 'Failed to initialize checkout.');
