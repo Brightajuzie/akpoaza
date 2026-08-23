@@ -54,7 +54,7 @@ app.use(express.json());
 
 // Explicit APK download route — sets proper Content-Disposition so browsers
 // download the file instead of rendering it as JSON / triggering a 404.
-app.get('/uploads/fixmart-latest.apk', (req, res) => {
+const sendApkFile = (res: express.Response) => {
   const filePath = path.resolve(__dirname, '../uploads/fixmart-latest.apk');
   if (fs.existsSync(filePath)) {
     res.setHeader('Content-Type', 'application/vnd.android.package-archive');
@@ -65,10 +65,14 @@ app.get('/uploads/fixmart-latest.apk', (req, res) => {
     error: 'Not Found',
     message: 'APK file not found on server. Please try again later.'
   });
-});
+};
+
+app.get('/uploads/fixmart-latest.apk', (req, res) => sendApkFile(res));
+app.get('/download/apk', (req, res) => sendApkFile(res));
+app.get('/api/download/apk', (req, res) => sendApkFile(res));
 
 // Explicit AAB download route
-app.get('/uploads/fixmart-latest.aab', (req, res) => {
+const sendAabFile = (res: express.Response) => {
   const filePath = path.resolve(__dirname, '../uploads/fixmart-latest.aab');
   if (fs.existsSync(filePath)) {
     res.setHeader('Content-Type', 'application/x-authoritative-aab');
@@ -79,7 +83,11 @@ app.get('/uploads/fixmart-latest.aab', (req, res) => {
     error: 'Not Found',
     message: 'AAB file not found on server. Please try again later.'
   });
-});
+};
+
+app.get('/uploads/fixmart-latest.aab', (req, res) => sendAabFile(res));
+app.get('/download/aab', (req, res) => sendAabFile(res));
+app.get('/api/download/aab', (req, res) => sendAabFile(res));
 
 // Serve static uploads folder
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

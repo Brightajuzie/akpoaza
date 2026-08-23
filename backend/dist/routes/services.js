@@ -109,6 +109,52 @@ router.put('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 
         next(error);
     }
 }));
+// Delete all services (Admin only)
+router.post('/delete-all', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
+    if (role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+    }
+    try {
+        const allServices = yield prisma_1.default.service.findMany({ select: { id: true } });
+        const count = allServices.length;
+        yield prisma_1.default.$transaction([
+            prisma_1.default.review.deleteMany({ where: { serviceId: { not: null } } }),
+            prisma_1.default.escrow.deleteMany({ where: { booking: { serviceId: { not: undefined } } } }),
+            prisma_1.default.booking.deleteMany({}),
+            prisma_1.default.service.deleteMany({}),
+        ]);
+        res.json({ success: true, count, message: `All ${count} service(s) deleted successfully.` });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+// Bulk delete services (Admin only)
+router.post('/bulk-delete', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
+    if (role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+    }
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: 'ids array is required' });
+    }
+    try {
+        yield prisma_1.default.$transaction([
+            prisma_1.default.review.deleteMany({ where: { serviceId: { in: ids } } }),
+            prisma_1.default.escrow.deleteMany({ where: { booking: { serviceId: { in: ids } } } }),
+            prisma_1.default.booking.deleteMany({ where: { serviceId: { in: ids } } }),
+            prisma_1.default.service.deleteMany({ where: { id: { in: ids } } }),
+        ]);
+        res.json({ success: true, count: ids.length, message: `${ids.length} service(s) deleted successfully.` });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
 // Delete a handyman service (Admin only)
 router.delete('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
@@ -121,7 +167,12 @@ router.delete('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(vo
         const service = yield prisma_1.default.service.findUnique({ where: { id } });
         if (!service)
             return res.status(404).json({ error: 'Service not found' });
-        yield prisma_1.default.service.delete({ where: { id } });
+        yield prisma_1.default.$transaction([
+            prisma_1.default.review.deleteMany({ where: { serviceId: id } }),
+            prisma_1.default.escrow.deleteMany({ where: { booking: { serviceId: id } } }),
+            prisma_1.default.booking.deleteMany({ where: { serviceId: id } }),
+            prisma_1.default.service.delete({ where: { id } }),
+        ]);
         res.json({ message: 'Service deleted successfully' });
     }
     catch (error) {

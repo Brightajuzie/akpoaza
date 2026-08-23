@@ -109,48 +109,19 @@ async function main() {
     vendor: vendor.id 
   });
 
-  // 2. Create Products
-  const productsData = [
-    { name: 'Professional Power Drill', description: 'High-torque 20V cordless drill with 2 batteries.', price: 120.00, stock: 50, category: 'Tools' },
-    { name: 'Premium Tool Set (100pc)', description: 'Complete set of wrenches, sockets, and screwdrivers.', price: 85.50, stock: 30, category: 'Tools' },
-    { name: 'Heavy Duty Work Gloves', description: 'Leather reinforced gloves for tough jobs.', price: 15.99, stock: 100, category: 'Apparel' },
-    { name: 'LED Work Light', description: 'Rechargeable 2000 lumen work light.', price: 45.00, stock: 40, category: 'Electronics' },
-    { name: 'Caulking Gun', description: 'Durable steel caulking gun for smooth application.', price: 12.50, stock: 80, category: 'Supplies' },
-  ];
-
+  // 2. Create Products (optional catalog items)
+  const productsData: any[] = [];
   for (const p of productsData) {
     await prisma.product.create({ data: p });
   }
-  console.log('Products created.');
+  console.log('Products catalog initialized.');
 
-  // 3. Create Services
-  const servicesData = [
-    { name: 'Plumbing Repair', description: 'Fixing leaks, unclogging drains, and repairing pipes.', basePrice: 80.00, category: 'Plumbing' },
-    { name: 'Electrical Inspection', description: 'Checking wiring, outlets, and panel safety.', basePrice: 100.00, category: 'Electrical' },
-    { name: 'Furniture Assembly', description: 'Assembling flat-pack furniture quickly and safely.', basePrice: 50.00, category: 'General' },
-  ];
-
+  // 3. Create Services (optional catalog items)
+  const servicesData: any[] = [];
   for (const s of servicesData) {
     await prisma.service.create({ data: s });
   }
-  console.log('Services created.');
-
-  // 4. Create Mock Bookings
-  const plumbingService = await prisma.service.findFirst({ where: { name: 'Plumbing Repair' } });
-  if (plumbingService) {
-    await prisma.booking.create({
-      data: {
-        customerId: customer.id,
-        handymanId: handyman.id,
-        serviceId: plumbingService.id,
-        status: 'ACCEPTED',
-        scheduledAt: new Date(new Date().getTime() + 24 * 60 * 60 * 1000), // Tomorrow
-        address: customer.address || '123 Main St',
-        totalPrice: plumbingService.basePrice,
-      }
-    });
-    console.log('Mock booking created.');
-  }
+  console.log('Services catalog initialized.');
 
   // 5. Seed App Settings
   console.log('Seeding AppSettings...');

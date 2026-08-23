@@ -98,6 +98,56 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response, ne
   }
 });
 
+// Delete all services (Admin only)
+router.post('/delete-all', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const role = req.user?.role;
+  if (role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  }
+
+  try {
+    const allServices = await prisma.service.findMany({ select: { id: true } });
+    const count = allServices.length;
+
+    await prisma.$transaction([
+      prisma.review.deleteMany({ where: { serviceId: { not: null } } }),
+      prisma.escrow.deleteMany({ where: { booking: { serviceId: { not: undefined } } } }),
+      prisma.booking.deleteMany({}),
+      prisma.service.deleteMany({}),
+    ]);
+
+    res.json({ success: true, count, message: `All ${count} service(s) deleted successfully.` });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bulk delete services (Admin only)
+router.post('/bulk-delete', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const role = req.user?.role;
+  if (role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  }
+
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids array is required' });
+  }
+
+  try {
+    await prisma.$transaction([
+      prisma.review.deleteMany({ where: { serviceId: { in: ids } } }),
+      prisma.escrow.deleteMany({ where: { booking: { serviceId: { in: ids } } } }),
+      prisma.booking.deleteMany({ where: { serviceId: { in: ids } } }),
+      prisma.service.deleteMany({ where: { id: { in: ids } } }),
+    ]);
+
+    res.json({ success: true, count: ids.length, message: `${ids.length} service(s) deleted successfully.` });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Delete a handyman service (Admin only)
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const role = req.user?.role;
@@ -111,7 +161,12 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response,
     const service = await prisma.service.findUnique({ where: { id } });
     if (!service) return res.status(404).json({ error: 'Service not found' });
 
-    await prisma.service.delete({ where: { id } });
+    await prisma.$transaction([
+      prisma.review.deleteMany({ where: { serviceId: id } }),
+      prisma.escrow.deleteMany({ where: { booking: { serviceId: id } } }),
+      prisma.booking.deleteMany({ where: { serviceId: id } }),
+      prisma.service.delete({ where: { id } }),
+    ]);
     res.json({ message: 'Service deleted successfully' });
   } catch (error) {
     next(error);

@@ -24,7 +24,7 @@ const AI_FILTERS = [
 
 export default function AdminScreen() {
   const { userInfo } = useContext(AuthContext);
-  const { theme, settings, updateSettings, colorMode, aabUrl } = useContext(SettingsContext);
+  const { theme, settings, updateSettings, colorMode, apkUrl, aabUrl } = useContext(SettingsContext);
   const { fmt } = useCurrency();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -57,6 +57,13 @@ export default function AdminScreen() {
   const [category, setCategory]             = useState('');
   const [imageUrl, setImageUrl]             = useState('');   // final uploaded URL
   const [editingId, setEditingId]           = useState<string | null>(null);
+
+  // Multi-select & Bulk Delete state
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [selectedUserIds, setSelectedUserIds]       = useState<string[]>([]);
+  const [selectedSlideIds, setSelectedSlideIds]     = useState<string[]>([]);
+  const [bulkDeleting, setBulkDeleting]             = useState(false);
 
   // ── AI Image Enhancer Modal State ──────────────────────────────────────────
   const [showImageModal, setShowImageModal]   = useState(false);
@@ -99,6 +106,8 @@ export default function AdminScreen() {
   const [googleWebClientId, setGoogleWebClientId]         = useState('');
   const [googleIosClientId, setGoogleIosClientId]         = useState('');
   const [googleAndroidClientId, setGoogleAndroidClientId] = useState('');
+  const [apkUrlInput, setApkUrlInput]                     = useState('');
+  const [aabUrlInput, setAabUrlInput]                     = useState('');
   // Gateway enable/disable toggles
   const [stripeEnabled, setStripeEnabled]             = useState(true);
   const [paystackEnabled, setPaystackEnabled]         = useState(true);
@@ -344,6 +353,51 @@ export default function AdminScreen() {
     }
   };
 
+  const toggleSelectUser = (id: string) => {
+    setSelectedUserIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllUsers = (filteredUsers: any[]) => {
+    const selectableUsers = filteredUsers.filter(u => u.id !== userInfo?.id);
+    const selectableIds = selectableUsers.map(u => u.id);
+    const allSelected = selectableIds.length > 0 && selectableIds.every(id => selectedUserIds.includes(id));
+    if (allSelected) {
+      setSelectedUserIds(prev => prev.filter(id => !selectableIds.includes(id)));
+    } else {
+      setSelectedUserIds(prev => Array.from(new Set([...prev, ...selectableIds])));
+    }
+  };
+
+  const handleBulkDeleteUsers = async () => {
+    if (selectedUserIds.length === 0) return;
+    Alert.alert(
+      '⚠️ Delete Selected Users',
+      `Permanently delete ${selectedUserIds.length} selected user(s) and all their associated data? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Delete (${selectedUserIds.length})`,
+          style: 'destructive',
+          onPress: async () => {
+            setBulkDeleting(true);
+            try {
+              const res = await apiClient.post('/users/bulk-delete', { ids: selectedUserIds });
+              Alert.alert('✅ Deleted', res.data?.message || `${selectedUserIds.length} user(s) removed.`);
+              setSelectedUserIds([]);
+              fetchUsers();
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.error || 'Failed to bulk delete users.');
+            } finally {
+              setBulkDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleDeleteUser = (u: any) => {
     Alert.alert(
       '⚠️ Delete User',
@@ -355,6 +409,7 @@ export default function AdminScreen() {
             try {
               await apiClient.delete(`/users/${u.id}`);
               Alert.alert('Deleted', 'User and all related records removed.');
+              setSelectedUserIds(prev => prev.filter(id => id !== u.id));
               fetchUsers();
             } catch (e: any) {
               Alert.alert('Error', e.response?.data?.error || 'Failed to delete user.');
@@ -491,6 +546,48 @@ export default function AdminScreen() {
     setSlideOrder(slide.order.toString());
   };
 
+  const toggleSelectSlide = (id: string) => {
+    setSelectedSlideIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllSlides = () => {
+    if (selectedSlideIds.length === slides.length && slides.length > 0) {
+      setSelectedSlideIds([]);
+    } else {
+      setSelectedSlideIds(slides.map(s => s.id));
+    }
+  };
+
+  const handleBulkDeleteSlides = async () => {
+    if (selectedSlideIds.length === 0) return;
+    Alert.alert(
+      '⚠️ Delete Selected Slides',
+      `Are you sure you want to delete ${selectedSlideIds.length} promo slide(s)?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Delete (${selectedSlideIds.length})`,
+          style: 'destructive',
+          onPress: async () => {
+            setBulkDeleting(true);
+            try {
+              const res = await apiClient.post('/slides/bulk-delete', { ids: selectedSlideIds });
+              Alert.alert('✅ Deleted', res.data?.message || `${selectedSlideIds.length} slide(s) removed.`);
+              setSelectedSlideIds([]);
+              fetchSlides();
+            } catch (err: any) {
+              Alert.alert('Error', err.response?.data?.error || 'Failed to delete selected slides.');
+            } finally {
+              setBulkDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleDeleteSlide = async (id: string) => {
     Alert.alert('Delete', 'Delete this slide?', [
       { text: 'Cancel', style: 'cancel' },
@@ -501,6 +598,7 @@ export default function AdminScreen() {
           try {
             await apiClient.delete(`/slides/${id}`);
             Alert.alert('Deleted', 'Slide deleted.');
+            setSelectedSlideIds(prev => prev.filter(item => item !== id));
             fetchSlides();
           } catch (e) {
             Alert.alert('Error', 'Failed to delete.');
@@ -583,6 +681,8 @@ export default function AdminScreen() {
       setGoogleWebClientId(settings.google_web_client_id || '');
       setGoogleIosClientId(settings.google_ios_client_id || '');
       setGoogleAndroidClientId(settings.google_android_client_id || '');
+      setApkUrlInput(settings.apk_url || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk');
+      setAabUrlInput(settings.aab_url || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.aab');
       // Gateway enabled toggles
       setStripeEnabled(settings.stripe_enabled !== 'false');
       setPaystackEnabled(settings.paystack_enabled !== 'false');
@@ -740,6 +840,76 @@ export default function AdminScreen() {
     setUploadedSizeKB(null);
   };
 
+  const toggleSelectProduct = (id: string) => {
+    setSelectedProductIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllProducts = () => {
+    if (selectedProductIds.length === products.length && products.length > 0) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(products.map(p => p.id));
+    }
+  };
+
+  const handleDeleteAllProducts = async () => {
+    if (products.length === 0) return;
+    Alert.alert(
+      '🚨 Remove All Products',
+      `Are you sure you want to permanently delete all ${products.length} product(s) from the database? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Delete All (${products.length})`,
+          style: 'destructive',
+          onPress: async () => {
+            setBulkDeleting(true);
+            try {
+              const res = await apiClient.post('/products/delete-all');
+              Alert.alert('✅ All Products Deleted', res.data?.message || 'All products have been removed.');
+              setSelectedProductIds([]);
+              fetchData();
+            } catch (err: any) {
+              Alert.alert('Error', err.response?.data?.error || 'Failed to delete all products.');
+            } finally {
+              setBulkDeleting(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleBulkDeleteProducts = async () => {
+    if (selectedProductIds.length === 0) return;
+    Alert.alert(
+      '⚠️ Delete Selected Products',
+      `Are you sure you want to permanently delete ${selectedProductIds.length} selected product(s)? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Delete (${selectedProductIds.length})`,
+          style: 'destructive',
+          onPress: async () => {
+            setBulkDeleting(true);
+            try {
+              const res = await apiClient.post('/products/bulk-delete', { ids: selectedProductIds });
+              Alert.alert('✅ Deleted', res.data?.message || `${selectedProductIds.length} product(s) deleted.`);
+              setSelectedProductIds([]);
+              fetchData();
+            } catch (err: any) {
+              Alert.alert('Error', err.response?.data?.error || 'Failed to delete selected products.');
+            } finally {
+              setBulkDeleting(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleDeleteProduct = async (id: string) => {
     Alert.alert('Delete', 'Delete this product?', [
       { text: 'Cancel', style: 'cancel' },
@@ -750,6 +920,7 @@ export default function AdminScreen() {
           try {
             await apiClient.delete(`/products/${id}`);
             Alert.alert('Deleted', 'Product deleted.');
+            setSelectedProductIds(prev => prev.filter(item => item !== id));
             fetchData();
           } catch (e) {
             Alert.alert('Error', 'Failed to delete.');
@@ -788,6 +959,76 @@ export default function AdminScreen() {
   };
 
   // ─── Service Actions ──────────────────────────────────────────────────────
+  const toggleSelectService = (id: string) => {
+    setSelectedServiceIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllServices = () => {
+    if (selectedServiceIds.length === services.length && services.length > 0) {
+      setSelectedServiceIds([]);
+    } else {
+      setSelectedServiceIds(services.map(s => s.id));
+    }
+  };
+
+  const handleDeleteAllServices = async () => {
+    if (services.length === 0) return;
+    Alert.alert(
+      '🚨 Remove All Services',
+      `Are you sure you want to permanently delete all ${services.length} service(s) from the database? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Delete All (${services.length})`,
+          style: 'destructive',
+          onPress: async () => {
+            setBulkDeleting(true);
+            try {
+              const res = await apiClient.post('/services/delete-all');
+              Alert.alert('✅ All Services Deleted', res.data?.message || 'All services have been removed.');
+              setSelectedServiceIds([]);
+              fetchData();
+            } catch (err: any) {
+              Alert.alert('Error', err.response?.data?.error || 'Failed to delete all services.');
+            } finally {
+              setBulkDeleting(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleBulkDeleteServices = async () => {
+    if (selectedServiceIds.length === 0) return;
+    Alert.alert(
+      '⚠️ Delete Selected Services',
+      `Are you sure you want to permanently delete ${selectedServiceIds.length} selected service(s)?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Delete (${selectedServiceIds.length})`,
+          style: 'destructive',
+          onPress: async () => {
+            setBulkDeleting(true);
+            try {
+              const res = await apiClient.post('/services/bulk-delete', { ids: selectedServiceIds });
+              Alert.alert('✅ Deleted', res.data?.message || `${selectedServiceIds.length} service(s) deleted.`);
+              setSelectedServiceIds([]);
+              fetchData();
+            } catch (err: any) {
+              Alert.alert('Error', err.response?.data?.error || 'Failed to delete selected services.');
+            } finally {
+              setBulkDeleting(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const handleSaveService = async () => {
     if (!serviceName || !serviceBasePrice) {
       Alert.alert('Error', 'Service name and base price are required.');
@@ -834,6 +1075,7 @@ export default function AdminScreen() {
         onPress: async () => {
           try {
             await apiClient.delete(`/services/${id}`);
+            setSelectedServiceIds(prev => prev.filter(item => item !== id));
             fetchData();
           } catch (e) {
             Alert.alert('Error', 'Failed to delete service.');
@@ -888,6 +1130,8 @@ export default function AdminScreen() {
         google_web_client_id:     googleWebClientId,
         google_ios_client_id:     googleIosClientId,
         google_android_client_id: googleAndroidClientId,
+        apk_url:                  apkUrlInput,
+        aab_url:                  aabUrlInput,
         stripe_enabled:           stripeEnabled ? 'true' : 'false',
         paystack_enabled:         paystackEnabled ? 'true' : 'false',
         flutterwave_enabled:      flutterwaveEnabled ? 'true' : 'false',
@@ -1396,7 +1640,15 @@ export default function AdminScreen() {
                     );
                   })}
 
-                  {/* 📦 AAB Download Link */}
+                  {/* 📱 APK & 📦 AAB Download Links */}
+                  <TouchableOpacity
+                    style={[styles.adminVercelLinkBtn, { backgroundColor: '#22C55E14', borderColor: '#22C55E40', marginRight: 6 }]}
+                    onPress={() => Linking.openURL(apkUrl)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.adminVercelLinkText, { color: '#16A34A' }]}>📱 Download APK ↓</Text>
+                  </TouchableOpacity>
+
                   <TouchableOpacity
                     style={[styles.adminVercelLinkBtn, { backgroundColor: theme.primary + '12', borderColor: theme.primary + '30' }]}
                     onPress={() => Linking.openURL(aabUrl)}
@@ -1642,41 +1894,131 @@ export default function AdminScreen() {
               </View>
             </View>
 
-            <Text style={styles.sectionHeader}>Listed Items ({products.length})</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+              <Text style={styles.sectionHeader}>Listed Items ({products.length})</Text>
+            </View>
+
+            {/* Batch Selection Toolbar for Products */}
+            {products.length > 0 && (
+              <View style={[styles.batchToolbar, { backgroundColor: cardBg, borderColor }]}>
+                <View style={styles.batchToolbarLeft}>
+                  <TouchableOpacity
+                    style={[
+                      styles.batchSelectAllBtn,
+                      { borderColor: theme.border, backgroundColor: isDark ? '#334155' : '#F1F5F9' },
+                      selectedProductIds.length === products.length && { backgroundColor: theme.primary, borderColor: theme.primary }
+                    ]}
+                    onPress={toggleSelectAllProducts}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[
+                      styles.batchSelectAllText,
+                      { color: theme.text },
+                      selectedProductIds.length === products.length && { color: '#FFFFFF' }
+                    ]}>
+                      {selectedProductIds.length === products.length ? '✓ Deselect All' : '☑ Select All'}
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.batchCountText, { color: subtextColor }]}>
+                    {selectedProductIds.length > 0
+                      ? `${selectedProductIds.length} of ${products.length} selected`
+                      : `Total: ${products.length}`}
+                  </Text>
+                </View>
+
+                {selectedProductIds.length > 0 ? (
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TouchableOpacity
+                      style={styles.batchDeleteBtn}
+                      onPress={handleBulkDeleteProducts}
+                      disabled={bulkDeleting}
+                      activeOpacity={0.8}
+                    >
+                      {bulkDeleting ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.batchDeleteBtnText}>🗑️ Delete Selected ({selectedProductIds.length})</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setSelectedProductIds([])}
+                      style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+                    >
+                      <Text style={{ fontSize: 12, color: subtextColor, fontWeight: '600' }}>Clear</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : isAdmin && products.length > 0 ? (
+                  <TouchableOpacity
+                    style={[styles.batchDeleteBtn, { backgroundColor: '#DC2626' }]}
+                    onPress={handleDeleteAllProducts}
+                    disabled={bulkDeleting}
+                    activeOpacity={0.8}
+                  >
+                    {bulkDeleting ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.batchDeleteBtnText}>🚨 Wipe All ({products.length})</Text>
+                    )}
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            )}
+
             {productsLoading ? (
               <ActivityIndicator size="small" color={theme.primary} />
             ) : products.length === 0 ? (
               <Text style={styles.emptyText}>No items found in your catalog.</Text>
             ) : (
-              products.map(item => (
-                <View key={item.id} style={styles.listItem}>
-                  <View style={styles.listItemInfo}>
-                    <Text style={styles.listItemName}>
-                      {item.name} {item.featured && <Text style={{ color: '#FF9500' }}>🔥</Text>}
-                    </Text>
-                    <Text style={styles.listItemMeta}>Price: ₦{item.price.toFixed(2)} | Stock: {item.stock}</Text>
-                    {item.imageUrl && (
-                      <Text style={[styles.listItemMeta, { color: '#34C759' }]}>📷 Image uploaded</Text>
-                    )}
-                    {item.featured && (
-                      <View style={[styles.badgeContainer, { backgroundColor: '#FFF3E0' }]}>
-                        <Text style={[styles.badgeText, { color: '#FF9500' }]}>Promoted (Top Listing)</Text>
-                      </View>
-                    )}
+              products.map(item => {
+                const isSelected = selectedProductIds.includes(item.id);
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.listItem,
+                      isSelected && { borderColor: theme.primary, borderWidth: 1.5, backgroundColor: theme.primary + '08' }
+                    ]}
+                  >
+                    {/* Selection Checkbox */}
+                    <TouchableOpacity
+                      onPress={() => toggleSelectProduct(item.id)}
+                      style={[
+                        styles.batchItemCheckbox,
+                        isSelected && { backgroundColor: theme.primary, borderColor: theme.primary }
+                      ]}
+                      activeOpacity={0.8}
+                    >
+                      {isSelected && <Text style={styles.batchItemCheckText}>✓</Text>}
+                    </TouchableOpacity>
+
+                    <View style={styles.listItemInfo}>
+                      <Text style={styles.listItemName}>
+                        {item.name} {item.featured && <Text style={{ color: '#FF9500' }}>🔥</Text>}
+                      </Text>
+                      <Text style={styles.listItemMeta}>Price: ₦{item.price.toFixed(2)} | Stock: {item.stock}</Text>
+                      {item.imageUrl && (
+                        <Text style={[styles.listItemMeta, { color: '#34C759' }]}>📷 Image uploaded</Text>
+                      )}
+                      {item.featured && (
+                        <View style={[styles.badgeContainer, { backgroundColor: '#FFF3E0' }]}>
+                          <Text style={[styles.badgeText, { color: '#FF9500' }]}>Promoted (Top Listing)</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.listItemActions}>
+                      <TouchableOpacity style={[styles.actionBtn, styles.boostBtn]} onPress={() => handleBoostProduct(item.id)}>
+                        <Text style={styles.boostBtnText}>{item.featured ? 'Unboost' : '🚀 Boost'}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.actionBtn, styles.editBtn]} onPress={() => handleEditProduct(item)}>
+                        <Text style={styles.editBtnText}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => handleDeleteProduct(item.id)}>
+                        <Text style={styles.deleteBtnText}>Del</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <View style={styles.listItemActions}>
-                    <TouchableOpacity style={[styles.actionBtn, styles.boostBtn]} onPress={() => handleBoostProduct(item.id)}>
-                      <Text style={styles.boostBtnText}>{item.featured ? 'Unboost' : '🚀 Boost'}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.actionBtn, styles.editBtn]} onPress={() => handleEditProduct(item)}>
-                      <Text style={styles.editBtnText}>Edit</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => handleDeleteProduct(item.id)}>
-                      <Text style={styles.deleteBtnText}>Del</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))
+                );
+              })
             )}
           </View>
         )}
@@ -1731,38 +2073,128 @@ export default function AdminScreen() {
               </View>
             </View>
 
-            <Text style={styles.sectionHeader}>Active Services Catalog</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+              <Text style={styles.sectionHeader}>Active Services Catalog ({services.length})</Text>
+            </View>
+
+            {/* Batch Selection Toolbar for Services */}
+            {services.length > 0 && (
+              <View style={[styles.batchToolbar, { backgroundColor: cardBg, borderColor }]}>
+                <View style={styles.batchToolbarLeft}>
+                  <TouchableOpacity
+                    style={[
+                      styles.batchSelectAllBtn,
+                      { borderColor: theme.border, backgroundColor: isDark ? '#334155' : '#F1F5F9' },
+                      selectedServiceIds.length === services.length && { backgroundColor: theme.primary, borderColor: theme.primary }
+                    ]}
+                    onPress={toggleSelectAllServices}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[
+                      styles.batchSelectAllText,
+                      { color: theme.text },
+                      selectedServiceIds.length === services.length && { color: '#FFFFFF' }
+                    ]}>
+                      {selectedServiceIds.length === services.length ? '✓ Deselect All' : '☑ Select All'}
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.batchCountText, { color: subtextColor }]}>
+                    {selectedServiceIds.length > 0
+                      ? `${selectedServiceIds.length} of ${services.length} selected`
+                      : `Total: ${services.length}`}
+                  </Text>
+                </View>
+
+                {selectedServiceIds.length > 0 ? (
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TouchableOpacity
+                      style={styles.batchDeleteBtn}
+                      onPress={handleBulkDeleteServices}
+                      disabled={bulkDeleting}
+                      activeOpacity={0.8}
+                    >
+                      {bulkDeleting ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.batchDeleteBtnText}>🗑️ Delete Selected ({selectedServiceIds.length})</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setSelectedServiceIds([])}
+                      style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+                    >
+                      <Text style={{ fontSize: 12, color: subtextColor, fontWeight: '600' }}>Clear</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : isAdmin && services.length > 0 ? (
+                  <TouchableOpacity
+                    style={[styles.batchDeleteBtn, { backgroundColor: '#DC2626' }]}
+                    onPress={handleDeleteAllServices}
+                    disabled={bulkDeleting}
+                    activeOpacity={0.8}
+                  >
+                    {bulkDeleting ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.batchDeleteBtnText}>🚨 Wipe All ({services.length})</Text>
+                    )}
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            )}
+
             {servicesLoading ? (
               <ActivityIndicator size="small" color={theme.primary} />
             ) : services.length === 0 ? (
               <Text style={styles.emptyText}>No services defined yet.</Text>
             ) : (
-              services.map(s => (
-                <View key={s.id} style={styles.listItem}>
-                  <View style={styles.listItemInfo}>
-                    <Text style={styles.listItemName}>
-                      {s.name} {s.featured && <Text style={{ color: '#FF9500' }}>🔥</Text>}
-                    </Text>
-                    <Text style={styles.listItemMeta}>Category: {s.category} | Hourly base: ₦{s.basePrice.toFixed(2)}</Text>
-                    {s.featured && (
-                      <View style={[styles.badgeContainer, { backgroundColor: '#FFF3E0' }]}>
-                        <Text style={[styles.badgeText, { color: '#FF9500' }]}>Featured Page Listing</Text>
-                      </View>
-                    )}
+              services.map(s => {
+                const isSelected = selectedServiceIds.includes(s.id);
+                return (
+                  <View
+                    key={s.id}
+                    style={[
+                      styles.listItem,
+                      isSelected && { borderColor: theme.primary, borderWidth: 1.5, backgroundColor: theme.primary + '08' }
+                    ]}
+                  >
+                    {/* Selection Checkbox */}
+                    <TouchableOpacity
+                      onPress={() => toggleSelectService(s.id)}
+                      style={[
+                        styles.batchItemCheckbox,
+                        isSelected && { backgroundColor: theme.primary, borderColor: theme.primary }
+                      ]}
+                      activeOpacity={0.8}
+                    >
+                      {isSelected && <Text style={styles.batchItemCheckText}>✓</Text>}
+                    </TouchableOpacity>
+
+                    <View style={styles.listItemInfo}>
+                      <Text style={styles.listItemName}>
+                        {s.name} {s.featured && <Text style={{ color: '#FF9500' }}>🔥</Text>}
+                      </Text>
+                      <Text style={styles.listItemMeta}>Category: {s.category} | Hourly base: ₦{s.basePrice.toFixed(2)}</Text>
+                      {s.featured && (
+                        <View style={[styles.badgeContainer, { backgroundColor: '#FFF3E0' }]}>
+                          <Text style={[styles.badgeText, { color: '#FF9500' }]}>Featured Page Listing</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.listItemActions}>
+                      <TouchableOpacity style={[styles.actionBtn, styles.boostBtn]} onPress={() => handleBoostService(s.id)}>
+                        <Text style={styles.boostBtnText}>{s.featured ? 'Unboost' : '🚀 Boost'}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.actionBtn, styles.editBtn]} onPress={() => handleEditService(s)}>
+                        <Text style={styles.editBtnText}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => handleDeleteService(s.id)}>
+                        <Text style={styles.deleteBtnText}>Del</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <View style={styles.listItemActions}>
-                    <TouchableOpacity style={[styles.actionBtn, styles.boostBtn]} onPress={() => handleBoostService(s.id)}>
-                      <Text style={styles.boostBtnText}>{s.featured ? 'Unboost' : '🚀 Boost'}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.actionBtn, styles.editBtn]} onPress={() => handleEditService(s)}>
-                      <Text style={styles.editBtnText}>Edit</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => handleDeleteService(s.id)}>
-                      <Text style={styles.deleteBtnText}>Del</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))
+                );
+              })
             )}
           </View>
         )}
@@ -2079,6 +2511,46 @@ export default function AdminScreen() {
                   </View>
                 </View>
               )}
+              {/* 5. App Distribution & Download Links */}
+              <Text style={styles.sectionHeading}>4. Mobile App Distribution & Download Links</Text>
+              <View style={styles.subSettingsCard}>
+                <Text style={styles.subCardTitle}>📱 Android APK & App Bundle (AAB)</Text>
+                <Text style={styles.subCardNote}>
+                  Download links served by the website, client portals, and mobile app download banners.
+                </Text>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Android APK Direct Download URL</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={apkUrlInput}
+                    onChangeText={setApkUrlInput}
+                    placeholder="https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk"
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={{ marginTop: 6, alignSelf: 'flex-start' }}
+                    onPress={() => Linking.openURL(apkUrlInput || apkUrl)}
+                  >
+                    <Text style={{ fontSize: 12, color: '#16A34A', fontWeight: '700' }}>📥 Test APK Download Link</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Android AAB (App Bundle) Download URL</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={aabUrlInput}
+                    onChangeText={setAabUrlInput}
+                    placeholder="https://akpoaza-3.onrender.com/uploads/fixmart-latest.aab"
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={{ marginTop: 6, alignSelf: 'flex-start' }}
+                    onPress={() => Linking.openURL(aabUrlInput || aabUrl)}
+                  >
+                    <Text style={{ fontSize: 12, color: theme.primary, fontWeight: '700' }}>📦 Test AAB Download Link</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
               <TouchableOpacity
                 style={[styles.saveSettingsBtn, { backgroundColor: theme.primary }]}
@@ -2180,6 +2652,65 @@ export default function AdminScreen() {
               ))}
             </View>
 
+            {/* Batch Selection Toolbar for Users */}
+            {(() => {
+              const filteredUsers = users.filter((u: any) => userRoleFilter === 'ALL' || u.role === userRoleFilter);
+              const selectableUsers = filteredUsers.filter(u => u.id !== userInfo?.id);
+              const isAllSelected = selectableUsers.length > 0 && selectableUsers.every(u => selectedUserIds.includes(u.id));
+
+              return selectableUsers.length > 0 ? (
+                <View style={[styles.batchToolbar, { backgroundColor: cardBg, borderColor }]}>
+                  <View style={styles.batchToolbarLeft}>
+                    <TouchableOpacity
+                      style={[
+                        styles.batchSelectAllBtn,
+                        { borderColor: theme.border, backgroundColor: isDark ? '#334155' : '#F1F5F9' },
+                        isAllSelected && { backgroundColor: theme.primary, borderColor: theme.primary }
+                      ]}
+                      onPress={() => toggleSelectAllUsers(filteredUsers)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[
+                        styles.batchSelectAllText,
+                        { color: theme.text },
+                        isAllSelected && { color: '#FFFFFF' }
+                      ]}>
+                        {isAllSelected ? '✓ Deselect All' : '☑ Select All'}
+                      </Text>
+                    </TouchableOpacity>
+                    <Text style={[styles.batchCountText, { color: subtextColor }]}>
+                      {selectedUserIds.length > 0
+                        ? `${selectedUserIds.length} selected`
+                        : `Total: ${filteredUsers.length}`}
+                    </Text>
+                  </View>
+
+                  {selectedUserIds.length > 0 && (
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                      <TouchableOpacity
+                        style={styles.batchDeleteBtn}
+                        onPress={handleBulkDeleteUsers}
+                        disabled={bulkDeleting}
+                        activeOpacity={0.8}
+                      >
+                        {bulkDeleting ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.batchDeleteBtnText}>🗑️ Delete Selected ({selectedUserIds.length})</Text>
+                        )}
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => setSelectedUserIds([])}
+                        style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+                      >
+                        <Text style={{ fontSize: 12, color: subtextColor, fontWeight: '600' }}>Clear</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              ) : null;
+            })()}
+
             {usersLoading ? (
               <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 20 }} />
             ) : users.length === 0 ? (
@@ -2187,59 +2718,87 @@ export default function AdminScreen() {
             ) : (
               users
                 .filter((u: any) => userRoleFilter === 'ALL' || u.role === userRoleFilter)
-                .map((u: any) => (
-                  <View key={u.id} style={[styles.listItem, { flexDirection: 'column', alignItems: 'stretch' }]}>
-                    {/* Name & Role badge */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <Text style={styles.listItemName}>{u.name}</Text>
-                      <View style={[
-                        styles.badgeContainer,
-                        u.role === 'ADMIN' ? { backgroundColor: '#FED7D7' } :
-                        u.role === 'HANDYMAN' ? { backgroundColor: '#EBF8FF' } :
-                        u.role === 'VENDOR' ? { backgroundColor: '#FEFCBF' } :
-                        u.role === 'RIDER' ? { backgroundColor: '#E8F5E9' } :
-                        { backgroundColor: '#EDF2F7' }
-                      ]}>
-                        <Text style={{
-                          fontSize: 10, fontWeight: '700',
-                          color: u.role === 'ADMIN' ? '#E53E3E' : u.role === 'HANDYMAN' ? '#2B6CB0' : u.role === 'VENDOR' ? '#B7791F' : u.role === 'RIDER' ? '#34C759' : '#4A5568'
-                        }}>{u.role === 'HANDYMAN' ? 'SERVICES' : u.role}</Text>
+                .map((u: any) => {
+                  const isSelected = selectedUserIds.includes(u.id);
+                  const isSelf = u.id === userInfo?.id;
+                  return (
+                    <View
+                      key={u.id}
+                      style={[
+                        styles.listItem,
+                        { flexDirection: 'column', alignItems: 'stretch' },
+                        isSelected && { borderColor: theme.primary, borderWidth: 1.5, backgroundColor: theme.primary + '08' }
+                      ]}
+                    >
+                      {/* Name & Role badge & Select Checkbox */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                          {!isSelf && (
+                            <TouchableOpacity
+                              onPress={() => toggleSelectUser(u.id)}
+                              style={[
+                                styles.batchItemCheckbox,
+                                isSelected && { backgroundColor: theme.primary, borderColor: theme.primary }
+                              ]}
+                              activeOpacity={0.8}
+                            >
+                              {isSelected && <Text style={styles.batchItemCheckText}>✓</Text>}
+                            </TouchableOpacity>
+                          )}
+                          <Text style={[styles.listItemName, { flex: 1 }]}>
+                            {u.name} {isSelf && <Text style={{ color: theme.primary, fontSize: 12 }}> (You)</Text>}
+                          </Text>
+                        </View>
+                        <View style={[
+                          styles.badgeContainer,
+                          u.role === 'ADMIN' ? { backgroundColor: '#FED7D7' } :
+                          u.role === 'HANDYMAN' ? { backgroundColor: '#EBF8FF' } :
+                          u.role === 'VENDOR' ? { backgroundColor: '#FEFCBF' } :
+                          u.role === 'RIDER' ? { backgroundColor: '#E8F5E9' } :
+                          { backgroundColor: '#EDF2F7' }
+                        ]}>
+                          <Text style={{
+                            fontSize: 10, fontWeight: '700',
+                            color: u.role === 'ADMIN' ? '#E53E3E' : u.role === 'HANDYMAN' ? '#2B6CB0' : u.role === 'VENDOR' ? '#B7791F' : u.role === 'RIDER' ? '#34C759' : '#4A5568'
+                          }}>{u.role === 'HANDYMAN' ? 'SERVICES' : u.role}</Text>
+                        </View>
                       </View>
-                    </View>
-                    <Text style={styles.listItemMeta}>Email: {u.email}</Text>
-                    <Text style={styles.listItemMeta}>KYC: {u.verificationStatus || 'UNVERIFIED'}  •  Bookings: {u.bookingCount ?? 0}</Text>
+                      <Text style={styles.listItemMeta}>Email: {u.email}</Text>
+                      <Text style={styles.listItemMeta}>KYC: {u.verificationStatus || 'UNVERIFIED'}  •  Bookings: {u.bookingCount ?? 0}</Text>
 
-                    {/* ── Primary action row ── */}
-                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                      {/* View Details */}
-                      <TouchableOpacity
-                        onPress={() => openUserDetails(u)}
-                        style={[styles.userCardBtn, { backgroundColor: '#007AFF' }]}
-                      >
-                        <Text style={styles.userCardBtnText}>🔍 Details</Text>
-                      </TouchableOpacity>
-                      {/* Edit */}
-                      <TouchableOpacity
-                        onPress={() => openUserEdit(u)}
-                        style={[styles.userCardBtn, { backgroundColor: '#5856D6' }]}
-                      >
-                        <Text style={styles.userCardBtnText}>✏️ Edit</Text>
-                      </TouchableOpacity>
-                      {/* Video Call */}
-                      <TouchableOpacity
-                        onPress={() => handleInitiateCall(u, false)}
-                        style={[styles.userCardBtn, { backgroundColor: '#34C759' }]}
-                      >
-                        <Text style={styles.userCardBtnText}>📹 Call</Text>
-                      </TouchableOpacity>
-                      {/* Delete */}
-                      <TouchableOpacity
-                        onPress={() => handleDeleteUser(u)}
-                        style={[styles.userCardBtn, { backgroundColor: '#FF3B30' }]}
-                      >
-                        <Text style={styles.userCardBtnText}>🗑️ Delete</Text>
-                      </TouchableOpacity>
-                    </View>
+                      {/* ── Primary action row ── */}
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                        {/* View Details */}
+                        <TouchableOpacity
+                          onPress={() => openUserDetails(u)}
+                          style={[styles.userCardBtn, { backgroundColor: '#007AFF' }]}
+                        >
+                          <Text style={styles.userCardBtnText}>🔍 Details</Text>
+                        </TouchableOpacity>
+                        {/* Edit */}
+                        <TouchableOpacity
+                          onPress={() => openUserEdit(u)}
+                          style={[styles.userCardBtn, { backgroundColor: '#5856D6' }]}
+                        >
+                          <Text style={styles.userCardBtnText}>✏️ Edit</Text>
+                        </TouchableOpacity>
+                        {/* Video Call */}
+                        <TouchableOpacity
+                          onPress={() => handleInitiateCall(u, false)}
+                          style={[styles.userCardBtn, { backgroundColor: '#34C759' }]}
+                        >
+                          <Text style={styles.userCardBtnText}>📹 Call</Text>
+                        </TouchableOpacity>
+                        {/* Delete */}
+                        {!isSelf && (
+                          <TouchableOpacity
+                            onPress={() => handleDeleteUser(u)}
+                            style={[styles.userCardBtn, { backgroundColor: '#FF3B30' }]}
+                          >
+                            <Text style={styles.userCardBtnText}>🗑️ Delete</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
 
                     {/* Phone quick-actions */}
                     {(u.phone || u.opayPhone) && (
@@ -2617,33 +3176,110 @@ export default function AdminScreen() {
               </View>
             </View>
 
-            <Text style={styles.sectionHeader}>Active Slides ({slides.length})</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+              <Text style={styles.sectionHeader}>Active Slides ({slides.length})</Text>
+            </View>
+
+            {/* Batch Selection Toolbar for Slides */}
+            {slides.length > 0 && (
+              <View style={[styles.batchToolbar, { backgroundColor: cardBg, borderColor }]}>
+                <View style={styles.batchToolbarLeft}>
+                  <TouchableOpacity
+                    style={[
+                      styles.batchSelectAllBtn,
+                      { borderColor: theme.border, backgroundColor: isDark ? '#334155' : '#F1F5F9' },
+                      selectedSlideIds.length === slides.length && { backgroundColor: theme.primary, borderColor: theme.primary }
+                    ]}
+                    onPress={toggleSelectAllSlides}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[
+                      styles.batchSelectAllText,
+                      { color: theme.text },
+                      selectedSlideIds.length === slides.length && { color: '#FFFFFF' }
+                    ]}>
+                      {selectedSlideIds.length === slides.length ? '✓ Deselect All' : '☑ Select All'}
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.batchCountText, { color: subtextColor }]}>
+                    {selectedSlideIds.length > 0
+                      ? `${selectedSlideIds.length} of ${slides.length} selected`
+                      : `Total: ${slides.length}`}
+                  </Text>
+                </View>
+
+                {selectedSlideIds.length > 0 && (
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TouchableOpacity
+                      style={styles.batchDeleteBtn}
+                      onPress={handleBulkDeleteSlides}
+                      disabled={bulkDeleting}
+                      activeOpacity={0.8}
+                    >
+                      {bulkDeleting ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.batchDeleteBtnText}>🗑️ Delete Selected ({selectedSlideIds.length})</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => setSelectedSlideIds([])}
+                      style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+                    >
+                      <Text style={{ fontSize: 12, color: subtextColor, fontWeight: '600' }}>Clear</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
+
             {slidesLoading ? (
               <ActivityIndicator size="small" color={theme.primary} />
             ) : slides.length === 0 ? (
               <Text style={styles.emptyText}>No promo slides created yet.</Text>
             ) : (
-              slides.map(slide => (
-                <View key={slide.id} style={styles.listItem}>
-                  <View style={styles.listItemInfo}>
-                    <Text style={styles.listItemName}>
-                      {slide.caption || '(No Caption)'}
-                    </Text>
-                    <Text style={styles.listItemMeta}>Order: {slide.order}</Text>
-                    {slide.imageUrl && (
-                      <Image source={{ uri: slide.imageUrl }} style={{ width: 80, height: 45, borderRadius: 4, marginTop: 6 }} resizeMode="cover" />
-                    )}
-                  </View>
-                  <View style={styles.listItemActions}>
-                    <TouchableOpacity style={[styles.actionBtn, styles.editBtn]} onPress={() => handleEditSlide(slide)}>
-                      <Text style={styles.editBtnText}>Edit</Text>
+              slides.map(slide => {
+                const isSelected = selectedSlideIds.includes(slide.id);
+                return (
+                  <View
+                    key={slide.id}
+                    style={[
+                      styles.listItem,
+                      isSelected && { borderColor: theme.primary, borderWidth: 1.5, backgroundColor: theme.primary + '08' }
+                    ]}
+                  >
+                    {/* Selection Checkbox */}
+                    <TouchableOpacity
+                      onPress={() => toggleSelectSlide(slide.id)}
+                      style={[
+                        styles.batchItemCheckbox,
+                        isSelected && { backgroundColor: theme.primary, borderColor: theme.primary }
+                      ]}
+                      activeOpacity={0.8}
+                    >
+                      {isSelected && <Text style={styles.batchItemCheckText}>✓</Text>}
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => handleDeleteSlide(slide.id)}>
-                      <Text style={styles.deleteBtnText}>Del</Text>
-                    </TouchableOpacity>
+
+                    <View style={styles.listItemInfo}>
+                      <Text style={styles.listItemName}>
+                        {slide.caption || '(No Caption)'}
+                      </Text>
+                      <Text style={styles.listItemMeta}>Order: {slide.order}</Text>
+                      {slide.imageUrl && (
+                        <Image source={{ uri: slide.imageUrl }} style={{ width: 80, height: 45, borderRadius: 4, marginTop: 6 }} resizeMode="cover" />
+                      )}
+                    </View>
+                    <View style={styles.listItemActions}>
+                      <TouchableOpacity style={[styles.actionBtn, styles.editBtn]} onPress={() => handleEditSlide(slide)}>
+                        <Text style={styles.editBtnText}>Edit</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.actionBtn, styles.deleteBtn]} onPress={() => handleDeleteSlide(slide.id)}>
+                        <Text style={styles.deleteBtnText}>Del</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-              ))
+                );
+              })
             )}
           </View>
         )}
@@ -3431,6 +4067,71 @@ const styles = StyleSheet.create({
   metricIconText: { fontSize: 20 },
   metricValueText: { fontSize: 22, fontWeight: '900' },
   metricLabelText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.3 },
+
+  // ── Batch Selection Toolbar & Checkbox Styles ─────────────────────────────
+  batchToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  batchToolbarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  batchSelectAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  batchSelectAllText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  batchCountText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  batchDeleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  batchDeleteBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  batchItemCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#9CA3AF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  batchItemCheckText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 14,
+  },
 });
 
 

@@ -292,4 +292,39 @@ router.delete('/:id', auth_1.authenticateToken, (req, res) => __awaiter(void 0, 
         res.status(500).json({ error: 'Failed to delete user' });
     }
 }));
+/**
+ * POST /users/bulk-delete
+ * ADMIN only.
+ * Bulk deletes multiple users with cascading transaction.
+ */
+router.post('/bulk-delete', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const admin = req.user;
+        if (admin.role !== 'ADMIN') {
+            return res.status(403).json({ error: 'Forbidden: admin access only' });
+        }
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'ids array is required' });
+        }
+        const targetIds = ids.filter((id) => id !== admin.userId);
+        if (targetIds.length > 0) {
+            yield prisma_1.default.$transaction([
+                prisma_1.default.review.deleteMany({ where: { OR: [{ authorId: { in: targetIds } }, { handymanId: { in: targetIds } }] } }),
+                prisma_1.default.product.deleteMany({ where: { vendorId: { in: targetIds } } }),
+                prisma_1.default.orderItem.deleteMany({ where: { order: { userId: { in: targetIds } } } }),
+                prisma_1.default.order.deleteMany({ where: { userId: { in: targetIds } } }),
+                prisma_1.default.escrow.deleteMany({ where: { OR: [{ providerId: { in: targetIds } }, { booking: { customerId: { in: targetIds } } }] } }),
+                prisma_1.default.booking.deleteMany({ where: { customerId: { in: targetIds } } }),
+                prisma_1.default.booking.updateMany({ where: { handymanId: { in: targetIds } }, data: { handymanId: null } }),
+                prisma_1.default.user.deleteMany({ where: { id: { in: targetIds } } }),
+            ]);
+        }
+        res.json({ success: true, count: targetIds.length, message: `${targetIds.length} user(s) deleted successfully.` });
+    }
+    catch (error) {
+        console.error('POST /users/bulk-delete error:', error);
+        res.status(500).json({ error: 'Failed to bulk delete users' });
+    }
+}));
 exports.default = router;

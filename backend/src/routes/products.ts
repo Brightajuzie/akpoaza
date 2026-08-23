@@ -165,6 +165,71 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
   }
 });
 
+// Delete all products (Admin only)
+router.post('/delete-all', authenticateToken, async (req: AuthRequest, res) => {
+  const role = req.user?.role;
+  if (role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  }
+
+  try {
+    const allProducts = await prisma.product.findMany({ select: { id: true } });
+    const count = allProducts.length;
+
+    await prisma.$transaction([
+      prisma.review.deleteMany({ where: { productId: { not: null } } }),
+      prisma.orderItem.deleteMany({}),
+      prisma.product.deleteMany({}),
+    ]);
+
+    res.json({ success: true, count, message: `All ${count} product(s) deleted successfully.` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to delete all products' });
+  }
+});
+
+// Bulk delete products (Admin or Vendor for own products)
+router.post('/bulk-delete', authenticateToken, async (req: AuthRequest, res) => {
+  const role = req.user?.role;
+  const userId = req.user?.userId;
+  const { ids } = req.body;
+
+  if (role !== 'ADMIN' && role !== 'VENDOR') {
+    return res.status(403).json({ error: 'Forbidden. Admin or Vendor access required.' });
+  }
+
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids array is required' });
+  }
+
+  try {
+    let whereClause: any = { id: { in: ids } };
+    if (role === 'VENDOR') {
+      whereClause.vendorId = userId;
+    }
+
+    const matchedProducts = await prisma.product.findMany({
+      where: whereClause,
+      select: { id: true },
+    });
+    const matchedIds = matchedProducts.map((p) => p.id);
+
+    if (matchedIds.length > 0) {
+      await prisma.$transaction([
+        prisma.review.deleteMany({ where: { productId: { in: matchedIds } } }),
+        prisma.orderItem.deleteMany({ where: { productId: { in: matchedIds } } }),
+        prisma.product.deleteMany({ where: { id: { in: matchedIds } } }),
+      ]);
+    }
+
+    res.json({ success: true, count: matchedIds.length, message: `${matchedIds.length} product(s) deleted successfully.` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to bulk delete products' });
+  }
+});
+
 // Delete a product (Owner vendor or Admin only)
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
   const { id } = req.params;
@@ -186,7 +251,11 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
       return res.status(403).json({ error: 'Forbidden. You do not own this product.' });
     }
 
-    await prisma.product.delete({ where: { id } });
+    await prisma.$transaction([
+      prisma.review.deleteMany({ where: { productId: id } }),
+      prisma.orderItem.deleteMany({ where: { productId: id } }),
+      prisma.product.delete({ where: { id } }),
+    ]);
     res.json({ message: 'Product deleted successfully' });
   } catch (error) {
     console.error(error);

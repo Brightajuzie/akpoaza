@@ -312,5 +312,44 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+/**
+ * POST /users/bulk-delete
+ * ADMIN only.
+ * Bulk deletes multiple users with cascading transaction.
+ */
+router.post('/bulk-delete', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const admin = req.user!;
+    if (admin.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Forbidden: admin access only' });
+    }
+
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const targetIds = ids.filter((id) => id !== admin.userId);
+
+    if (targetIds.length > 0) {
+      await prisma.$transaction([
+        prisma.review.deleteMany({ where: { OR: [{ authorId: { in: targetIds } }, { handymanId: { in: targetIds } }] } }),
+        prisma.product.deleteMany({ where: { vendorId: { in: targetIds } } }),
+        prisma.orderItem.deleteMany({ where: { order: { userId: { in: targetIds } } } }),
+        prisma.order.deleteMany({ where: { userId: { in: targetIds } } }),
+        prisma.escrow.deleteMany({ where: { OR: [{ providerId: { in: targetIds } }, { booking: { customerId: { in: targetIds } } }] } }),
+        prisma.booking.deleteMany({ where: { customerId: { in: targetIds } } }),
+        prisma.booking.updateMany({ where: { handymanId: { in: targetIds } }, data: { handymanId: null } }),
+        prisma.user.deleteMany({ where: { id: { in: targetIds } } }),
+      ]);
+    }
+
+    res.json({ success: true, count: targetIds.length, message: `${targetIds.length} user(s) deleted successfully.` });
+  } catch (error) {
+    console.error('POST /users/bulk-delete error:', error);
+    res.status(500).json({ error: 'Failed to bulk delete users' });
+  }
+});
+
 export default router;
 

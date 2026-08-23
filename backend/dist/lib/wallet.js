@@ -47,18 +47,27 @@ function createEscrowForPaidItem(checkoutType, id, paidAmount) {
                 if (!booking) {
                     throw new Error('Booking not found');
                 }
-                if (!booking.handymanId) {
-                    throw new Error('Booking has no handyman assigned');
-                }
-                const existingEscrows = yield tx.escrow.findMany({
-                    where: { bookingId: id },
-                });
-                const totalEscrowed = existingEscrows.reduce((sum, e) => sum + e.amount, 0);
                 // Determine transaction amount
                 let transactionAmount = paidAmount;
                 if (transactionAmount === undefined) {
                     transactionAmount = booking.isSplitPayment ? booking.totalPrice / 2 : booking.totalPrice;
                 }
+                if (!booking.handymanId) {
+                    // Handyman is not yet assigned; record amountPaid and defer escrow until assignment
+                    yield tx.booking.update({
+                        where: { id },
+                        data: {
+                            amountPaid: {
+                                increment: transactionAmount,
+                            },
+                        },
+                    });
+                    return null;
+                }
+                const existingEscrows = yield tx.escrow.findMany({
+                    where: { bookingId: id },
+                });
+                const totalEscrowed = existingEscrows.reduce((sum, e) => sum + e.amount, 0);
                 if (totalEscrowed >= booking.totalPrice) {
                     return existingEscrows[existingEscrows.length - 1];
                 }

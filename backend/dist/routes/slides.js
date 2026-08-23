@@ -81,6 +81,25 @@ router.put('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 
         next(error);
     }
 }));
+// POST bulk delete slides (Admin only)
+router.post('/bulk-delete', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
+    if (role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+    }
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: 'ids array is required' });
+    }
+    try {
+        const result = yield prisma_1.default.promoSlide.deleteMany({ where: { id: { in: ids } } });
+        res.json({ success: true, count: result.count, message: `${result.count} slide(s) deleted successfully.` });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
 // DELETE a slide (Admin only)
 router.delete('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
