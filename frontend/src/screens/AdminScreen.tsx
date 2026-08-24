@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView,
   Alert, ActivityIndicator, Modal, Image, Platform, Linking, useWindowDimensions
@@ -23,6 +23,7 @@ const AI_FILTERS = [
 ];
 
 export default function AdminScreen() {
+  const scrollViewRef = useRef<ScrollView>(null);
   const { userInfo } = useContext(AuthContext);
   const { theme, settings, updateSettings, colorMode, apkUrl, aabUrl } = useContext(SettingsContext);
   const { fmt } = useCurrency();
@@ -696,13 +697,45 @@ export default function AdminScreen() {
   }, [settings]);
 
   // ─── AI Image Picker & Upload ─────────────────────────────────────────────
+  const handleTakePhoto = async (target: 'product' | 'logo' | 'favicon' = 'product') => {
+    if (Platform.OS !== 'web') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'Please grant camera access to take product photos.'
+        );
+        return;
+      }
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 1,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      if (asset.fileSize && asset.fileSize > 2000000) {
+        Alert.alert('File too large', 'Please select an image smaller than 2MB.');
+        return;
+      }
+      setImageTarget(target);
+      setPickedImageUri(asset.uri);
+      setSelectedFilter('none');
+      setRemoveBg(false);
+      setUploadedSizeKB(null);
+      setShowImageModal(true);
+    }
+  };
+
   const handlePickImage = async (target: 'product' | 'logo' | 'favicon' = 'product') => {
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
           'Permission Required',
-          'Please grant photo library access to upload images.',
+          'Please grant photo library access to upload images.'
         );
         return;
       }
@@ -727,6 +760,23 @@ export default function AdminScreen() {
       setUploadedSizeKB(null);
       setShowImageModal(true);
     }
+  };
+
+  const handleOpenImageOptions = (target: 'product' | 'logo' | 'favicon' = 'product') => {
+    if (Platform.OS === 'web') {
+      handlePickImage(target);
+      return;
+    }
+
+    Alert.alert(
+      'Upload Product Image',
+      'Choose image source:',
+      [
+        { text: '📸 Take Photo', onPress: () => handleTakePhoto(target) },
+        { text: '🖼️ Choose from Gallery', onPress: () => handlePickImage(target) },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
   };
 
   const handleApplyAndUpload = async () => {
@@ -790,34 +840,27 @@ export default function AdminScreen() {
 
   // ─── Product Actions ──────────────────────────────────────────────────────
   const handleSaveProduct = async () => {
-    if (isVendor && userInfo?.verificationStatus !== 'VERIFIED') {
-      Alert.alert(
-        'Verification Required',
-        'Your vendor account must be fully verified before you can list or update products.'
-      );
-      return;
-    }
-    if (!name || !price) {
-      Alert.alert('Error', 'Name and Price are required.');
+    if (!name.trim() || !price.trim()) {
+      Alert.alert('Missing Fields', 'Product Name and Price are required.');
       return;
     }
     setLoading(true);
     try {
       const payload = {
-        name,
-        description,
+        name: name.trim(),
+        description: description.trim(),
         price: parseFloat(price),
         stock: parseInt(stock, 10) || 0,
-        category,
-        imageUrl,
+        category: category.trim(),
+        imageUrl: imageUrl.trim() || undefined,
       };
 
       if (editingId) {
         await apiClient.put(`/products/${editingId}`, payload);
-        Alert.alert('Success', 'Product updated successfully!');
+        Alert.alert('✅ Success', 'Product updated successfully!');
       } else {
         await apiClient.post('/products', payload);
-        Alert.alert('Success', 'Product created successfully!');
+        Alert.alert('✅ Success', 'Product published successfully!');
       }
       resetProductForm();
       fetchData();
@@ -831,13 +874,14 @@ export default function AdminScreen() {
 
   const handleEditProduct = (product: any) => {
     setEditingId(product.id);
-    setName(product.name);
+    setName(product.name || '');
     setDescription(product.description || '');
-    setPrice(product.price.toString());
-    setStock(product.stock.toString());
+    setPrice(product.price ? product.price.toString() : '');
+    setStock(product.stock !== undefined ? product.stock.toString() : '0');
     setCategory(product.category || '');
     setImageUrl(product.imageUrl || '');
     setUploadedSizeKB(null);
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   const toggleSelectProduct = (id: string) => {
@@ -1774,7 +1818,7 @@ export default function AdminScreen() {
         </View>
       )}
 
-      <ScrollView contentContainerStyle={[styles.scrollContent, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]} keyboardShouldPersistTaps="handled">
+      <ScrollView ref={scrollViewRef} contentContainerStyle={[styles.scrollContent, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]} keyboardShouldPersistTaps="handled">
         <ResponsiveContainer>
 
         {/* ── Executive Metrics Summary Grid ── */}
@@ -1814,7 +1858,7 @@ export default function AdminScreen() {
         {activeTab === 'products' && (
           <View>
             <Text style={styles.formTitle}>
-              {editingId ? 'Edit Product Details' : 'List New Product'}
+              {editingId ? '✏️ Edit Product Details' : '➕ List New Product'}
             </Text>
 
             <View style={styles.card}>
@@ -1844,7 +1888,7 @@ export default function AdminScreen() {
                 <TextInput style={styles.input} value={category} onChangeText={setCategory} placeholder="e.g. Tools, Hardware" />
               </View>
 
-              {/* ── AI Image Upload (replaces URL textbox) ── */}
+              {/* ── AI Image Upload (Camera + Gallery + URL) ── */}
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Product Image</Text>
 
@@ -1856,29 +1900,54 @@ export default function AdminScreen() {
                       {uploadedSizeKB && (
                         <Text style={styles.imageSuccessSize}>🗜️ {uploadedSizeKB} (under 50KB)</Text>
                       )}
-                      <TouchableOpacity
-                        style={[styles.imageChangeBtn, { borderColor: theme.primary }]}
-                        onPress={() => handlePickImage('product')}
-                      >
-                        <Text style={[styles.imageChangeBtnText, { color: theme.primary }]}>Change Image</Text>
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                        <TouchableOpacity
+                          style={[styles.imageChangeBtn, { borderColor: theme.primary }]}
+                          onPress={() => handleOpenImageOptions('product')}
+                        >
+                          <Text style={[styles.imageChangeBtnText, { color: theme.primary }]}>Change Image</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.imageChangeBtn, { borderColor: '#EF4444' }]}
+                          onPress={() => setImageUrl('')}
+                        >
+                          <Text style={[styles.imageChangeBtnText, { color: '#EF4444' }]}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
                 ) : (
-                  <TouchableOpacity
-                    style={[styles.imagePickerBox, { borderColor: theme.border || '#CED4DA' }]}
-                    onPress={() => handlePickImage('product')}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.imagePickerIcon}>🖼️</Text>
-                    <Text style={styles.imagePickerTitle}>Upload Product Image</Text>
-                    <Text style={styles.imagePickerSubtitle}>Tap to pick from gallery</Text>
-                    <View style={[styles.imagePickerBadge, { backgroundColor: theme.primary + '18' }]}>
-                      <Text style={[styles.imagePickerBadgeText, { color: theme.primary }]}>
-                        ✨ AI Filter + Auto-Compress to 50KB
-                      </Text>
+                  <View>
+                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                      <TouchableOpacity
+                        style={[styles.imagePickerBox, { flex: 1, borderColor: theme.border || '#CED4DA', paddingVertical: 14 }]}
+                        onPress={() => handleTakePhoto('product')}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.imagePickerIcon}>📸</Text>
+                        <Text style={styles.imagePickerTitle}>Take Photo</Text>
+                        <Text style={styles.imagePickerSubtitle}>Using camera</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.imagePickerBox, { flex: 1, borderColor: theme.border || '#CED4DA', paddingVertical: 14 }]}
+                        onPress={() => handlePickImage('product')}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.imagePickerIcon}>🖼️</Text>
+                        <Text style={styles.imagePickerTitle}>Choose Gallery</Text>
+                        <Text style={styles.imagePickerSubtitle}>With AI Enhance</Text>
+                      </TouchableOpacity>
                     </View>
-                  </TouchableOpacity>
+
+                    <TextInput
+                      style={[styles.input, { fontSize: 12, paddingVertical: 8 }]}
+                      value={imageUrl}
+                      onChangeText={setImageUrl}
+                      placeholder="Or paste direct image URL (https://...)"
+                      autoCapitalize="none"
+                    />
+                  </View>
                 )}
               </View>
 
