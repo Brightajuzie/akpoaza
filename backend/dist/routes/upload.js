@@ -139,9 +139,9 @@ router.post('/', auth_1.authenticateToken, upload.single('image'), (req, res, ne
         // Step 3: Compress and determine output format
         // PNG preserves transparency (needed after bg removal); JPEG for everything else
         const outputMime = removeBg ? jimp_1.default.MIME_PNG : jimp_1.default.MIME_JPEG;
-        const SIZE_LIMIT = 50 * 1024; // 50 KB
-        let currentWidth = 800;
-        let currentQuality = 80;
+        const SIZE_LIMIT = 300 * 1024; // 300 KB
+        let currentWidth = 1200;
+        let currentQuality = 85;
         let finalBuffer;
         let iterations = 0;
         if (image.getWidth() > currentWidth) {
@@ -152,8 +152,8 @@ router.post('/', auth_1.authenticateToken, upload.single('image'), (req, res, ne
             finalBuffer = yield image.quality(currentQuality).getBufferAsync(outputMime);
             console.log(`[UploadCompressor] Iteration ${iterations}: ${(finalBuffer.length / 1024).toFixed(1)}KB, w=${image.getWidth()}, q=${currentQuality}`);
             if (finalBuffer.length > SIZE_LIMIT) {
-                currentQuality -= 15;
-                currentWidth = Math.max(250, Math.round(currentWidth * 0.8));
+                currentQuality -= 10;
+                currentWidth = Math.max(400, Math.round(currentWidth * 0.85));
                 image.resize(currentWidth, jimp_1.default.AUTO);
             }
         } while (finalBuffer.length > SIZE_LIMIT && currentQuality > 10 && iterations < 10);

@@ -119,12 +119,17 @@ router.post('/delete-all', auth_1.authenticateToken, (req, res, next) => __await
     try {
         const allServices = yield prisma_1.default.service.findMany({ select: { id: true } });
         const count = allServices.length;
-        yield prisma_1.default.$transaction([
+        const bookings = yield prisma_1.default.booking.findMany({ select: { id: true } });
+        const bookingIds = bookings.map((b) => b.id);
+        const txs = [
             prisma_1.default.review.deleteMany({ where: { serviceId: { not: null } } }),
-            prisma_1.default.escrow.deleteMany({ where: { booking: { serviceId: { not: undefined } } } }),
-            prisma_1.default.booking.deleteMany({}),
-            prisma_1.default.service.deleteMany({}),
-        ]);
+        ];
+        if (bookingIds.length > 0) {
+            txs.push(prisma_1.default.escrow.deleteMany({ where: { bookingId: { in: bookingIds } } }));
+        }
+        txs.push(prisma_1.default.booking.deleteMany({}));
+        txs.push(prisma_1.default.service.deleteMany({}));
+        yield prisma_1.default.$transaction(txs);
         res.json({ success: true, count, message: `All ${count} service(s) deleted successfully.` });
     }
     catch (error) {
@@ -143,12 +148,20 @@ router.post('/bulk-delete', auth_1.authenticateToken, (req, res, next) => __awai
         return res.status(400).json({ error: 'ids array is required' });
     }
     try {
-        yield prisma_1.default.$transaction([
+        const bookings = yield prisma_1.default.booking.findMany({
+            where: { serviceId: { in: ids } },
+            select: { id: true },
+        });
+        const bookingIds = bookings.map((b) => b.id);
+        const txs = [
             prisma_1.default.review.deleteMany({ where: { serviceId: { in: ids } } }),
-            prisma_1.default.escrow.deleteMany({ where: { booking: { serviceId: { in: ids } } } }),
-            prisma_1.default.booking.deleteMany({ where: { serviceId: { in: ids } } }),
-            prisma_1.default.service.deleteMany({ where: { id: { in: ids } } }),
-        ]);
+        ];
+        if (bookingIds.length > 0) {
+            txs.push(prisma_1.default.escrow.deleteMany({ where: { bookingId: { in: bookingIds } } }));
+        }
+        txs.push(prisma_1.default.booking.deleteMany({ where: { serviceId: { in: ids } } }));
+        txs.push(prisma_1.default.service.deleteMany({ where: { id: { in: ids } } }));
+        yield prisma_1.default.$transaction(txs);
         res.json({ success: true, count: ids.length, message: `${ids.length} service(s) deleted successfully.` });
     }
     catch (error) {
@@ -167,12 +180,20 @@ router.delete('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(vo
         const service = yield prisma_1.default.service.findUnique({ where: { id } });
         if (!service)
             return res.status(404).json({ error: 'Service not found' });
-        yield prisma_1.default.$transaction([
+        const bookings = yield prisma_1.default.booking.findMany({
+            where: { serviceId: id },
+            select: { id: true },
+        });
+        const bookingIds = bookings.map((b) => b.id);
+        const txs = [
             prisma_1.default.review.deleteMany({ where: { serviceId: id } }),
-            prisma_1.default.escrow.deleteMany({ where: { booking: { serviceId: id } } }),
-            prisma_1.default.booking.deleteMany({ where: { serviceId: id } }),
-            prisma_1.default.service.delete({ where: { id } }),
-        ]);
+        ];
+        if (bookingIds.length > 0) {
+            txs.push(prisma_1.default.escrow.deleteMany({ where: { bookingId: { in: bookingIds } } }));
+        }
+        txs.push(prisma_1.default.booking.deleteMany({ where: { serviceId: id } }));
+        txs.push(prisma_1.default.service.delete({ where: { id } }));
+        yield prisma_1.default.$transaction(txs);
         res.json({ message: 'Service deleted successfully' });
     }
     catch (error) {

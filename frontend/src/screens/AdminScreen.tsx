@@ -826,7 +826,7 @@ export default function AdminScreen() {
         setUploadedSizeKB(response.data.sizeKB);
         Alert.alert(
           '✅ Upload Successful',
-          `Image processed with "${selectedFilter}" filter.\nCompressed to ${response.data.sizeKB} (under 50KB limit).`,
+          `Image processed with "${selectedFilter}" filter.\nCompressed to ${response.data.sizeKB} (under 300KB limit).`,
         );
         setShowImageModal(false);
         setPickedImageUri(null);
@@ -1248,7 +1248,7 @@ export default function AdminScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={styles.modalTitle}>✨ AI Image Enhancer</Text>
-            <Text style={styles.modalSubtitle}>Auto-compressed to under 50KB</Text>
+            <Text style={styles.modalSubtitle}>Auto-compressed to under 300KB</Text>
           </View>
           <View style={{ width: 36 }} />
         </View>
@@ -1363,7 +1363,7 @@ export default function AdminScreen() {
             <Text style={styles.compressionInfoTitle}>🤖 AI Compression Pipeline</Text>
             <Text style={styles.compressionInfoText}>
               Your image is processed server-side with the chosen filter, then recursively scaled
-              until it meets the strict <Text style={{ fontWeight: '800' }}>50KB maximum</Text> for
+              until it meets the strict <Text style={{ fontWeight: '800' }}>300KB maximum</Text> for
               fast mobile loading across all network conditions.
             </Text>
           </View>
@@ -1898,7 +1898,7 @@ export default function AdminScreen() {
                     <View style={styles.imageSuccessInfo}>
                       <Text style={styles.imageSuccessTitle}>✅ Image Uploaded</Text>
                       {uploadedSizeKB && (
-                        <Text style={styles.imageSuccessSize}>🗜️ {uploadedSizeKB} (under 50KB)</Text>
+                        <Text style={styles.imageSuccessSize}>🗜️ {uploadedSizeKB} (under 300KB)</Text>
                       )}
                       <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
                         <TouchableOpacity
@@ -3227,7 +3227,7 @@ export default function AdminScreen() {
                     <Text style={styles.imagePickerSubtitle}>Tap to pick from gallery</Text>
                     <View style={[styles.imagePickerBadge, { backgroundColor: theme.primary + '18' }]}>
                       <Text style={[styles.imagePickerBadgeText, { color: theme.primary }]}>
-                        ✨ AI Filter + Auto-Compress to 50KB
+                        ✨ AI Filter + Auto-Compress to 300KB
                       </Text>
                     </View>
                   </TouchableOpacity>
