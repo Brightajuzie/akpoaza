@@ -107,8 +107,8 @@ router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, functio
                 kycReferenceId: kycReferenceId || null,
                 kycSubmittedAt: kycReferenceId ? new Date() : null,
                 verificationStatus,
-                country: country || 'United States',
-                currency: currency || 'USD',
+                country: country || 'Nigeria',
+                currency: currency || 'NGN',
             },
         });
         const token = jsonwebtoken_1.default.sign({ userId: newUser.id, role: newUser.role }, JWT_SECRET, { expiresIn: '7d' });

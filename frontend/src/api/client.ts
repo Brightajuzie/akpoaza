@@ -242,5 +242,32 @@ export const getSocketURL = (): string => {
   return baseURL.replace(/\/api\/?$/, '');
 };
 
+/**
+ * Resolves any image URL (relative, local disk fallback, or remote Cloudinary URL)
+ * into a valid image URI that loads across Web, Android, and iOS.
+ */
+export const getImageUri = (url?: string | null): string | null => {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('file:')
+  ) {
+    if (Platform.OS !== 'web' && (trimmed.includes('localhost:5000') || trimmed.includes('127.0.0.1:5000'))) {
+      const origin = baseURL.replace(/\/api\/?$/, '');
+      return trimmed.replace(/http:\/\/(localhost|127\.0\.0\.1):5000/, origin);
+    }
+    return trimmed;
+  }
+  if (trimmed.startsWith('/')) {
+    const origin = baseURL.replace(/\/api\/?$/, '');
+    return `${origin}${trimmed}`;
+  }
+  return trimmed;
+};
+
 export default apiClient;
 

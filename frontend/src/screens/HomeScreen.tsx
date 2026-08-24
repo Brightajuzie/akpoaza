@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
-import apiClient from '../api/client';
+import apiClient, { getImageUri } from '../api/client';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import SafeLogo from '../components/SafeLogo';
 import ThemeToggle from '../components/ThemeToggle';
@@ -230,9 +230,10 @@ export default function HomeScreen({ navigation }: any) {
 
   const renderSlide = (slide: any) => {
     if (slide.imageUrl) {
+      const uri = getImageUri(slide.imageUrl) || slide.imageUrl;
       return (
         <View key={slide.id} style={[styles.slideCard, { width: slideW, height: slideH }]}>
-          <Image source={{ uri: slide.imageUrl }} style={styles.slideImage} resizeMode="cover" />
+          <Image source={{ uri }} style={styles.slideImage} resizeMode="cover" />
           <LinearGradient colors={['transparent', 'rgba(0,0,0,0.75)']} style={StyleSheet.absoluteFill} />
           {slide.caption && (
             <View style={styles.slideCaptionContainer}>
@@ -685,7 +686,7 @@ export default function HomeScreen({ navigation }: any) {
               activeOpacity={0.88}
             >
               {item.imageUrl ? (
-                <Image source={{ uri: item.imageUrl }} style={styles.spotImage} resizeMode="cover" />
+                <Image source={{ uri: getImageUri(item.imageUrl) || item.imageUrl }} style={styles.spotImage} resizeMode="cover" />
               ) : (
                 <View style={[styles.spotPlaceholder, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}>
                   <Text style={styles.spotPlaceholderIcon}>{item.itemType === 'product' ? '📦' : '⚡'}</Text>

@@ -4,11 +4,12 @@ import {
   ActivityIndicator, Image, TextInput, Alert, Modal, FlatList,
   KeyboardAvoidingView, Platform, useWindowDimensions,
 } from 'react-native';
-import apiClient from '../api/client';
+import apiClient, { getImageUri } from '../api/client';
 import { CartContext } from '../context/CartContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
 import AddToCartModal from '../components/AddToCartModal';
+import ImageViewerModal from '../components/ImageViewerModal';
 
 interface ChatMessage {
   id: string;
@@ -38,6 +39,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
 
   const { cart, addToCart } = useContext(CartContext);
   const [addedModalVisible, setAddedModalVisible] = useState(false);
+  const [imageViewerVisible, setImageViewerVisible] = useState(false);
   const { theme, colorMode } = useContext(SettingsContext);
   const { fmt } = useCurrency();
   const isDark = colorMode === 'dark';
@@ -215,11 +217,20 @@ export default function ProductDetailScreen({ route, navigation }: any) {
         {/* Image column */}
         <View style={[styles.imageColumn, isDesktop && styles.imageColumnDesktop]}>
           {product.imageUrl ? (
-            <Image
-              source={{ uri: product.imageUrl }}
-              style={[styles.image, { height: imageHeight }]}
-              resizeMode="cover"
-            />
+            <TouchableOpacity
+              activeOpacity={0.92}
+              onPress={() => setImageViewerVisible(true)}
+              style={{ position: 'relative' }}
+            >
+              <Image
+                source={{ uri: getImageUri(product.imageUrl) || product.imageUrl }}
+                style={[styles.image, { height: imageHeight }]}
+                resizeMode="cover"
+              />
+              <View style={styles.imageZoomBadge}>
+                <Text style={styles.imageZoomText}>🔍 Tap to Enlarge</Text>
+              </View>
+            </TouchableOpacity>
           ) : (
             <View style={[styles.placeholderImage, { height: imageHeight, backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}>
               <Text style={styles.placeholderText}>📦</Text>
@@ -546,6 +557,15 @@ export default function ProductDetailScreen({ route, navigation }: any) {
           navigation.navigate('CartTab');
         }}
       />
+
+      <ImageViewerModal
+        visible={imageViewerVisible}
+        imageUrl={product?.imageUrl}
+        title={product?.name}
+        subtitle={product?.category}
+        price={product ? fmt(product.price) : undefined}
+        onClose={() => setImageViewerVisible(false)}
+      />
     </View>
   );
 }
@@ -578,6 +598,20 @@ const styles = StyleSheet.create({
   imageColumn: { position: 'relative' },
   imageColumnDesktop: { flex: 1, minWidth: 0 },
   image: { width: '100%', borderRadius: 16 },
+  imageZoomBadge: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  imageZoomText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   placeholderImage: {
     width: '100%', borderRadius: 16,
     justifyContent: 'center', alignItems: 'center', gap: 6,

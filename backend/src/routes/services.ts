@@ -49,7 +49,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
     return res.status(403).json({ error: 'Forbidden. Admin access required.' });
   }
 
-  const { name, description, category, basePrice } = req.body;
+  const { name, description, category, basePrice, imageUrl } = req.body;
   if (!name || !description || !category || basePrice === undefined) {
     return res.status(400).json({ error: 'Missing required fields (name, description, category, basePrice)' });
   }
@@ -61,6 +61,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
         description,
         category,
         basePrice: parseFloat(basePrice),
+        imageUrl: imageUrl ? String(imageUrl).trim() : null,
       },
     });
     res.status(201).json(newService);
@@ -77,7 +78,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response, ne
   }
 
   const { id } = req.params;
-  const { name, description, category, basePrice } = req.body;
+  const { name, description, category, basePrice, imageUrl } = req.body;
 
   try {
     const service = await prisma.service.findUnique({ where: { id } });
@@ -90,6 +91,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response, ne
         description,
         category,
         basePrice: basePrice !== undefined ? parseFloat(basePrice) : undefined,
+        imageUrl: imageUrl !== undefined ? (imageUrl ? String(imageUrl).trim() : null) : undefined,
       },
     });
     res.json(updatedService);

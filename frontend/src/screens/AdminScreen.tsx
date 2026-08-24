@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import apiClient from '../api/client';
+import apiClient, { getImageUri } from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
@@ -68,7 +68,7 @@ export default function AdminScreen() {
 
   // ── AI Image Enhancer Modal State ──────────────────────────────────────────
   const [showImageModal, setShowImageModal]   = useState(false);
-  const [imageTarget, setImageTarget]         = useState<'product' | 'logo' | 'favicon'>('product');
+  const [imageTarget, setImageTarget]         = useState<'product' | 'logo' | 'favicon' | 'slide' | 'service'>('product');
   const [pickedImageUri, setPickedImageUri]   = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter]   = useState('none');
   const [uploadingImage, setUploadingImage]   = useState(false);
@@ -82,6 +82,7 @@ export default function AdminScreen() {
   const [serviceDesc, setServiceDesc]         = useState('');
   const [serviceCategory, setServiceCategory] = useState('Plumbing');
   const [serviceBasePrice, setServiceBasePrice] = useState('');
+  const [serviceImageUrl, setServiceImageUrl] = useState('');
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
 
   // System Settings state (Admin only)
@@ -697,13 +698,13 @@ export default function AdminScreen() {
   }, [settings]);
 
   // ─── AI Image Picker & Upload ─────────────────────────────────────────────
-  const handleTakePhoto = async (target: 'product' | 'logo' | 'favicon' = 'product') => {
+  const handleTakePhoto = async (target: 'product' | 'logo' | 'favicon' | 'slide' | 'service' = 'product') => {
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
           'Permission Required',
-          'Please grant camera access to take product photos.'
+          'Please grant camera access to take photos.'
         );
         return;
       }
@@ -729,7 +730,7 @@ export default function AdminScreen() {
     }
   };
 
-  const handlePickImage = async (target: 'product' | 'logo' | 'favicon' = 'product') => {
+  const handlePickImage = async (target: 'product' | 'logo' | 'favicon' | 'slide' | 'service' = 'product') => {
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -762,14 +763,14 @@ export default function AdminScreen() {
     }
   };
 
-  const handleOpenImageOptions = (target: 'product' | 'logo' | 'favicon' = 'product') => {
+  const handleOpenImageOptions = (target: 'product' | 'logo' | 'favicon' | 'slide' | 'service' = 'product') => {
     if (Platform.OS === 'web') {
       handlePickImage(target);
       return;
     }
 
     Alert.alert(
-      'Upload Product Image',
+      'Upload Image',
       'Choose image source:',
       [
         { text: '📸 Take Photo', onPress: () => handleTakePhoto(target) },
@@ -819,8 +820,10 @@ export default function AdminScreen() {
           setLogoUrlInput(response.data.imageUrl);
         } else if (imageTarget === 'favicon') {
           setFaviconUrlInput(response.data.imageUrl);
-        } else if ((imageTarget as string) === 'slide') {
+        } else if (imageTarget === 'slide') {
           setSlideImageUrl(response.data.imageUrl);
+        } else if (imageTarget === 'service') {
+          setServiceImageUrl(response.data.imageUrl);
         }
         
         setUploadedSizeKB(response.data.sizeKB);
@@ -1085,6 +1088,7 @@ export default function AdminScreen() {
         description: serviceDesc,
         category: serviceCategory,
         basePrice: parseFloat(serviceBasePrice),
+        imageUrl: serviceImageUrl.trim() || undefined,
       };
       if (editingServiceId) {
         await apiClient.put(`/services/${editingServiceId}`, payload);
@@ -1108,6 +1112,10 @@ export default function AdminScreen() {
     setServiceDesc(service.description);
     setServiceCategory(service.category);
     setServiceBasePrice(service.basePrice.toString());
+    setServiceImageUrl(service.imageUrl || '');
+    if (scrollViewRef.current) {
+      scrollViewRef.current.scrollTo({ y: 0, animated: true });
+    }
   };
 
   const handleDeleteService = async (id: string) => {
@@ -1145,6 +1153,7 @@ export default function AdminScreen() {
     setServiceDesc('');
     setServiceCategory('Plumbing');
     setServiceBasePrice('');
+    setServiceImageUrl('');
   };
 
   // ─── Settings Save ────────────────────────────────────────────────────────
@@ -2130,6 +2139,61 @@ export default function AdminScreen() {
                 <TextInput style={styles.input} value={serviceBasePrice} onChangeText={setServiceBasePrice} keyboardType="numeric" placeholder="80.00" />
               </View>
 
+              {/* Service Picture / Icon Upload */}
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Service Picture / Banner</Text>
+                {serviceImageUrl ? (
+                  <View style={styles.imageSuccessContainer}>
+                    <Image source={{ uri: getImageUri(serviceImageUrl) || serviceImageUrl }} style={styles.imageSuccessPreview} resizeMode="cover" />
+                    <View style={styles.imageSuccessInfo}>
+                      <Text style={styles.imageSuccessTitle}>✅ Image Attached</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                        <TouchableOpacity
+                          style={[styles.imageChangeBtn, { borderColor: theme.primary }]}
+                          onPress={() => handleOpenImageOptions('service')}
+                        >
+                          <Text style={[styles.imageChangeBtnText, { color: theme.primary }]}>Change Image</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.imageChangeBtn, { borderColor: '#EF4444' }]}
+                          onPress={() => setServiceImageUrl('')}
+                        >
+                          <Text style={[styles.imageChangeBtnText, { color: '#EF4444' }]}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ gap: 8 }}>
+                    <View style={{ flexDirection: 'row', gap: 10 }}>
+                      <TouchableOpacity
+                        style={[styles.imageOptionBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}
+                        onPress={() => handleTakePhoto('service')}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.imageOptionBtnIcon}>📸</Text>
+                        <Text style={[styles.imageOptionBtnText, { color: theme.primary }]}>Take Photo</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.imageOptionBtn, { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                        onPress={() => handlePickImage('service')}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.imageOptionBtnIcon}>🖼️</Text>
+                        <Text style={[styles.imageOptionBtnText, { color: '#FFFFFF' }]}>Choose Gallery</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      style={[styles.input, { fontSize: 12 }]}
+                      value={serviceImageUrl}
+                      onChangeText={setServiceImageUrl}
+                      placeholder="Or paste image URL (https://...)"
+                      autoCapitalize="none"
+                    />
+                  </View>
+                )}
+              </View>
+
               <View style={styles.btnRow}>
                 <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: theme.primary }]} onPress={handleSaveService} disabled={loading}>
                   {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{editingServiceId ? 'Save Changes' : 'Publish Service'}</Text>}
@@ -2238,6 +2302,11 @@ export default function AdminScreen() {
                     >
                       {isSelected && <Text style={styles.batchItemCheckText}>✓</Text>}
                     </TouchableOpacity>
+
+                    {/* Service Image Thumbnail */}
+                    {s.imageUrl ? (
+                      <Image source={{ uri: getImageUri(s.imageUrl) || s.imageUrl }} style={{ width: 44, height: 44, borderRadius: 8, marginRight: 10 }} resizeMode="cover" />
+                    ) : null}
 
                     <View style={styles.listItemInfo}>
                       <Text style={styles.listItemName}>
@@ -3665,6 +3734,21 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   imageChangeBtnText: { fontSize: 12, fontWeight: '700' },
+
+  // Compact image option buttons (used in service image picker)
+  imageOptionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 6,
+  },
+  imageOptionBtnIcon: { fontSize: 16 },
+  imageOptionBtnText: { fontSize: 13, fontWeight: '700' },
 
   // ── AI Enhancer Modal Styles ──────────────────────────────────────────────
   modalContainer: { flex: 1, backgroundColor: '#0D0D0D' },

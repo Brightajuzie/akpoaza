@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useContext, useRef } from 'react';
 import {
   View, Text, FlatList, StyleSheet, ActivityIndicator,
-  TouchableOpacity, Alert, TextInput, Modal,
+  TouchableOpacity, Alert, TextInput, Modal, Image,
   KeyboardAvoidingView, Platform, useWindowDimensions, RefreshControl,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import apiClient from '../api/client';
+import apiClient, { getImageUri } from '../api/client';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
 import FloatingCartBar from '../components/FloatingCartBar';
+import ImageViewerModal from '../components/ImageViewerModal';
 
 interface ChatMessage {
   id: string; text: string;
@@ -36,6 +37,7 @@ export default function ServicesScreen({ navigation }: any) {
   const [searchFocused, setSearchFocused] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [ratingsMap, setRatingsMap] = useState<Record<string, { averageRating: number | null; count: number }>>({});
+  const [previewImage, setPreviewImage] = useState<any | null>(null);
 
   const { theme, colorMode } = useContext(SettingsContext);
   const { fmt } = useCurrency();
@@ -183,6 +185,24 @@ export default function ServicesScreen({ navigation }: any) {
         {/* Top accent */}
         <View style={[styles.cardAccent, { backgroundColor: conf.color }]} />
 
+        {/* Service Picture with Tap-to-View Zoom */}
+        {item.imageUrl ? (
+          <TouchableOpacity
+            style={styles.serviceImageWrap}
+            activeOpacity={0.9}
+            onPress={() => setPreviewImage(item)}
+          >
+            <Image
+              source={{ uri: getImageUri(item.imageUrl) || item.imageUrl }}
+              style={styles.serviceCardImage}
+              resizeMode="cover"
+            />
+            <View style={styles.imageZoomBadge}>
+              <Text style={styles.imageZoomText}>🔍</Text>
+            </View>
+          </TouchableOpacity>
+        ) : null}
+
         {isFeatured && (
           <View style={styles.featuredBadge}>
             <Text style={styles.featuredBadgeText}>🔥 FEATURED</Text>
@@ -191,9 +211,11 @@ export default function ServicesScreen({ navigation }: any) {
 
         <View style={styles.cardMain}>
           {/* Icon + Category */}
-          <View style={[styles.catIconWrap, { backgroundColor: isDark ? conf.color + '22' : conf.bg }]}>
-            <Text style={styles.catIcon}>{conf.icon}</Text>
-          </View>
+          {!item.imageUrl && (
+            <View style={[styles.catIconWrap, { backgroundColor: isDark ? conf.color + '22' : conf.bg }]}>
+              <Text style={styles.catIcon}>{conf.icon}</Text>
+            </View>
+          )}
 
           <View style={styles.cardInfo}>
             {/* Category pill */}
@@ -240,6 +262,15 @@ export default function ServicesScreen({ navigation }: any) {
 
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
+      <ImageViewerModal
+        visible={previewImage !== null}
+        imageUrl={previewImage?.imageUrl}
+        title={previewImage?.name}
+        subtitle={previewImage?.category}
+        price={previewImage ? `${fmt(previewImage.basePrice)}/hr` : undefined}
+        onClose={() => setPreviewImage(null)}
+      />
+
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <View style={[styles.header, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderBottomColor: isDark ? '#334155' : '#E2E8F0' }]}>
         <Text style={[styles.pageTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>🛠️ Find a Professional</Text>
@@ -489,10 +520,35 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
   },
   cardAccent: { height: 4, width: '100%' },
+  serviceImageWrap: {
+    width: '100%',
+    height: 140,
+    position: 'relative',
+    backgroundColor: '#0F172A',
+  },
+  serviceCardImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageZoomBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageZoomText: {
+    fontSize: 13,
+  },
   featuredBadge: {
     position: 'absolute', top: 12, right: 12,
     backgroundColor: '#EF4444',
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
+    zIndex: 5,
   },
   featuredBadgeText: { color: '#FFF', fontSize: 8, fontWeight: '800' },
   cardMain: {

@@ -3,12 +3,13 @@ import {
   View, Text, FlatList, StyleSheet, ActivityIndicator,
   Image, TouchableOpacity, TextInput, useWindowDimensions, Platform,
 } from 'react-native';
-import apiClient from '../api/client';
+import apiClient, { getImageUri } from '../api/client';
 import { CartContext } from '../context/CartContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
 import AddToCartModal from '../components/AddToCartModal';
 import FloatingCartBar from '../components/FloatingCartBar';
+import ImageViewerModal from '../components/ImageViewerModal';
 
 const CATEGORY_ICONS: Record<string, string> = {
   tools: '🔧', electronics: '💡', clothing: '👕',
@@ -23,6 +24,7 @@ export default function ProductsScreen({ navigation }: any) {
   const [locationQuery, setLocationQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [addedItem, setAddedItem] = useState<any | null>(null);
+  const [previewImage, setPreviewImage] = useState<any | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
 
   const { cart, addToCart } = useContext(CartContext);
@@ -74,6 +76,7 @@ export default function ProductsScreen({ navigation }: any) {
       (item.createdAt && Date.now() - new Date(item.createdAt).getTime() < 14 * 24 * 60 * 60 * 1000);
     const catKey = (item.category || '').toLowerCase();
     const catIcon = CATEGORY_ICONS[catKey] || CATEGORY_ICONS.default;
+    const resolvedImageUri = getImageUri(item.imageUrl) || item.imageUrl;
 
     return (
       <TouchableOpacity
@@ -85,9 +88,21 @@ export default function ProductsScreen({ navigation }: any) {
         activeOpacity={0.88}
         onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
       >
-        {/* Image */}
-        {item.imageUrl ? (
-          <Image source={{ uri: item.imageUrl }} style={[styles.cardImage, { height: imageH }]} resizeMode="cover" />
+        {/* Image with Direct Tap to View Fullscreen */}
+        {resolvedImageUri ? (
+          <TouchableOpacity
+            style={{ position: 'relative' }}
+            activeOpacity={0.9}
+            onPress={(e) => {
+              e.stopPropagation();
+              setPreviewImage(item);
+            }}
+          >
+            <Image source={{ uri: resolvedImageUri }} style={[styles.cardImage, { height: imageH }]} resizeMode="cover" />
+            <View style={styles.imageZoomBadge}>
+              <Text style={styles.imageZoomText}>🔍</Text>
+            </View>
+          </TouchableOpacity>
         ) : (
           <View style={[styles.cardImagePlaceholder, { height: imageH, backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}>
             <Text style={styles.cardPlaceholderIcon}>{catIcon}</Text>
@@ -151,6 +166,15 @@ export default function ProductsScreen({ navigation }: any) {
         themePrimary={theme.primary}
         onContinueShopping={() => setAddedItem(null)}
         onProceedToCheckout={() => { setAddedItem(null); navigation.navigate('CartTab'); }}
+      />
+
+      <ImageViewerModal
+        visible={previewImage !== null}
+        imageUrl={previewImage?.imageUrl}
+        title={previewImage?.name}
+        subtitle={previewImage?.category}
+        price={previewImage ? fmt(previewImage.price) : undefined}
+        onClose={() => setPreviewImage(null)}
       />
 
       {/* ── Sticky Header ─────────────────────────────────────────────────── */}
@@ -353,6 +377,20 @@ const styles = StyleSheet.create({
     width: '100%', alignItems: 'center', justifyContent: 'center',
   },
   cardPlaceholderIcon: { fontSize: 32 },
+  imageZoomBadge: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  imageZoomText: {
+    fontSize: 12,
+  },
   badgeRow: { position: 'absolute', top: 8, left: 8, flexDirection: 'row', gap: 4 },
   featuredBadge: {
     backgroundColor: '#EF4444', paddingHorizontal: 7, paddingVertical: 3,
