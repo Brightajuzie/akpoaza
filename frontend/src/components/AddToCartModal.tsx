@@ -8,6 +8,7 @@ import {
   Image,
   Dimensions,
 } from 'react-native';
+import { useCurrency } from '../context/CurrencyContext';
 
 interface AddToCartModalProps {
   visible: boolean;
@@ -30,6 +31,7 @@ export default function AddToCartModal({
   onProceedToCheckout,
   themePrimary = '#007AFF',
 }: AddToCartModalProps) {
+  const { fmt } = useCurrency();
   if (!item) return null;
 
   return (
@@ -58,7 +60,7 @@ export default function AddToCartModal({
             <View style={styles.itemInfo}>
               <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
               <Text style={[styles.itemPrice, { color: themePrimary }]}>
-                ${item.price.toFixed(2)}
+                {fmt(item.price)}
               </Text>
             </View>
           </View>

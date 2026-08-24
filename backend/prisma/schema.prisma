@@ -35,8 +35,8 @@ model User {
   licensePlate       String?
   riderStatus        String?            @default("OFFLINE")
   vehicleType        String?
-  country            String?            @default("United States")
-  currency           String?            @default("USD")
+  country            String?            @default("Nigeria")
+  currency           String?            @default("NGN")
   bookings           Booking[]          @relation("CustomerBookings")
   jobs               Booking[]          @relation("HandymanJobs")
   escrows            Escrow[]           @relation("ProviderEscrows")
@@ -80,7 +80,7 @@ model Order {
   isSplitPayment  Boolean         @default(false)
   riderId         String?
   deliveryAddress String?
-  currency        String          @default("USD")
+  currency        String          @default("NGN")
   escrows         Escrow[]
   rider           User?           @relation("RiderDeliveries", fields: [riderId], references: [id])
   user            User            @relation(fields: [userId], references: [id])
@@ -127,7 +127,7 @@ model Booking {
   longitude         Float?
   amountPaid        Float    @default(0.0)
   isSplitPayment    Boolean  @default(false)
-  currency          String   @default("USD")
+  currency          String   @default("NGN")
   customer          User     @relation("CustomerBookings", fields: [customerId], references: [id])
   handyman          User?    @relation("HandymanJobs", fields: [handymanId], references: [id])
   service           Service  @relation(fields: [serviceId], references: [id])
@@ -252,7 +252,7 @@ model ParcelDelivery {
   paymentRef        String?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
-  currency          String          @default("USD")
+  currency          String          @default("NGN")
   escrows           Escrow[]
   rider             User?           @relation("RiderParcels", fields: [riderId], references: [id])
   user              User            @relation("CustomerParcels", fields: [userId], references: [id])

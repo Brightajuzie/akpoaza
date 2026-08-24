@@ -20,29 +20,29 @@ export interface CountryOption {
 
 export const SUPPORTED_COUNTRIES: CountryOption[] = [
   {
-    country: 'United States',
-    flag: '🇺🇸',
-    currency: 'USD',
-    symbol: '$',
-    rate: 1.0,
-    preferredProviders: ['STRIPE'],
-    locale: 'en-US',
-  },
-  {
     country: 'Nigeria',
     flag: '🇳🇬',
     currency: 'NGN',
     symbol: '₦',
-    rate: 1600.0,
+    rate: 1.0,
     preferredProviders: ['PAYSTACK', 'OPAY', 'FLUTTERWAVE'],
     locale: 'en-NG',
+  },
+  {
+    country: 'United States',
+    flag: '🇺🇸',
+    currency: 'USD',
+    symbol: '$',
+    rate: 1 / 1600.0,
+    preferredProviders: ['STRIPE'],
+    locale: 'en-US',
   },
   {
     country: 'United Kingdom',
     flag: '🇬🇧',
     currency: 'GBP',
     symbol: '£',
-    rate: 0.78,
+    rate: 1 / 2050.0,
     preferredProviders: ['STRIPE'],
     locale: 'en-GB',
   },
@@ -51,7 +51,7 @@ export const SUPPORTED_COUNTRIES: CountryOption[] = [
     flag: '🇪🇺',
     currency: 'EUR',
     symbol: '€',
-    rate: 0.92,
+    rate: 1 / 1750.0,
     preferredProviders: ['STRIPE'],
     locale: 'de-DE',
   },
@@ -60,7 +60,7 @@ export const SUPPORTED_COUNTRIES: CountryOption[] = [
     flag: '🇨🇦',
     currency: 'CAD',
     symbol: 'CA$',
-    rate: 1.36,
+    rate: 1 / 1180.0,
     preferredProviders: ['STRIPE'],
     locale: 'en-CA',
   },
@@ -69,7 +69,7 @@ export const SUPPORTED_COUNTRIES: CountryOption[] = [
     flag: '🇰🇪',
     currency: 'KES',
     symbol: 'KSh',
-    rate: 130.0,
+    rate: 130.0 / 1600.0,
     preferredProviders: ['PAYSTACK', 'FLUTTERWAVE'],
     locale: 'en-KE',
   },
@@ -78,7 +78,7 @@ export const SUPPORTED_COUNTRIES: CountryOption[] = [
     flag: '🇬🇭',
     currency: 'GHS',
     symbol: 'GH₵',
-    rate: 15.0,
+    rate: 15.0 / 1600.0,
     preferredProviders: ['PAYSTACK', 'FLUTTERWAVE'],
     locale: 'en-GH',
   },
@@ -87,7 +87,7 @@ export const SUPPORTED_COUNTRIES: CountryOption[] = [
     flag: '🇿🇦',
     currency: 'ZAR',
     symbol: 'R',
-    rate: 18.5,
+    rate: 18.5 / 1600.0,
     preferredProviders: ['PAYSTACK'],
     locale: 'en-ZA',
   },
@@ -103,59 +103,56 @@ export function getCountryOption(currencyOrCountry: string): CountryOption {
   return (
     SUPPORTED_COUNTRIES.find(
       (c) =>
-        c.currency === currencyOrCountry ||
-        c.country.toLowerCase() === currencyOrCountry.toLowerCase()
+        c.currency.toLowerCase() === (currencyOrCountry || '').toLowerCase() ||
+        c.country.toLowerCase() === (currencyOrCountry || '').toLowerCase()
     ) || DEFAULT_COUNTRY
   );
 }
 
 /**
- * Convert a USD price to the target currency amount.
+ * Convert a base (NGN) price to the target currency amount.
  */
-export function convertFromUSD(amountUSD: number, currencyCode: string): number {
+export function convertFromUSD(amountNGN: number, currencyCode: string): number {
   const option = getCountryOption(currencyCode);
-  return amountUSD * option.rate;
+  return (amountNGN || 0) * (option.rate || 1.0);
 }
 
 /**
- * Format a price for display.
- * @param amountUSD  - Base amount in USD (as stored in DB)
- * @param currencyCode - Target currency code (e.g. 'NGN', 'GBP')
+ * Format a price for display in the target currency (defaults to NGN ₦).
+ * @param amountNGN - Base amount in NGN as stored in DB
+ * @param currencyCode - Target currency code (e.g. 'NGN', 'USD', 'GBP')
  */
-export function formatPrice(amountUSD: number, currencyCode: string): string {
-  const option = getCountryOption(currencyCode);
-  const converted = amountUSD * option.rate;
-
-  // Use compact notation only for very large numbers (like NGN)
-  const isLargeRate = option.rate >= 100;
+export function formatPrice(amountNGN: number, currencyCode: string = 'NGN'): string {
+  const option = getCountryOption(currencyCode || 'NGN');
+  const converted = (amountNGN || 0) * (option.rate || 1.0);
+  const isNGN = option.currency === 'NGN';
 
   try {
     return new Intl.NumberFormat(option.locale, {
       style: 'currency',
       currency: option.currency,
-      minimumFractionDigits: isLargeRate ? 0 : 2,
-      maximumFractionDigits: isLargeRate ? 0 : 2,
+      minimumFractionDigits: isNGN ? 0 : 2,
+      maximumFractionDigits: 2,
     }).format(converted);
   } catch {
-    // Fallback if Intl is not supported
-    return `${option.symbol}${converted.toFixed(isLargeRate ? 0 : 2)}`;
+    return `${option.symbol}${Math.round(converted).toLocaleString()}`;
   }
 }
 
 /**
- * Format already-converted amount (no USD conversion applied).
+ * Format already-converted amount (no conversion applied).
  */
-export function formatLocalAmount(amount: number, currencyCode: string): string {
-  const option = getCountryOption(currencyCode);
-  const isLargeRate = option.rate >= 100;
+export function formatLocalAmount(amount: number, currencyCode: string = 'NGN'): string {
+  const option = getCountryOption(currencyCode || 'NGN');
+  const isNGN = option.currency === 'NGN';
   try {
     return new Intl.NumberFormat(option.locale, {
       style: 'currency',
       currency: option.currency,
-      minimumFractionDigits: isLargeRate ? 0 : 2,
-      maximumFractionDigits: isLargeRate ? 0 : 2,
-    }).format(amount);
+      minimumFractionDigits: isNGN ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(amount || 0);
   } catch {
-    return `${option.symbol}${amount.toFixed(isLargeRate ? 0 : 2)}`;
+    return `${option.symbol}${Math.round(amount || 0).toLocaleString()}`;
   }
 }

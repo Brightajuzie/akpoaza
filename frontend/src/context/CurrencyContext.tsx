@@ -39,7 +39,7 @@ const CurrencyContext = createContext<CurrencyContextValue>({
   activeCountry: DEFAULT_COUNTRY,
   currency: DEFAULT_COUNTRY.currency,
   symbol: DEFAULT_COUNTRY.symbol,
-  fmt: (v) => `$${v.toFixed(2)}`,
+  fmt: (v) => `₦${(v || 0).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`,
   toLocal: (v) => v,
   setCountry: async () => {},
   countries: SUPPORTED_COUNTRIES,

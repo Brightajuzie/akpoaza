@@ -116,8 +116,8 @@ router.post('/register', async (req, res) => {
         kycReferenceId: kycReferenceId || null,
         kycSubmittedAt: kycReferenceId ? new Date() : null,
         verificationStatus,
-        country: country || 'United States',
-        currency: currency || 'USD',
+        country: country || 'Nigeria',
+        currency: currency || 'NGN',
       },
     });
 
