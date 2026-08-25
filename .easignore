@@ -1,0 +1,14 @@
+﻿node_modules
+.expo
+.git
+dist
+web-build
+*.log
+*.aab
+*.apk
+.vercel
+android
+ios
+backend
+build_log.txt
+clean_build_log.txt

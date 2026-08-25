@@ -1076,6 +1076,46 @@ export default function AdminScreen() {
     );
   };
 
+  const handleEditService = (service: any) => {
+    setEditingServiceId(service.id);
+    setServiceName(service.name || '');
+    setServiceDesc(service.description || '');
+    setServiceCategory(service.category || 'Plumbing');
+    setServiceBasePrice(service.basePrice ? service.basePrice.toString() : '');
+    setServiceImageUrl(service.imageUrl || '');
+    setUploadedSizeKB(null);
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  const handleBoostService = async (id: string) => {
+    try {
+      await apiClient.patch(`/services/${id}/boost`);
+      fetchData();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.error || 'Failed to toggle service boost.');
+    }
+  };
+
+  const handleDeleteService = (id: string) => {
+    Alert.alert('Delete Service', 'Are you sure you want to delete this service? This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await apiClient.delete(`/services/${id}`);
+            Alert.alert('Deleted', 'Service deleted successfully.');
+            setSelectedServiceIds(prev => prev.filter(item => item !== id));
+            fetchData();
+          } catch (e: any) {
+            Alert.alert('Error', e.response?.data?.error || 'Failed to delete service.');
+          }
+        },
+      },
+    ]);
+  };
+
   const handleSaveService = async () => {
     if (!serviceName || !serviceBasePrice) {
       Alert.alert('Error', 'Service name and base price are required.');

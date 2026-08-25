@@ -6,7 +6,7 @@ import {
   Image,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
   SafeAreaView,
   StatusBar,
 } from 'react-native';
@@ -21,8 +21,6 @@ interface ImageViewerModalProps {
   onClose: () => void;
 }
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
 export default function ImageViewerModal({
   visible,
   imageUrl,
@@ -31,6 +29,7 @@ export default function ImageViewerModal({
   price,
   onClose,
 }: ImageViewerModalProps) {
+  const { width, height } = useWindowDimensions();
   if (!imageUrl) return null;
 
   const resolvedUri = getImageUri(imageUrl) || imageUrl;
@@ -78,7 +77,7 @@ export default function ImageViewerModal({
           >
             <Image
               source={{ uri: resolvedUri }}
-              style={styles.fullImage}
+              style={[styles.fullImage, { width: Math.min(width - 24, 700), height: height * 0.7 }]}
               resizeMode="contain"
             />
           </TouchableOpacity>
@@ -167,8 +166,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   fullImage: {
-    width: Math.min(SCREEN_WIDTH - 24, 700),
-    height: SCREEN_HEIGHT * 0.7,
+    maxWidth: 700,
+    maxHeight: '80%',
   },
   footerBar: {
     flexDirection: 'row',

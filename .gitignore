@@ -11,3 +11,4 @@ web-build/
 *.apk
 *.aab
 backend/uploads/
+google-service-account.json

@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 20.0.0",
+    "version": ">= 5.9.0",
     "appVersionSource": "remote"
   },
   "build": {
@@ -34,7 +34,8 @@
     "production": {
       "android": {
         "serviceAccountKeyPath": "./google-service-account.json",
-        "track": "internal"
+        "track": "internal",
+        "releaseStatus": "draft"
       },
       "ios": {
         "ascAppId": "",
@@ -44,3 +45,4 @@
     }
   }
 }
+

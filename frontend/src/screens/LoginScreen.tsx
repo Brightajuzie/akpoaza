@@ -334,12 +334,12 @@ export default function LoginScreen({ route, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, justifyContent: 'center' },
+  container: { flexGrow: 1, padding: 20, justifyContent: 'center' },
   containerWeb: { alignItems: 'center', minHeight: '100%' },
   cardWeb: { maxWidth: 400, width: '100%' },
   card: {
     backgroundColor: '#FFFFFF',
-    padding: 32,
+    padding: 24,
     borderRadius: 20,
     shadowColor: '#1C1C1E',
     shadowOffset: { width: 0, height: 12 },

@@ -1,45 +1,72 @@
 {
   "expo": {
     "name": "FixMart",
-    "slug": "fixmart",
-    "version": "1.0.0",
-    "sdkVersion": "54.0.0",
-    "orientation": "portrait",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "slug": "handyman-ecommerce",
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
-    },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
     "platforms": [
       "ios",
       "android",
       "web"
     ],
+    "scheme": "handymanecommerce",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "expo-web-browser",
+      "expo-local-authentication",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FixMart uses your photo library to upload product and profile images.",
+          "cameraPermission": "FixMart uses your camera to take product photos and verify your identity."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FixMart uses your location to show nearby vendors and services."
+        }
+      ]
+    ],
     "ios": {
-      "bundleIdentifier": "com.brightajuzie.fixmart",
-      "buildNumber": "1",
+      "bundleIdentifier": "com.akpoaza.kachlinks",
+      "buildNumber": "2",
       "supportsTablet": true,
+      "jsEngine": "hermes",
       "infoPlist": {
         "NSCameraUsageDescription": "FixMart uses your camera to take product photos and verify your identity during KYC.",
         "NSPhotoLibraryUsageDescription": "FixMart accesses your photo library to let you upload product and profile images.",
         "NSLocationWhenInUseUsageDescription": "FixMart uses your location to show nearby vendors and services.",
-        "NSFaceIDUsageDescription": "FixMart uses Face ID for quick and secure login.",
+        "NSFaceIDUsageDescription": "FixMart uses Face ID for quick and secure sign-in.",
         "NSMicrophoneUsageDescription": "FixMart uses your microphone for video consultations with service providers."
       }
     },
     "android": {
-      "package": "com.brightajuzie.fixmart",
-      "versionCode": 1,
+      "jsEngine": "hermes",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#ffffff"
       },
+      "package": "com.akpoaza.kachlinks",
+      "versionCode": 2,
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
@@ -51,32 +78,23 @@
         "INTERNET",
         "ACCESS_NETWORK_STATE",
         "RECORD_AUDIO"
-      ]
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAk_7la_GksTZ95Awlp2IIO2_GJyRZlvKQ"
+        }
+      }
     },
     "web": {
-      "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
     },
-    "plugins": [
-      "expo-local-authentication",
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "FixMart uses your photo library to let you upload product and profile images.",
-          "cameraPermission": "FixMart uses your camera to take product photos and verify identity."
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow FixMart to use your location to show nearby vendors and services."
-        }
-      ]
-    ],
     "extra": {
       "eas": {
         "projectId": "8d4405de-245d-4c45-b0c0-5331aeb2e9fe"
       }
-    }
+    },
+    "owner": "brightajuzie",
+    "newArchEnabled": true
   }
 }

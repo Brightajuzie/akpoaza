@@ -10,3 +10,4 @@ android/
 ios/
 
 .vercel
+google-service-account.json

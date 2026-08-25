@@ -65,7 +65,7 @@ function AppContent() {
     <CurrencyProvider userCountry={userInfo?.country}>
       <CartProvider>
         <NetworkProvider>
-          <SafeAreaProvider style={{ backgroundColor: theme.background }}>
+          <SafeAreaProvider style={{ flex: 1, backgroundColor: theme.background }}>
             <StatusBar style={colorMode === 'dark' ? 'light' : 'dark'} />
             <NetworkBanner />
             <AppNavigator />
@@ -111,8 +111,8 @@ export default function App() {
         document.head.appendChild(meta);
       }
       meta.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes');
-      document.documentElement.style.cssText = 'height:100%;width:100%;overflow:hidden;';
-      document.body.style.cssText = 'height:100%;width:100%;overflow:hidden;margin:0;display:flex;flex-direction:column;background-color:#f8f9fa;';
+      document.documentElement.style.cssText = 'height:100%;min-height:100%;width:100%;';
+      document.body.style.cssText = 'height:100%;min-height:100%;width:100%;margin:0;display:flex;flex-direction:column;background-color:#f8f9fa;';
     }
   }, []);
 
@@ -143,6 +143,7 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     width: '100%',
+    minHeight: '100%',
   },
   loadingContainer: {
     flex: 1,
@@ -153,5 +154,6 @@ const styles = StyleSheet.create({
   gradient: {
     flex: 1,
     width: '100%',
+    minHeight: '100%',
   },
 });

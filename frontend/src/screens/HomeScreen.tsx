@@ -225,8 +225,8 @@ export default function HomeScreen({ navigation }: any) {
   }, []);
 
   // ── Sub-renders ──────────────────────────────────────────────────────────
-  const slideW = Math.min(width, 1200) - 40;
-  const slideH = isDesktop ? 400 : isTablet ? 280 : 200;
+  const slideW = Math.min(width, 1200) - (isMobile ? 24 : 40);
+  const slideH = isDesktop ? 400 : isTablet ? 280 : (width < 380 ? 175 : 190);
 
   const renderSlide = (slide: any) => {
     if (slide.imageUrl) {
@@ -1239,7 +1239,7 @@ const styles = StyleSheet.create({
   trustDivider: { width: 1, height: 36 },
 
   // ── Search ────────────────────────────────────────────────────────────────
-  searchSection: { paddingHorizontal: 20, paddingTop: 20, zIndex: 50 },
+  searchSection: { paddingHorizontal: 40, paddingTop: 20, zIndex: 50 },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -9,15 +9,14 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 
-const { width } = Dimensions.get('window');
-
 export default function KYCVerificationScreen({ route, navigation }: any) {
+  const { width, height } = useWindowDimensions();
   const { theme } = useContext(SettingsContext);
   const { refreshUser, userInfo } = useContext(AuthContext);
 
@@ -551,8 +550,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    padding: 24,
+    padding: 20,
     paddingBottom: 60,
+    flexGrow: 1,
   },
   title: {
     fontSize: 28,
