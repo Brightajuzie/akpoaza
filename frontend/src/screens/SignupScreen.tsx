@@ -327,8 +327,15 @@ export default function SignupScreen({ route, navigation }: any) {
     setLoading(true);
     try {
       const payload: any = {
-        opayPhone: isOpaySignup ? opayPhone : (phone: string) => phone, // fallback
+        opayPhone: isOpaySignup ? opayPhone : opayPhone || null,
+        phone: isOpaySignup ? opayPhone : null,
         referenceId: livenessRef,
+        address: address || null,
+        latitude: latitude !== null ? latitude : null,
+        longitude: longitude !== null ? longitude : null,
+        specialty: role === 'HANDYMAN' ? specialty : null,
+        vehicleType: role === 'RIDER' ? vehicleType : null,
+        licensePlate: role === 'RIDER' ? licensePlate : null,
       };
 
       if (identityType === 'BVN') {
@@ -337,12 +344,19 @@ export default function SignupScreen({ route, navigation }: any) {
         payload.nin = identityNumber;
       }
 
-      // Link final OPay number if standard signup used it
+      // Link final registration details to KYC submission
       const response = await apiClient.post('/kyc/submit', payload);
 
       if (response.data.success) {
         await refreshUser();
-        Alert.alert('Setup Complete', 'Your account has been registered and is pending verification review.', [
+        const alertTitle = role === 'VENDOR' ? '✅ Store Setup Complete' : '📋 Registration Submitted';
+        const alertMsg = role === 'VENDOR'
+          ? 'Your vendor registration is complete! Your seller account is verified.'
+          : role === 'HANDYMAN'
+          ? 'Your service technician registration is complete and submitted for Admin verification.'
+          : 'Your rider courier registration is complete and submitted for Admin verification.';
+
+        Alert.alert(alertTitle, alertMsg, [
           {
             text: 'Launch App',
             onPress: () => {

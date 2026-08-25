@@ -415,6 +415,11 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
     let updateData: any = { status };
 
     if (role === 'HANDYMAN') {
+      const hmUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (!hmUser || hmUser.verificationStatus !== 'VERIFIED') {
+        return res.status(403).json({ error: 'Your service provider account must complete registration and be verified by an admin before accepting or updating jobs.' });
+      }
+
       if (status === 'ACCEPTED') {
         // Handyman accepting booking: check if already assigned
         if (booking.handymanId && booking.handymanId !== userId) {

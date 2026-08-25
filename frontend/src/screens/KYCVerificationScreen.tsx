@@ -214,15 +214,26 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
 
     setLoading(true);
     try {
-      const response = await apiClient.post('/kyc/submit', {
-        bvn,
+      const payload: any = {
         opayPhone,
         referenceId: livenessRef,
-      });
+      };
+      if (bvn) payload.bvn = bvn;
+      if (nin) payload.nin = nin;
+
+      const response = await apiClient.post('/kyc/submit', payload);
 
       if (response.data.success) {
         await refreshUser();
-        Alert.alert('KYC Submitted', 'Verification documents successfully filed. Status: Pending Review.', [
+        const role = userInfo?.role;
+        const alertTitle = role === 'VENDOR' ? '✅ Verification Complete' : '📋 KYC Submitted';
+        const alertBody = role === 'VENDOR'
+          ? 'Vendor registration is complete! Your seller account is now verified.'
+          : role === 'HANDYMAN'
+          ? 'Your service technician registration is submitted and is pending Admin verification.'
+          : 'Your rider courier registration is submitted and is pending Admin verification.';
+
+        Alert.alert(alertTitle, alertBody, [
           {
             text: 'OK',
             onPress: () => {

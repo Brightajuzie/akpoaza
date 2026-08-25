@@ -21,12 +21,19 @@ export default function KYCStatusScreen({ navigation }: any) {
   const getStatusDetails = () => {
     const status = userInfo?.verificationStatus || 'UNVERIFIED';
 
+    const isHandymanOrRider = userInfo?.role === 'HANDYMAN' || userInfo?.role === 'RIDER';
+    const isVendor = userInfo?.role === 'VENDOR';
+
     switch (status) {
       case 'UNVERIFIED':
         return {
           icon: '👤',
           title: 'Verification Required',
-          description: 'To list products, build services, or accept job dispatch requests, you must verify your identity.',
+          description: isVendor
+            ? 'Complete your full store registration (store address, phone number, BVN/NIN) to verify your vendor account and start listing products.'
+            : isHandymanOrRider
+            ? 'Complete your professional registration and identity verification to submit your profile for Admin verification.'
+            : 'To list products, build services, or accept job dispatch requests, you must verify your identity.',
           color: theme.primary,
           showAction: true,
           actionText: 'Start Verification',
@@ -35,16 +42,22 @@ export default function KYCStatusScreen({ navigation }: any) {
       case 'PENDING_REVIEW':
         return {
           icon: '🔍',
-          title: 'Under Review',
-          description: 'Your identity details, selfie scan, and documents are currently being checked. This usually takes under 24 hours.',
+          title: isHandymanOrRider ? 'Pending Admin Verification' : 'Under Review',
+          description: isHandymanOrRider
+            ? 'Your complete registration and identity credentials have been submitted. An administrator is reviewing your details to verify your account.'
+            : 'Your registration details and documents are currently being checked by our compliance team.',
           color: '#FF9500',
           showAction: false,
         };
       case 'VERIFIED':
         return {
           icon: '✅',
-          title: 'Identity Verified',
-          description: 'Congratulations! Your profile has been successfully verified. You have full access to merchant and handyman portals.',
+          title: 'Account Verified',
+          description: isVendor
+            ? 'Congratulations! Your vendor account is verified. You can now publish products and receive orders directly.'
+            : isHandymanOrRider
+            ? 'Congratulations! Your account has been verified by the Admin. You can now go online, accept jobs, and receive dispatches.'
+            : 'Congratulations! Your profile has been successfully verified.',
           color: '#34C759',
           showAction: true,
           actionText: 'Go to Dashboard',
@@ -53,8 +66,8 @@ export default function KYCStatusScreen({ navigation }: any) {
       case 'REJECTED':
         return {
           icon: '❌',
-          title: 'Verification Failed',
-          description: userInfo?.rejectionReason || 'Your submitted document could not be matched against database records.',
+          title: 'Verification Rejected',
+          description: userInfo?.rejectionReason || 'Your submitted details were rejected. Please review your information and re-submit.',
           color: '#FF3B30',
           showAction: true,
           actionText: 'Re-submit Details',

@@ -105,6 +105,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
 
   const { name, description, price, stock, imageUrl, category } = req.body;
   try {
+    if (role === 'VENDOR') {
+      const vendorUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (!vendorUser || vendorUser.verificationStatus !== 'VERIFIED') {
+        return res.status(403).json({ error: 'Vendors must complete registration and be verified before creating products.' });
+      }
+    }
+
     const newProduct = await prisma.product.create({
       data: {
         name,
@@ -142,8 +149,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
     }
 
     // Check ownership
-    if (role === 'VENDOR' && product.vendorId !== userId) {
-      return res.status(403).json({ error: 'Forbidden. You do not own this product.' });
+    if (role === 'VENDOR') {
+      if (product.vendorId !== userId) {
+        return res.status(403).json({ error: 'Forbidden. You do not own this product.' });
+      }
+      const vendorUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (!vendorUser || vendorUser.verificationStatus !== 'VERIFIED') {
+        return res.status(403).json({ error: 'Vendors must complete registration and be verified before modifying products.' });
+      }
     }
 
     const updatedProduct = await prisma.product.update({

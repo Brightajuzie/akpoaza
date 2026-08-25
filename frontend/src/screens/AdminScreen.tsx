@@ -1146,47 +1146,6 @@ export default function AdminScreen() {
     }
   };
 
-  const handleEditService = (service: any) => {
-    setEditingServiceId(service.id);
-    setServiceName(service.name);
-    setServiceDesc(service.description);
-    setServiceCategory(service.category);
-    setServiceBasePrice(service.basePrice.toString());
-    setServiceImageUrl(service.imageUrl || '');
-    if (scrollViewRef.current) {
-      scrollViewRef.current.scrollTo({ y: 0, animated: true });
-    }
-  };
-
-  const handleDeleteService = async (id: string) => {
-    Alert.alert('Delete', 'Delete this service category?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await apiClient.delete(`/services/${id}`);
-            setSelectedServiceIds(prev => prev.filter(item => item !== id));
-            fetchData();
-          } catch (e) {
-            Alert.alert('Error', 'Failed to delete service.');
-          }
-        }
-      }
-    ]);
-  };
-
-  const handleBoostService = async (id: string) => {
-    try {
-      const response = await apiClient.patch(`/services/${id}/boost`);
-      Alert.alert(response.data.featured ? '🚀 Promoted!' : 'Boost Deactivated');
-      fetchData();
-    } catch (e) {
-      Alert.alert('Error', 'Failed to boost.');
-    }
-  };
-
   const resetServiceForm = () => {
     setEditingServiceId(null);
     setServiceName('');
@@ -3029,16 +2988,58 @@ export default function AdminScreen() {
               kycReviews.map((rev: any) => (
                 <View key={rev.id} style={styles.listItem}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.listItemName}>{rev.name} ({rev.role === 'HANDYMAN' ? 'SERVICES' : rev.role})</Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <Text style={styles.listItemName}>{rev.name}</Text>
+                      <View style={[
+                        styles.badgeContainer,
+                        rev.role === 'HANDYMAN' ? { backgroundColor: '#EBF8FF' } :
+                        rev.role === 'VENDOR' ? { backgroundColor: '#FEFCBF' } :
+                        { backgroundColor: '#E8F5E9' }
+                      ]}>
+                        <Text style={{
+                          fontSize: 10, fontWeight: '700',
+                          color: rev.role === 'HANDYMAN' ? '#2B6CB0' : rev.role === 'VENDOR' ? '#B7791F' : '#34C759'
+                        }}>
+                          {rev.role === 'HANDYMAN' ? 'SERVICES' : rev.role}
+                        </Text>
+                      </View>
+                    </View>
+
                     <Text style={styles.listItemMeta}>Email: {rev.email}</Text>
-                    <Text style={styles.listItemMeta}>Phone: {rev.phone || 'N/A'}</Text>
-                    <Text style={styles.listItemMeta}>OPay Phone: {rev.opayPhone || 'N/A'}</Text>
+                    <Text style={styles.listItemMeta}>Phone: {rev.phone || rev.opayPhone || 'N/A'}</Text>
+                    <Text style={styles.listItemMeta}>Address: {rev.address || '⚠️ Not provided'}</Text>
+                    {rev.role === 'HANDYMAN' && (
+                      <Text style={styles.listItemMeta}>Specialty: {rev.specialty || '⚠️ Not provided'}</Text>
+                    )}
+                    {rev.role === 'RIDER' && (
+                      <Text style={styles.listItemMeta}>Vehicle: {rev.vehicleType || 'N/A'}  •  Plate: {rev.licensePlate || '⚠️ Missing'}</Text>
+                    )}
                     <Text style={styles.listItemMeta}>
                       Submitted: {rev.kycSubmittedAt ? new Date(rev.kycSubmittedAt).toLocaleDateString() : 'N/A'}
                     </Text>
 
+                    {/* Registration Completeness Indicator */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 }}>
-                      <Text style={[styles.label, { marginBottom: 0 }]}>Status: </Text>
+                      <View
+                        style={[
+                          styles.badgeContainer,
+                          rev.isRegistrationComplete
+                            ? { backgroundColor: '#E8F5E9' }
+                            : { backgroundColor: '#FFF3E0' }
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.badgeText,
+                            rev.isRegistrationComplete
+                              ? { color: '#34C759' }
+                              : { color: '#FF9500' }
+                          ]}
+                        >
+                          {rev.isRegistrationComplete ? '✅ Registration Complete' : `⚠️ Incomplete (${rev.missingFields?.join(', ') || 'Missing fields'})`}
+                        </Text>
+                      </View>
+
                       <View
                         style={[
                           styles.badgeContainer,
@@ -3079,11 +3080,29 @@ export default function AdminScreen() {
                           />
                           <View style={{ flexDirection: 'row', marginTop: 12, gap: 8 }}>
                             <TouchableOpacity
-                              style={[styles.actionBtn, { backgroundColor: '#34C759', flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' }]}
-                              onPress={() => handleReviewKYC(rev.id, 'VERIFIED')}
+                              style={[
+                                styles.actionBtn, 
+                                { 
+                                  backgroundColor: rev.isRegistrationComplete !== false ? '#34C759' : '#9CA3AF', 
+                                  flex: 1, 
+                                  paddingVertical: 10, 
+                                  borderRadius: 8, 
+                                  alignItems: 'center' 
+                                }
+                              ]}
+                              onPress={() => {
+                                if (rev.isRegistrationComplete === false) {
+                                  Alert.alert(
+                                    'Incomplete Registration',
+                                    `Cannot verify this user yet because their registration is incomplete.\n\nMissing: ${rev.missingFields?.join(', ')}.\n\nServices men, riders, and vendors must complete full registration before being verified.`
+                                  );
+                                  return;
+                                }
+                                handleReviewKYC(rev.id, 'VERIFIED');
+                              }}
                               disabled={loading}
                             >
-                              <Text style={{ color: '#FFF', fontWeight: '700' }}>Approve</Text>
+                              <Text style={{ color: '#FFF', fontWeight: '700' }}>Approve & Verify</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                               style={[styles.actionBtn, { backgroundColor: '#FF3B30', flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' }]}

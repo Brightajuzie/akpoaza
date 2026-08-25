@@ -273,73 +273,137 @@ router.post('/liveness', authenticateToken, async (req: AuthRequest, res: Respon
 
 /**
  * POST /api/kyc/submit
- * Finalize the KYC submission. Transition status to PENDING_REVIEW or auto-approve
- * Body: { bvn?: string, nin?: string, opayPhone: string, referenceId?: string }
+ * Finalize the KYC submission.
+ * - Vendors: If all registration steps (address, phone/opay, BVN/NIN/ID) are complete, verified.
+ * - Services men (HANDYMAN) & Riders: Set to PENDING_REVIEW (must be verified by admin after complete registration).
  */
 router.post('/submit', authenticateToken, async (req: AuthRequest, res: Response) => {
   const userId = req.user!.userId;
-  const { bvn, nin, opayPhone, referenceId } = req.body;
+  const { 
+    bvn, 
+    nin, 
+    opayPhone, 
+    phone, 
+    referenceId, 
+    address, 
+    latitude, 
+    longitude, 
+    specialty, 
+    vehicleType, 
+    licensePlate 
+  } = req.body;
 
-  if (!bvn && !nin) {
-    return res.status(400).json({ error: 'Either BVN or NIN is required to complete verification.' });
-  }
-  if (!opayPhone) {
-    return res.status(400).json({ error: 'OPay phone number is required for wallet payout configuration.' });
+  if (!bvn && !nin && !referenceId) {
+    return res.status(400).json({ error: 'Either BVN, NIN, or verification reference ID is required to complete verification.' });
   }
 
   try {
-    const docValue = bvn || nin;
-    const hashed = hashBVN(docValue!);
-
-    // Prevent duplicate BVN/NIN usage
-    const duplicate = await prisma.user.findFirst({
-      where: {
-        bvnHash: hashed,
-        verificationStatus: 'VERIFIED',
-        NOT: { id: userId },
-      },
-    });
-
-    if (duplicate) {
-      return res.status(400).json({ error: 'This identity document is already verified by another account' });
+    const currentUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!currentUser) {
+      return res.status(404).json({ error: 'User not found' });
     }
 
-    // Save submission data and set status to PENDING_REVIEW
+    const docValue = bvn || nin;
+    const hashed = docValue ? hashBVN(docValue) : (currentUser.bvnHash || null);
+
+    // Prevent duplicate BVN/NIN usage across different verified accounts
+    if (hashed) {
+      const duplicate = await prisma.user.findFirst({
+        where: {
+          bvnHash: hashed,
+          verificationStatus: 'VERIFIED',
+          NOT: { id: userId },
+        },
+      });
+
+      if (duplicate) {
+        return res.status(400).json({ error: 'This identity document is already verified by another account' });
+      }
+    }
+
+    // Determine updated profile values
+    const effectivePhone = phone || currentUser.phone;
+    const effectiveOpayPhone = opayPhone || currentUser.opayPhone || effectivePhone;
+    const effectiveAddress = address || currentUser.address;
+    const effectiveLat = latitude !== undefined && latitude !== null ? parseFloat(latitude as any) : currentUser.latitude;
+    const effectiveLng = longitude !== undefined && longitude !== null ? parseFloat(longitude as any) : currentUser.longitude;
+    const effectiveSpecialty = currentUser.role === 'HANDYMAN' ? (specialty || currentUser.specialty) : null;
+    const effectiveVehicleType = currentUser.role === 'RIDER' ? (vehicleType || currentUser.vehicleType) : null;
+    const effectiveLicensePlate = currentUser.role === 'RIDER' ? (licensePlate || currentUser.licensePlate) : null;
+
+    // Check registration completeness
+    const hasContact = Boolean(effectivePhone || effectiveOpayPhone);
+    const hasAddress = Boolean(effectiveAddress);
+    const hasIdentity = Boolean(hashed || referenceId || currentUser.kycReferenceId);
+    const hasRoleSpecific = currentUser.role === 'HANDYMAN'
+      ? Boolean(effectiveSpecialty)
+      : currentUser.role === 'RIDER'
+      ? Boolean(effectiveVehicleType || effectiveLicensePlate)
+      : true;
+
+    const isComplete = hasContact && hasAddress && hasIdentity && hasRoleSpecific;
+
+    // Status logic:
+    // 1. Vendors must complete registration before being verified -> verified once complete.
+    // 2. Services men (Handymen) and Riders can ONLY be verified by Admin after complete registration -> set to PENDING_REVIEW.
+    let newStatus: VerificationStatus = 'UNVERIFIED';
+    if (currentUser.role === 'VENDOR') {
+      newStatus = isComplete ? 'VERIFIED' : 'UNVERIFIED';
+    } else if (currentUser.role === 'HANDYMAN' || currentUser.role === 'RIDER') {
+      newStatus = isComplete ? 'PENDING_REVIEW' : 'UNVERIFIED';
+    } else if (currentUser.role === 'CUSTOMER') {
+      newStatus = 'VERIFIED';
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
-        verificationStatus: 'PENDING_REVIEW',
+        verificationStatus: newStatus,
         bvnHash: hashed,
-        kycReferenceId: referenceId || `MOCK_REF_${Date.now()}`,
+        kycReferenceId: referenceId || currentUser.kycReferenceId || `REF_${Date.now()}`,
         kycSubmittedAt: new Date(),
-        opayPhone: opayPhone,
+        phone: effectivePhone,
+        opayPhone: effectiveOpayPhone,
+        address: effectiveAddress,
+        latitude: effectiveLat,
+        longitude: effectiveLng,
+        specialty: effectiveSpecialty,
+        vehicleType: effectiveVehicleType,
+        licensePlate: effectiveLicensePlate,
         rejectionReason: null, // Clear any previous rejection
       },
     });
 
-    // Notify Admins about new KYC pending review
-    const admins = await prisma.user.findMany({
-      where: { role: 'ADMIN' },
-      select: { id: true },
-    });
+    // Notify Admins if Handyman/Rider registration is submitted for review
+    if (newStatus === 'PENDING_REVIEW') {
+      const admins = await prisma.user.findMany({
+        where: { role: 'ADMIN' },
+        select: { id: true },
+      });
 
-    for (const admin of admins) {
-      sendNotification({
-        userId: admin.id,
-        title: '🔍 New KYC Submission Pending',
-        body: `User ${updatedUser.name} (${updatedUser.role}) submitted verification details.`,
-        type: 'KYC',
-        referenceId: updatedUser.id,
-        emailSubject: '🔍 New KYC Submission Pending — FixMart',
-      }).catch(() => {});
+      for (const admin of admins) {
+        sendNotification({
+          userId: admin.id,
+          title: '🔍 Complete Registration Pending Review',
+          body: `User ${updatedUser.name} (${updatedUser.role}) completed registration and is awaiting Admin verification.`,
+          type: 'KYC',
+          referenceId: updatedUser.id,
+          emailSubject: '🔍 Registration & KYC Pending Review — FixMart',
+        }).catch(() => {});
+      }
     }
+
+    const message = currentUser.role === 'VENDOR'
+      ? (isComplete ? 'Vendor registration complete! Your seller account is verified.' : 'Vendor registration updated. Complete all steps to activate seller privileges.')
+      : (isComplete ? 'Registration complete! Your profile has been submitted and is pending Admin verification.' : 'Registration submitted. Please complete any missing details before admin approval.');
 
     res.json({
       success: true,
-      message: 'KYC submitted successfully. Pending Admin review.',
+      message,
       user: {
         id: updatedUser.id,
         name: updatedUser.name,
+        role: updatedUser.role,
         verificationStatus: updatedUser.verificationStatus,
       },
     });
@@ -351,7 +415,7 @@ router.post('/submit', authenticateToken, async (req: AuthRequest, res: Response
 
 /**
  * GET /api/kyc/admin/reviews
- * Admin-only: list all pending, verified, or rejected submissions
+ * Admin-only: list all pending, verified, or rejected submissions with registration completeness data
  */
 router.get('/admin/reviews', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
@@ -362,10 +426,13 @@ router.get('/admin/reviews', authenticateToken, async (req: AuthRequest, res: Re
       return res.status(403).json({ error: 'Forbidden: Admin access required.' });
     }
 
-    const reviews = await prisma.user.findMany({
+    const rawReviews = await prisma.user.findMany({
       where: {
         role: { in: ['VENDOR', 'HANDYMAN', 'RIDER'] },
-        verificationStatus: { not: 'UNVERIFIED' },
+        OR: [
+          { verificationStatus: { not: 'UNVERIFIED' } },
+          { kycSubmittedAt: { not: null } },
+        ],
       },
       select: {
         id: true,
@@ -374,12 +441,40 @@ router.get('/admin/reviews', authenticateToken, async (req: AuthRequest, res: Re
         role: true,
         verificationStatus: true,
         kycSubmittedAt: true,
-        opayPhone: true,
         kycReferenceId: true,
         rejectionReason: true,
         phone: true,
+        opayPhone: true,
+        address: true,
+        specialty: true,
+        vehicleType: true,
+        licensePlate: true,
+        latitude: true,
+        longitude: true,
+        createdAt: true,
+        bvnHash: true,
       },
-      orderBy: { kycSubmittedAt: 'desc' },
+      orderBy: [
+        { verificationStatus: 'asc' }, // PENDING_REVIEW comes first
+        { kycSubmittedAt: 'desc' },
+      ],
+    });
+
+    const reviews = rawReviews.map((u) => {
+      const missing: string[] = [];
+      if (!u.phone && !u.opayPhone) missing.push('Phone / OPay');
+      if (!u.address) missing.push('Work/Store Address');
+      if (!u.bvnHash && !u.kycReferenceId) missing.push('Identity / BVN');
+      if (u.role === 'HANDYMAN' && !u.specialty) missing.push('Service Specialty');
+      if (u.role === 'RIDER' && !u.vehicleType && !u.licensePlate) missing.push('Vehicle / Plate');
+
+      const isRegistrationComplete = missing.length === 0;
+
+      return {
+        ...u,
+        isRegistrationComplete,
+        missingFields: missing,
+      };
     });
 
     res.json({ reviews });
@@ -391,7 +486,9 @@ router.get('/admin/reviews', authenticateToken, async (req: AuthRequest, res: Re
 
 /**
  * PATCH /api/kyc/:userId/review
- * Admin-only: approve or reject user verification
+ * Admin-only: approve or reject user verification.
+ * Enforces rule: services men (HANDYMAN) and riders can ONLY be verified after complete registration.
+ * Vendors must also have complete registration before being verified.
  * Body: { status: 'VERIFIED' | 'REJECTED', reason?: string }
  */
 router.patch('/:userId/review', authenticateToken, async (req: AuthRequest, res: Response) => {
@@ -414,19 +511,35 @@ router.patch('/:userId/review', authenticateToken, async (req: AuthRequest, res:
       return res.status(404).json({ error: 'Target user not found.' });
     }
 
+    // If approving verification: validate that registration is complete!
+    if (status === 'VERIFIED') {
+      const missing: string[] = [];
+      if (!targetUser.phone && !targetUser.opayPhone) missing.push('Phone number / OPay');
+      if (!targetUser.address) missing.push('Address');
+      if (!targetUser.bvnHash && !targetUser.kycReferenceId) missing.push('Identity verification (BVN/NIN)');
+      if (targetUser.role === 'HANDYMAN' && !targetUser.specialty) missing.push('Service specialty');
+      if (targetUser.role === 'RIDER' && !targetUser.vehicleType && !targetUser.licensePlate) missing.push('Vehicle details / License plate');
+
+      if (missing.length > 0) {
+        return res.status(400).json({
+          error: `Cannot verify user: registration is incomplete. Missing: ${missing.join(', ')}. Users must complete full registration before being verified.`,
+        });
+      }
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: targetUserId },
       data: {
         verificationStatus: status as VerificationStatus,
-        rejectionReason: status === 'REJECTED' ? reason || 'Details did not match public database records.' : null,
+        rejectionReason: status === 'REJECTED' ? reason || 'Details did not match verification requirements.' : null,
       },
     });
 
     // Notify User
-    const title = status === 'VERIFIED' ? '✅ Verification Approved!' : '❌ Verification Rejected';
+    const title = status === 'VERIFIED' ? '✅ Verification Approved by Admin!' : '❌ Verification Rejected';
     const body = status === 'VERIFIED'
-      ? 'Congratulations, your identity has been verified! You can now accept jobs and list products.'
-      : `Your verification request was rejected. Reason: ${reason || 'Invalid documents.'} Please update and re-submit.`;
+      ? `Congratulations, your account has been verified by the Admin! You can now ${targetUser.role === 'VENDOR' ? 'list and sell products' : targetUser.role === 'HANDYMAN' ? 'receive and accept service job bookings' : 'receive parcel delivery dispatches'}.`
+      : `Your verification request was rejected. Reason: ${reason || 'Incomplete registration details.'} Please update and re-submit.`;
 
     sendNotification({
       userId: targetUserId,
