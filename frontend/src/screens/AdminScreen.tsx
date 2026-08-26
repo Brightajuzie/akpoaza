@@ -905,7 +905,7 @@ export default function AdminScreen() {
     if (products.length === 0) return;
     Alert.alert(
       '🚨 Remove All Products',
-      `Are you sure you want to permanently delete all ${products.length} product(s) from the database? This cannot be undone.`,
+      `Are you sure you want to permanently delete all ${products.length} product(s)? This action cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -916,6 +916,7 @@ export default function AdminScreen() {
             try {
               const res = await apiClient.post('/products/delete-all');
               Alert.alert('✅ All Products Deleted', res.data?.message || 'All products have been removed.');
+              resetProductForm();
               setSelectedProductIds([]);
               fetchData();
             } catch (err: any) {
@@ -944,6 +945,9 @@ export default function AdminScreen() {
             try {
               const res = await apiClient.post('/products/bulk-delete', { ids: selectedProductIds });
               Alert.alert('✅ Deleted', res.data?.message || `${selectedProductIds.length} product(s) deleted.`);
+              if (editingId && selectedProductIds.includes(editingId)) {
+                resetProductForm();
+              }
               setSelectedProductIds([]);
               fetchData();
             } catch (err: any) {
@@ -958,19 +962,22 @@ export default function AdminScreen() {
   };
 
   const handleDeleteProduct = async (id: string) => {
-    Alert.alert('Delete', 'Delete this product?', [
+    Alert.alert('Delete Product', 'Are you sure you want to delete this product? This action cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
           try {
-            await apiClient.delete(`/products/${id}`);
-            Alert.alert('Deleted', 'Product deleted.');
+            const res = await apiClient.delete(`/products/${id}`);
+            Alert.alert('✅ Deleted', res.data?.message || 'Product deleted successfully.');
             setSelectedProductIds(prev => prev.filter(item => item !== id));
+            if (editingId === id) {
+              resetProductForm();
+            }
             fetchData();
-          } catch (e) {
-            Alert.alert('Error', 'Failed to delete.');
+          } catch (e: any) {
+            Alert.alert('Error', e.response?.data?.error || 'Failed to delete product.');
           }
         }
       }

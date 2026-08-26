@@ -178,27 +178,37 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
   }
 });
 
-// Delete all products (Admin only)
+// Delete all products (Admin or Vendor for own products)
 router.post('/delete-all', authenticateToken, async (req: AuthRequest, res) => {
   const role = req.user?.role;
-  if (role !== 'ADMIN') {
-    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  const userId = req.user?.userId;
+
+  if (role !== 'ADMIN' && role !== 'VENDOR') {
+    return res.status(403).json({ error: 'Forbidden. Admin or Vendor access required.' });
   }
 
   try {
-    const allProducts = await prisma.product.findMany({ select: { id: true } });
-    const count = allProducts.length;
+    let whereClause: any = {};
+    if (role === 'VENDOR') {
+      whereClause.vendorId = userId;
+    }
 
-    await prisma.$transaction([
-      prisma.review.deleteMany({ where: { productId: { not: null } } }),
-      prisma.orderItem.deleteMany({}),
-      prisma.product.deleteMany({}),
-    ]);
+    const allProducts = await prisma.product.findMany({ where: whereClause, select: { id: true } });
+    const count = allProducts.length;
+    const targetIds = allProducts.map(p => p.id);
+
+    if (targetIds.length > 0) {
+      await prisma.$transaction([
+        prisma.review.deleteMany({ where: { productId: { in: targetIds } } }),
+        prisma.orderItem.deleteMany({ where: { productId: { in: targetIds } } }),
+        prisma.product.deleteMany({ where: { id: { in: targetIds } } }),
+      ]);
+    }
 
     res.json({ success: true, count, message: `All ${count} product(s) deleted successfully.` });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to delete all products' });
+  } catch (error: any) {
+    console.error('POST /products/delete-all error:', error);
+    res.status(500).json({ error: error?.message || 'Failed to delete all products' });
   }
 });
 
@@ -237,9 +247,9 @@ router.post('/bulk-delete', authenticateToken, async (req: AuthRequest, res) => 
     }
 
     res.json({ success: true, count: matchedIds.length, message: `${matchedIds.length} product(s) deleted successfully.` });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to bulk delete products' });
+  } catch (error: any) {
+    console.error('POST /products/bulk-delete error:', error);
+    res.status(500).json({ error: error?.message || 'Failed to bulk delete products' });
   }
 });
 
@@ -269,10 +279,10 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
       prisma.orderItem.deleteMany({ where: { productId: id } }),
       prisma.product.delete({ where: { id } }),
     ]);
-    res.json({ message: 'Product deleted successfully' });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to delete product' });
+    res.json({ success: true, message: 'Product deleted successfully' });
+  } catch (error: any) {
+    console.error('DELETE /products/:id error:', error);
+    res.status(500).json({ error: error?.message || 'Failed to delete product' });
   }
 });
 
