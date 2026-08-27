@@ -4,6 +4,33 @@ import prisma from '../lib/prisma';
 
 const router = Router();
 
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+/** Validate imageUrls payload: must be array, length 1–3, all non-empty strings. */
+function validateImageUrls(imageUrls: unknown): string | null {
+  if (!Array.isArray(imageUrls)) return 'imageUrls must be an array.';
+  const urls = (imageUrls as unknown[]).filter(
+    (u): u is string => typeof u === 'string' && u.trim().length > 0,
+  );
+  if (urls.length < 1) return 'At least 1 product image is required.';
+  if (urls.length > 3) return 'Maximum 3 product images are allowed.';
+  return null; // valid
+}
+
+/** Filter, trim and cap imageUrls at 3. */
+function normaliseImageUrls(raw: unknown[]): string[] {
+  return (raw as unknown[])
+    .filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+    .map((u) => (u as string).trim())
+    .slice(0, 3);
+}
+
+const IMAGE_INCLUDE = {
+  images: { orderBy: { position: 'asc' as const } },
+};
+
+// ── GET / ────────────────────────────────────────────────────────────────────
+
 // Get all products (General Merchandise), with optional vendor, location, or search filtering
 router.get('/', async (req, res) => {
   const { vendorId, location, search } = req.query;
@@ -14,10 +41,7 @@ router.get('/', async (req, res) => {
     }
     if (location) {
       whereClause.vendor = {
-        address: {
-          contains: String(location),
-          mode: 'insensitive',
-        },
+        address: { contains: String(location), mode: 'insensitive' },
       };
     }
     if (search) {
@@ -31,19 +55,10 @@ router.get('/', async (req, res) => {
 
     const products = await prisma.product.findMany({
       where: whereClause,
-      orderBy: [
-        { featured: 'desc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: [{ featured: 'desc' }, { createdAt: 'desc' }],
       include: {
-        vendor: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            address: true,
-          },
-        },
+        ...IMAGE_INCLUDE,
+        vendor: { select: { id: true, name: true, email: true, address: true } },
       },
     });
     res.json(products);
@@ -51,6 +66,8 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch products' });
   }
 });
+
+// ── GET /vendor/all ──────────────────────────────────────────────────────────
 
 // Get products owned by the logged-in vendor
 router.get('/vendor/all', authenticateToken, async (req: AuthRequest, res) => {
@@ -64,12 +81,15 @@ router.get('/vendor/all', authenticateToken, async (req: AuthRequest, res) => {
   try {
     const products = await prisma.product.findMany({
       where: role === 'ADMIN' ? {} : { vendorId: userId },
+      include: IMAGE_INCLUDE,
     });
     res.json(products);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch vendor products' });
   }
 });
+
+// ── GET /:id ─────────────────────────────────────────────────────────────────
 
 // Get a single product by ID
 router.get('/:id', async (req, res) => {
@@ -78,13 +98,8 @@ router.get('/:id', async (req, res) => {
     const product = await prisma.product.findUnique({
       where: { id },
       include: {
-        vendor: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
+        ...IMAGE_INCLUDE,
+        vendor: { select: { id: true, name: true, email: true } },
       },
     });
     if (!product) return res.status(404).json({ error: 'Product not found' });
@@ -94,7 +109,10 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// ── POST / ───────────────────────────────────────────────────────────────────
+
 // Create a new product (Admin or Vendor)
+// Body: { name, description, price, stock, category, imageUrls: string[] (1–3) }
 router.post('/', authenticateToken, async (req: AuthRequest, res) => {
   const role = req.user?.role;
   const userId = req.user?.userId;
@@ -103,7 +121,12 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
     return res.status(403).json({ error: 'Forbidden. Admin or Vendor access required.' });
   }
 
-  const { name, description, price, stock, imageUrl, category } = req.body;
+  const { name, description, price, stock, category, imageUrls } = req.body;
+
+  const imgError = validateImageUrls(imageUrls);
+  if (imgError) return res.status(400).json({ error: imgError });
+  const urls = normaliseImageUrls(imageUrls as unknown[]);
+
   try {
     if (role === 'VENDOR') {
       const vendorUser = await prisma.user.findUnique({ where: { id: userId } });
@@ -118,10 +141,14 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
         description,
         price: parseFloat(price),
         stock: parseInt(stock, 10) || 0,
-        imageUrl,
+        imageUrl: urls[0], // primary / cover mirrors images[0]
         category,
-        vendorId: role === 'VENDOR' ? userId : null, // If Admin, vendorId can be null/system
+        vendorId: role === 'VENDOR' ? userId : null,
+        images: {
+          create: urls.map((url, idx) => ({ url, position: idx })),
+        },
       },
+      include: IMAGE_INCLUDE,
     });
     res.status(201).json(newProduct);
   } catch (error) {
@@ -130,7 +157,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
   }
 });
 
+// ── PUT /:id ─────────────────────────────────────────────────────────────────
+
 // Update an existing product (Owner vendor or Admin only)
+// Body: { name?, description?, price?, stock?, category?, imageUrls?: string[] (1–3) }
 router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
   const { id } = req.params;
   const role = req.user?.role;
@@ -140,7 +170,14 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
     return res.status(403).json({ error: 'Forbidden. Admin or Vendor access required.' });
   }
 
-  const { name, description, price, stock, imageUrl, category } = req.body;
+  const { name, description, price, stock, category, imageUrls } = req.body;
+
+  let urls: string[] | undefined;
+  if (imageUrls !== undefined) {
+    const imgError = validateImageUrls(imageUrls);
+    if (imgError) return res.status(400).json({ error: imgError });
+    urls = normaliseImageUrls(imageUrls as unknown[]);
+  }
 
   try {
     const product = await prisma.product.findUnique({ where: { id } });
@@ -148,7 +185,6 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    // Check ownership
     if (role === 'VENDOR') {
       if (product.vendorId !== userId) {
         return res.status(403).json({ error: 'Forbidden. You do not own this product.' });
@@ -159,16 +195,26 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
       }
     }
 
+    const updateData: any = {
+      ...(name !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(price !== undefined && { price: parseFloat(price) }),
+      ...(stock !== undefined && { stock: parseInt(stock, 10) }),
+      ...(category !== undefined && { category }),
+    };
+
+    if (urls) {
+      updateData.imageUrl = urls[0];
+      updateData.images = {
+        deleteMany: {},
+        create: urls.map((url, idx) => ({ url, position: idx })),
+      };
+    }
+
     const updatedProduct = await prisma.product.update({
       where: { id },
-      data: {
-        name,
-        description,
-        price: price !== undefined ? parseFloat(price) : undefined,
-        stock: stock !== undefined ? parseInt(stock, 10) : undefined,
-        imageUrl,
-        category,
-      },
+      data: updateData,
+      include: IMAGE_INCLUDE,
     });
 
     res.json(updatedProduct);
@@ -177,6 +223,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
     res.status(500).json({ error: 'Failed to update product' });
   }
 });
+
+// ── POST /delete-all ─────────────────────────────────────────────────────────
 
 // Delete all products (Admin or Vendor for own products)
 router.post('/delete-all', authenticateToken, async (req: AuthRequest, res) => {
@@ -201,6 +249,7 @@ router.post('/delete-all', authenticateToken, async (req: AuthRequest, res) => {
       await prisma.$transaction([
         prisma.review.deleteMany({ where: { productId: { in: targetIds } } }),
         prisma.orderItem.deleteMany({ where: { productId: { in: targetIds } } }),
+        // ProductImage rows cascade-deleted by DB
         prisma.product.deleteMany({ where: { id: { in: targetIds } } }),
       ]);
     }
@@ -211,6 +260,8 @@ router.post('/delete-all', authenticateToken, async (req: AuthRequest, res) => {
     res.status(500).json({ error: error?.message || 'Failed to delete all products' });
   }
 });
+
+// ── POST /bulk-delete ─────────────────────────────────────────────────────────
 
 // Bulk delete products (Admin or Vendor for own products)
 router.post('/bulk-delete', authenticateToken, async (req: AuthRequest, res) => {
@@ -242,6 +293,7 @@ router.post('/bulk-delete', authenticateToken, async (req: AuthRequest, res) => 
       await prisma.$transaction([
         prisma.review.deleteMany({ where: { productId: { in: matchedIds } } }),
         prisma.orderItem.deleteMany({ where: { productId: { in: matchedIds } } }),
+        // ProductImage rows cascade-deleted by DB
         prisma.product.deleteMany({ where: { id: { in: matchedIds } } }),
       ]);
     }
@@ -252,6 +304,8 @@ router.post('/bulk-delete', authenticateToken, async (req: AuthRequest, res) => 
     res.status(500).json({ error: error?.message || 'Failed to bulk delete products' });
   }
 });
+
+// ── DELETE /:id ──────────────────────────────────────────────────────────────
 
 // Delete a product (Owner vendor or Admin only)
 router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
@@ -269,7 +323,6 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    // Check ownership
     if (role === 'VENDOR' && product.vendorId !== userId) {
       return res.status(403).json({ error: 'Forbidden. You do not own this product.' });
     }
@@ -277,6 +330,7 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
     await prisma.$transaction([
       prisma.review.deleteMany({ where: { productId: id } }),
       prisma.orderItem.deleteMany({ where: { productId: id } }),
+      // ProductImage rows cascade-deleted by DB
       prisma.product.delete({ where: { id } }),
     ]);
     res.json({ success: true, message: 'Product deleted successfully' });
@@ -285,6 +339,8 @@ router.delete('/:id', authenticateToken, async (req: AuthRequest, res) => {
     res.status(500).json({ error: error?.message || 'Failed to delete product' });
   }
 });
+
+// ── PATCH /:id/boost ─────────────────────────────────────────────────────────
 
 // Toggle product boost (featured) status (Vendor owner or Admin only)
 router.patch('/:id/boost', authenticateToken, async (req: AuthRequest, res) => {
@@ -302,16 +358,13 @@ router.patch('/:id/boost', authenticateToken, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    // Check ownership
     if (role === 'VENDOR' && product.vendorId !== userId) {
       return res.status(403).json({ error: 'Forbidden. You do not own this product.' });
     }
 
     const updatedProduct = await prisma.product.update({
       where: { id },
-      data: {
-        featured: !product.featured,
-      },
+      data: { featured: !product.featured },
     });
 
     res.json(updatedProduct);

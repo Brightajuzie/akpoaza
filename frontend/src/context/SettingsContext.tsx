@@ -63,6 +63,8 @@ function buildTheme(
   };
 }
 
+import { applyGoogleOptimization } from '../utils/googleOptimizer';
+
 export const SettingsProvider = ({ children }: { children: React.ReactNode }) => {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -105,6 +107,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
       const response = await apiClient.get('/settings');
       setSettings(response.data);
       applyFavicon(response.data.favicon_url || response.data.logo_url);
+      applyGoogleOptimization(response.data);
     } catch (error) {
       console.error('Failed to load settings', error);
     } finally {
@@ -135,10 +138,12 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
   const updateSettings = async (updates: Record<string, string>) => {
     try {
       const response = await apiClient.put('/settings', updates);
+      const merged = { ...settings, ...updates };
       setSettings(prev => ({ ...prev, ...updates }));
       applyFavicon(
         updates.favicon_url || updates.logo_url || settings.favicon_url || settings.logo_url,
       );
+      applyGoogleOptimization(merged);
       return response.data;
     } catch (error) {
       console.error('Failed to update settings', error);

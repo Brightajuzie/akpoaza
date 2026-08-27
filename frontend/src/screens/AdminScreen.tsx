@@ -56,7 +56,8 @@ export default function AdminScreen() {
   const [price, setPrice]                   = useState('');
   const [stock, setStock]                   = useState('');
   const [category, setCategory]             = useState('');
-  const [imageUrl, setImageUrl]             = useState('');   // final uploaded URL
+  const [imageUrls, setImageUrls]           = useState<string[]>([]);  // up to 3 product image URLs
+  const [pendingImageIndex, setPendingImageIndex] = useState<number>(0); // which slot is being uploaded
   const [editingId, setEditingId]           = useState<string | null>(null);
 
   // Multi-select & Bulk Delete state
@@ -107,6 +108,13 @@ export default function AdminScreen() {
   const [googleWebClientId, setGoogleWebClientId]         = useState('');
   const [googleIosClientId, setGoogleIosClientId]         = useState('');
   const [googleAndroidClientId, setGoogleAndroidClientId] = useState('');
+  // Google Optimization & SEO State
+  const [googleSiteVerification, setGoogleSiteVerification] = useState('');
+  const [googleAnalyticsId, setGoogleAnalyticsId]           = useState('');
+  const [googleTagManagerId, setGoogleTagManagerId]         = useState('');
+  const [seoMetaTitle, setSeoMetaTitle]                     = useState('');
+  const [seoMetaDescription, setSeoMetaDescription]         = useState('');
+  const [seoKeywords, setSeoKeywords]                       = useState('');
   const [apkUrlInput, setApkUrlInput]                     = useState('');
   const [aabUrlInput, setAabUrlInput]                     = useState('');
   // Gateway enable/disable toggles
@@ -682,6 +690,13 @@ export default function AdminScreen() {
       setGoogleWebClientId(settings.google_web_client_id || '');
       setGoogleIosClientId(settings.google_ios_client_id || '');
       setGoogleAndroidClientId(settings.google_android_client_id || '');
+      // Google Optimization & SEO State
+      setGoogleSiteVerification(settings.google_site_verification || '');
+      setGoogleAnalyticsId(settings.google_analytics_id || '');
+      setGoogleTagManagerId(settings.google_tag_manager_id || '');
+      setSeoMetaTitle(settings.seo_meta_title || '');
+      setSeoMetaDescription(settings.seo_meta_description || '');
+      setSeoKeywords(settings.seo_keywords || '');
       setApkUrlInput(settings.apk_url || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk');
       setAabUrlInput(settings.aab_url || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.aab');
       // Gateway enabled toggles
@@ -697,7 +712,38 @@ export default function AdminScreen() {
   }, [settings]);
 
   // ─── AI Image Picker & Upload ─────────────────────────────────────────────
-  const handleTakePhoto = async (target: 'product' | 'logo' | 'favicon' | 'slide' | 'service' = 'product') => {
+  const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB (matches server limit)
+
+  const handlePickFile = (target: 'product' | 'logo' | 'favicon' | 'slide' | 'service' = 'product', slotIndex = 0) => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/jpeg,image/png,image/webp,image/gif,image/*';
+      input.onchange = (e: any) => {
+        const file = e.target?.files?.[0];
+        if (file) {
+          if (file.size > MAX_FILE_SIZE_BYTES) {
+            Alert.alert('File too large', 'Please select an image smaller than 10MB.');
+            return;
+          }
+          const blobUrl = URL.createObjectURL(file);
+          setImageTarget(target);
+          setPendingImageIndex(slotIndex);
+          setPickedImageUri(blobUrl);
+          setSelectedFilter('none');
+          setRemoveBg(false);
+          setUploadedSizeKB(null);
+          setShowImageModal(true);
+        }
+      };
+      input.click();
+    } else {
+      // On mobile / native app, launchImageLibraryAsync acts as the file / gallery selector
+      handlePickImage(target, slotIndex);
+    }
+  };
+
+  const handleTakePhoto = async (target: 'product' | 'logo' | 'favicon' | 'slide' | 'service' = 'product', slotIndex = 0) => {
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
@@ -716,11 +762,12 @@ export default function AdminScreen() {
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const asset = result.assets[0];
-      if (asset.fileSize && asset.fileSize > 2000000) {
-        Alert.alert('File too large', 'Please select an image smaller than 2MB.');
+      if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE_BYTES) {
+        Alert.alert('File too large', 'Please select an image smaller than 10MB.');
         return;
       }
       setImageTarget(target);
+      setPendingImageIndex(slotIndex);
       setPickedImageUri(asset.uri);
       setSelectedFilter('none');
       setRemoveBg(false);
@@ -729,7 +776,7 @@ export default function AdminScreen() {
     }
   };
 
-  const handlePickImage = async (target: 'product' | 'logo' | 'favicon' | 'slide' | 'service' = 'product') => {
+  const handlePickImage = async (target: 'product' | 'logo' | 'favicon' | 'slide' | 'service' = 'product', slotIndex = 0) => {
     if (Platform.OS !== 'web') {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -749,11 +796,12 @@ export default function AdminScreen() {
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const asset = result.assets[0];
-      if (asset.fileSize && asset.fileSize > 2000000) {
-        Alert.alert('File too large', 'Please select an image smaller than 2MB.');
+      if (asset.fileSize && asset.fileSize > MAX_FILE_SIZE_BYTES) {
+        Alert.alert('File too large', 'Please select an image smaller than 10MB.');
         return;
       }
       setImageTarget(target);
+      setPendingImageIndex(slotIndex);
       setPickedImageUri(asset.uri);
       setSelectedFilter('none');
       setRemoveBg(false);
@@ -762,9 +810,9 @@ export default function AdminScreen() {
     }
   };
 
-  const handleOpenImageOptions = (target: 'product' | 'logo' | 'favicon' | 'slide' | 'service' = 'product') => {
+  const handleOpenImageOptions = (target: 'product' | 'logo' | 'favicon' | 'slide' | 'service' = 'product', slotIndex = 0) => {
     if (Platform.OS === 'web') {
-      handlePickImage(target);
+      handlePickFile(target, slotIndex);
       return;
     }
 
@@ -772,8 +820,9 @@ export default function AdminScreen() {
       'Upload Image',
       'Choose image source:',
       [
-        { text: '📸 Take Photo', onPress: () => handleTakePhoto(target) },
-        { text: '🖼️ Choose from Gallery', onPress: () => handlePickImage(target) },
+        { text: '📁 Browse Files / Device', onPress: () => handlePickFile(target, slotIndex) },
+        { text: '📸 Take Photo (Camera)', onPress: () => handleTakePhoto(target, slotIndex) },
+        { text: '🖼️ Choose from Gallery', onPress: () => handlePickImage(target, slotIndex) },
         { text: 'Cancel', style: 'cancel' }
       ]
     );
@@ -814,7 +863,11 @@ export default function AdminScreen() {
 
       if (response.data.success) {
         if (imageTarget === 'product') {
-          setImageUrl(response.data.imageUrl);
+          setImageUrls(prev => {
+            const updated = [...prev];
+            updated[pendingImageIndex] = response.data.imageUrl;
+            return updated.filter(Boolean).slice(0, 3);
+          });
         } else if (imageTarget === 'logo') {
           setLogoUrlInput(response.data.imageUrl);
         } else if (imageTarget === 'favicon') {
@@ -844,6 +897,10 @@ export default function AdminScreen() {
       Alert.alert('Missing Fields', 'Product Name and Price are required.');
       return;
     }
+    if (imageUrls.length === 0) {
+      Alert.alert('Missing Image', 'Please upload at least 1 product image.');
+      return;
+    }
     setLoading(true);
     try {
       const payload = {
@@ -852,7 +909,7 @@ export default function AdminScreen() {
         price: parseFloat(price),
         stock: parseInt(stock, 10) || 0,
         category: category.trim(),
-        imageUrl: imageUrl.trim() || undefined,
+        imageUrls,
       };
 
       if (editingId) {
@@ -879,7 +936,11 @@ export default function AdminScreen() {
     setPrice(product.price ? product.price.toString() : '');
     setStock(product.stock !== undefined ? product.stock.toString() : '0');
     setCategory(product.category || '');
-    setImageUrl(product.imageUrl || '');
+    // Prefer the images[] relation if available (sorted by position), else fall back to imageUrl
+    const existingUrls: string[] = Array.isArray(product.images) && product.images.length > 0
+      ? product.images.map((img: any) => img.url).filter(Boolean).slice(0, 3)
+      : product.imageUrl ? [product.imageUrl] : [];
+    setImageUrls(existingUrls);
     setUploadedSizeKB(null);
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
@@ -1003,7 +1064,8 @@ export default function AdminScreen() {
     setPrice('');
     setStock('');
     setCategory('');
-    setImageUrl('');
+    setImageUrls([]);
+    setPendingImageIndex(0);
     setPickedImageUri(null);
     setRemoveBg(false);
     setUploadedSizeKB(null);
@@ -1183,6 +1245,12 @@ export default function AdminScreen() {
         google_web_client_id:     googleWebClientId,
         google_ios_client_id:     googleIosClientId,
         google_android_client_id: googleAndroidClientId,
+        google_site_verification: googleSiteVerification.trim(),
+        google_analytics_id:      googleAnalyticsId.trim(),
+        google_tag_manager_id:    googleTagManagerId.trim(),
+        seo_meta_title:           seoMetaTitle.trim(),
+        seo_meta_description:     seoMetaDescription.trim(),
+        seo_keywords:             seoKeywords.trim(),
         apk_url:                  apkUrlInput,
         aab_url:                  aabUrlInput,
         stripe_enabled:           stripeEnabled ? 'true' : 'false',
@@ -1265,24 +1333,65 @@ export default function AdminScreen() {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
           {/* Image Preview */}
           {pickedImageUri && (
-            <View style={styles.imagePreviewContainer}>
-              <Image
-                source={{ uri: pickedImageUri }}
-                style={styles.imagePreview}
-                resizeMode="cover"
-              />
-              {/* Filter Tint Overlay */}
-              <View
-                style={[
-                  styles.filterTintOverlay,
-                  { backgroundColor: activeFilterObj.tint },
-                ]}
-              />
-              {/* Filter Badge */}
-              <View style={styles.filterBadge}>
-                <Text style={styles.filterBadgeText}>
-                  {activeFilterObj.icon} {activeFilterObj.label}
-                </Text>
+            <View>
+              <View style={styles.imagePreviewContainer}>
+                <Image
+                  source={{ uri: pickedImageUri }}
+                  style={styles.imagePreview}
+                  resizeMode="cover"
+                />
+                {/* Filter Tint Overlay */}
+                <View
+                  style={[
+                    styles.filterTintOverlay,
+                    { backgroundColor: activeFilterObj.tint },
+                  ]}
+                />
+                {/* Filter Badge */}
+                <View style={styles.filterBadge}>
+                  <Text style={styles.filterBadgeText}>
+                    {activeFilterObj.icon} {activeFilterObj.label}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Change File button inside modal */}
+              <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, marginTop: 8, marginBottom: 4 }}>
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    paddingHorizontal: 14,
+                    paddingVertical: 7,
+                    borderRadius: 20,
+                    backgroundColor: isDark ? '#334155' : '#E2E8F0',
+                  }}
+                  onPress={() => handlePickFile(imageTarget, pendingImageIndex)}
+                  disabled={uploadingImage}
+                >
+                  <Text style={{ fontSize: 13 }}>📁</Text>
+                  <Text style={{ fontSize: 12, fontWeight: '600', color: textColor }}>Choose Another File</Text>
+                </TouchableOpacity>
+
+                {Platform.OS !== 'web' && (
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 14,
+                      paddingVertical: 7,
+                      borderRadius: 20,
+                      backgroundColor: isDark ? '#334155' : '#E2E8F0',
+                    }}
+                    onPress={() => handleTakePhoto(imageTarget, pendingImageIndex)}
+                    disabled={uploadingImage}
+                  >
+                    <Text style={{ fontSize: 13 }}>📸</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: textColor }}>Retake</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           )}
@@ -1897,67 +2006,192 @@ export default function AdminScreen() {
                 <TextInput style={styles.input} value={category} onChangeText={setCategory} placeholder="e.g. Tools, Hardware" />
               </View>
 
-              {/* ── AI Image Upload (Camera + Gallery + URL) ── */}
+              {/* ── Multi-Image Upload (up to 3) ── */}
               <View style={styles.formGroup}>
-                <Text style={styles.label}>Product Image</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={styles.label}>Product Images * <Text style={{ fontWeight: '400', fontSize: 11, color: subtextColor }}>(1–3 photos)</Text></Text>
+                  <Text style={[styles.label, { fontSize: 11, color: imageUrls.length > 0 ? '#34C759' : subtextColor, fontWeight: '600' }]}>
+                    {imageUrls.length}/3 uploaded
+                  </Text>
+                </View>
 
-                {imageUrl ? (
-                  <View style={styles.imageSuccessContainer}>
-                    <Image source={{ uri: imageUrl }} style={styles.imageSuccessPreview} resizeMode="cover" />
-                    <View style={styles.imageSuccessInfo}>
-                      <Text style={styles.imageSuccessTitle}>✅ Image Uploaded</Text>
-                      {uploadedSizeKB && (
-                        <Text style={styles.imageSuccessSize}>🗜️ {uploadedSizeKB} (under 300KB)</Text>
-                      )}
-                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                        <TouchableOpacity
-                          style={[styles.imageChangeBtn, { borderColor: theme.primary }]}
-                          onPress={() => handleOpenImageOptions('product')}
-                        >
-                          <Text style={[styles.imageChangeBtnText, { color: theme.primary }]}>Change Image</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.imageChangeBtn, { borderColor: '#EF4444' }]}
-                          onPress={() => setImageUrl('')}
-                        >
-                          <Text style={[styles.imageChangeBtnText, { color: '#EF4444' }]}>Remove</Text>
-                        </TouchableOpacity>
+                {/* 3 image slots in a row */}
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {[0, 1, 2].map((slotIdx) => {
+                    const url = imageUrls[slotIdx];
+                    const isFirst = slotIdx === 0;
+                    return (
+                      <View key={slotIdx} style={{ flex: 1 }}>
+                        {url ? (
+                          /* Filled slot — shows thumbnail with Change/Remove */
+                          <View style={{
+                            borderRadius: 10,
+                            overflow: 'hidden',
+                            borderWidth: 2,
+                            borderColor: isFirst ? theme.primary : '#34C759',
+                            backgroundColor: inputBg,
+                          }}>
+                            <Image
+                              source={{ uri: url }}
+                              style={{ width: '100%', aspectRatio: 1 }}
+                              resizeMode="cover"
+                            />
+                            {/* Primary badge */}
+                            {isFirst && (
+                              <View style={{
+                                position: 'absolute', top: 4, left: 4,
+                                backgroundColor: theme.primary, borderRadius: 4,
+                                paddingHorizontal: 5, paddingVertical: 2,
+                              }}>
+                                <Text style={{ color: '#fff', fontSize: 9, fontWeight: '700' }}>COVER</Text>
+                              </View>
+                            )}
+                            {/* Action row */}
+                            <View style={{ flexDirection: 'row', backgroundColor: 'rgba(0,0,0,0.55)' }}>
+                              <TouchableOpacity
+                                style={{ flex: 1, alignItems: 'center', paddingVertical: 5 }}
+                                onPress={() => handleOpenImageOptions('product', slotIdx)}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '600' }}>✏️</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={{ flex: 1, alignItems: 'center', paddingVertical: 5, borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.2)' }}
+                                onPress={() => setImageUrls(prev => prev.filter((_, i) => i !== slotIdx))}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={{ color: '#FF6B6B', fontSize: 10, fontWeight: '700' }}>✕</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        ) : (
+                          /* Empty slot — upload button */
+                          <TouchableOpacity
+                            style={{
+                              aspectRatio: 1,
+                              borderRadius: 10,
+                              borderWidth: 2,
+                              borderStyle: 'dashed',
+                              borderColor: slotIdx === 0 ? theme.primary : (isDark ? '#334155' : '#CBD5E1'),
+                              backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              opacity: slotIdx > 0 && imageUrls.length < slotIdx ? 0.4 : 1,
+                            }}
+                            onPress={() => {
+                              if (slotIdx > 0 && imageUrls.length < slotIdx) return; // enforce sequential
+                              handleOpenImageOptions('product', slotIdx);
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={{ fontSize: 22, marginBottom: 4 }}>{slotIdx === 0 ? '📸' : '➕'}</Text>
+                            <Text style={{ fontSize: 10, color: slotIdx === 0 ? theme.primary : subtextColor, fontWeight: '600', textAlign: 'center' }}>
+                              {slotIdx === 0 ? 'Cover Image' : `Photo ${slotIdx + 1}`}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
-                    </View>
-                  </View>
-                ) : (
-                  <View>
-                    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                    );
+                  })}
+                </View>
+
+                {/* Quick Upload Action Buttons */}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      paddingVertical: 10,
+                      paddingHorizontal: 8,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: theme.primary,
+                      backgroundColor: theme.primary + '10',
+                    }}
+                    onPress={() => {
+                      const nextSlot = imageUrls.length < 3 ? imageUrls.length : 0;
+                      handlePickFile('product', nextSlot);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ fontSize: 14 }}>📁</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: theme.primary }}>
+                      {imageUrls.length === 0 ? 'Upload File' : imageUrls.length < 3 ? `Upload Photo ${imageUrls.length + 1}` : 'Replace Cover'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {Platform.OS !== 'web' ? (
+                    <>
                       <TouchableOpacity
-                        style={[styles.imagePickerBox, { flex: 1, borderColor: theme.border || '#CED4DA', paddingVertical: 14 }]}
-                        onPress={() => handleTakePhoto('product')}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 4,
+                          paddingVertical: 10,
+                          paddingHorizontal: 10,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: borderColor,
+                          backgroundColor: cardBg,
+                        }}
+                        onPress={() => {
+                          const nextSlot = imageUrls.length < 3 ? imageUrls.length : 0;
+                          handleTakePhoto('product', nextSlot);
+                        }}
                         activeOpacity={0.8}
                       >
-                        <Text style={styles.imagePickerIcon}>📸</Text>
-                        <Text style={styles.imagePickerTitle}>Take Photo</Text>
-                        <Text style={styles.imagePickerSubtitle}>Using camera</Text>
+                        <Text style={{ fontSize: 14 }}>📸</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: textColor }}>Camera</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={[styles.imagePickerBox, { flex: 1, borderColor: theme.border || '#CED4DA', paddingVertical: 14 }]}
-                        onPress={() => handlePickImage('product')}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 4,
+                          paddingVertical: 10,
+                          paddingHorizontal: 10,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: borderColor,
+                          backgroundColor: cardBg,
+                        }}
+                        onPress={() => {
+                          const nextSlot = imageUrls.length < 3 ? imageUrls.length : 0;
+                          handlePickImage('product', nextSlot);
+                        }}
                         activeOpacity={0.8}
                       >
-                        <Text style={styles.imagePickerIcon}>🖼️</Text>
-                        <Text style={styles.imagePickerTitle}>Choose Gallery</Text>
-                        <Text style={styles.imagePickerSubtitle}>With AI Enhance</Text>
+                        <Text style={{ fontSize: 14 }}>🖼️</Text>
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: textColor }}>Gallery</Text>
                       </TouchableOpacity>
-                    </View>
+                    </>
+                  ) : null}
+                </View>
 
-                    <TextInput
-                      style={[styles.input, { fontSize: 12, paddingVertical: 8 }]}
-                      value={imageUrl}
-                      onChangeText={setImageUrl}
-                      placeholder="Or paste direct image URL (https://...)"
-                      autoCapitalize="none"
-                    />
-                  </View>
-                )}
+                {/* URL paste fallback */}
+                <TextInput
+                  style={[styles.input, { fontSize: 12, paddingVertical: 8, marginTop: 8 }]}
+                  value={imageUrls[0] || ''}
+                  onChangeText={(text) => {
+                    setImageUrls(prev => {
+                      const u = [...prev];
+                      if (text.trim()) {
+                        u[0] = text;
+                      } else {
+                        u.splice(0, 1); // remove slot 0 when cleared
+                      }
+                      return u;
+                    });
+                  }}
+                  placeholder="Or paste cover image URL (https://...)"
+                  autoCapitalize="none"
+                />
               </View>
 
               <View style={styles.btnRow}>
@@ -2074,8 +2308,10 @@ export default function AdminScreen() {
                         {item.name} {item.featured && <Text style={{ color: '#FF9500' }}>🔥</Text>}
                       </Text>
                       <Text style={styles.listItemMeta}>Price: ₦{item.price.toFixed(2)} | Stock: {item.stock}</Text>
-                      {item.imageUrl && (
-                        <Text style={[styles.listItemMeta, { color: '#34C759' }]}>📷 Image uploaded</Text>
+                      {(Array.isArray(item.images) && item.images.length > 0 ? item.images.length : item.imageUrl ? 1 : 0) > 0 && (
+                        <Text style={[styles.listItemMeta, { color: '#34C759' }]}>
+                          📷 {Array.isArray(item.images) && item.images.length > 0 ? item.images.length : 1} photo{(Array.isArray(item.images) ? item.images.length : 1) > 1 ? 's' : ''}
+                        </Text>
                       )}
                       {item.featured && (
                         <View style={[styles.badgeContainer, { backgroundColor: '#FFF3E0' }]}>
@@ -2589,7 +2825,7 @@ export default function AdminScreen() {
                   </View>
                 </View>
               )}
-              {/* 5. App Distribution & Download Links */}
+
               <Text style={styles.sectionHeading}>4. Mobile App Distribution & Download Links</Text>
               <View style={styles.subSettingsCard}>
                 <Text style={styles.subCardTitle}>📱 Android APK & App Bundle (AAB)</Text>
@@ -2630,12 +2866,124 @@ export default function AdminScreen() {
                 </View>
               </View>
 
+              {/* 5. Google Optimization, SEO & Analytics */}
+              <Text style={styles.sectionHeading}>5. Google Optimization, SEO & Analytics</Text>
+              <View style={styles.subSettingsCard}>
+                <Text style={styles.subCardTitle}>🚀 Google Search & Webmaster Tools</Text>
+                <Text style={styles.subCardNote}>
+                  Configure Google Search Console verification, GA4 tracking, dynamic Schema.org structured data, and search engine meta tags.
+                </Text>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Google Search Console Verification Token</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={googleSiteVerification}
+                    onChangeText={setGoogleSiteVerification}
+                    placeholder="e.g. google-site-verification=AbCdEf..."
+                    autoCapitalize="none"
+                  />
+                  <Text style={{ fontSize: 11, color: subtextColor, marginTop: 3 }}>
+                    Paste your Google Webmaster / Search Console HTML verification meta code here.
+                  </Text>
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Google Analytics 4 (GA4) Measurement ID</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={googleAnalyticsId}
+                    onChangeText={setGoogleAnalyticsId}
+                    placeholder="e.g. G-XXXXXXXXXX"
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Google Tag Manager (GTM) Container ID</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={googleTagManagerId}
+                    onChangeText={setGoogleTagManagerId}
+                    placeholder="e.g. GTM-XXXXXXX"
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>SEO Meta Page Title</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={seoMetaTitle}
+                    onChangeText={setSeoMetaTitle}
+                    placeholder="FixMart | Handyman Services & Online Marketplace"
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>SEO Meta Description</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    value={seoMetaDescription}
+                    onChangeText={setSeoMetaDescription}
+                    placeholder="Describe your platform for Google Search snippets..."
+                    multiline
+                    numberOfLines={2}
+                  />
+                </View>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>SEO Keywords (Comma Separated)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={seoKeywords}
+                    onChangeText={setSeoKeywords}
+                    placeholder="handyman, ecommerce, plumbing, electrical, repairs, delivery"
+                  />
+                </View>
+
+                {/* Live XML Sitemap & Robots.txt Links */}
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: borderColor }}>
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: theme.primary + '15',
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 6,
+                    }}
+                    onPress={() => Linking.openURL('https://akpoaza-3.onrender.com/sitemap.xml')}
+                  >
+                    <Text style={{ fontSize: 13 }}>🗺️</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: theme.primary }}>View Live XML Sitemap</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      backgroundColor: isDark ? '#334155' : '#E2E8F0',
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 6,
+                    }}
+                    onPress={() => Linking.openURL('https://akpoaza-3.onrender.com/robots.txt')}
+                  >
+                    <Text style={{ fontSize: 13 }}>🤖</Text>
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: textColor }}>View robots.txt</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               <TouchableOpacity
                 style={[styles.saveSettingsBtn, { backgroundColor: theme.primary }]}
                 onPress={handleSaveSettings}
                 disabled={settingsSaving}
               >
-                {settingsSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveSettingsBtnText}>Apply System Branding</Text>}
+                {settingsSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveSettingsBtnText}>Apply System Branding & Google Optimization</Text>}
               </TouchableOpacity>
             </View>
           </View>

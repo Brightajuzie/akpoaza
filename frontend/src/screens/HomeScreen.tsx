@@ -3,10 +3,12 @@ import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, Image,
   ActivityIndicator, TextInput, useWindowDimensions, Platform, Linking, Alert, Animated, Modal
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
+import { CartContext } from '../context/CartContext';
 import apiClient, { getImageUri } from '../api/client';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import SafeLogo from '../components/SafeLogo';
@@ -65,6 +67,7 @@ const NAV_LINKS = [
 export default function HomeScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
   const { theme, logoUrl, footerText, apkUrl, colorMode } = useContext(SettingsContext);
+  const { addToCart } = useContext(CartContext);
   const { fmt } = useCurrency();
   const { width } = useWindowDimensions();
 
@@ -75,6 +78,9 @@ export default function HomeScreen({ navigation }: any) {
 
   // ── State ────────────────────────────────────────────────────────────────
   const [promotedListings, setPromotedListings] = useState<any[]>([]);
+  const [promotedProducts, setPromotedProducts] = useState<any[]>([]);
+  const [productsLoading, setProductsLoading]   = useState(true);
+  const [addedCartFeedback, setAddedCartFeedback] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [slides, setSlides] = useState<any[]>([]);
@@ -210,19 +216,38 @@ export default function HomeScreen({ navigation }: any) {
     searchDebounceRef.current = setTimeout(() => performSearch(text), 380);
   };
 
-  useEffect(() => {
-    const fetchPromoted = async () => {
-      try {
-        setLoading(true);
-        const [pr, sr] = await Promise.all([apiClient.get('/products'), apiClient.get('/services')]);
-        const fp = pr.data.filter((p: any) => p.featured).map((p: any) => ({ ...p, itemType: 'product' }));
-        const fs = sr.data.filter((s: any) => s.featured).map((s: any) => ({ ...s, itemType: 'service' }));
-        setPromotedListings([...fp, ...fs]);
-      } catch { /* silent */ }
-      finally { setLoading(false); }
-    };
-    fetchPromoted();
+  const fetchPromoted = useCallback(async () => {
+    try {
+      setLoading(true);
+      setProductsLoading(true);
+      const [pr, sr] = await Promise.all([apiClient.get('/products'), apiClient.get('/services')]);
+      
+      const rawProducts: any[] = Array.isArray(pr.data) ? pr.data : [];
+      const featuredProds = rawProducts.filter((p: any) => p.featured);
+      const otherProds    = rawProducts.filter((p: any) => !p.featured);
+
+      // Prioritize boosted/featured products at the front
+      const displayProducts = featuredProds.length > 0
+        ? [...featuredProds, ...otherProds.slice(0, Math.max(0, 8 - featuredProds.length))]
+        : rawProducts.slice(0, 8);
+
+      setPromotedProducts(displayProducts);
+
+      const fp = featuredProds.map((p: any) => ({ ...p, itemType: 'product' }));
+      const fs = (Array.isArray(sr.data) ? sr.data : []).filter((s: any) => s.featured).map((s: any) => ({ ...s, itemType: 'service' }));
+      setPromotedListings([...fp, ...fs]);
+    } catch { /* silent */ }
+    finally {
+      setLoading(false);
+      setProductsLoading(false);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchPromoted();
+    }, [fetchPromoted])
+  );
 
   // ── Sub-renders ──────────────────────────────────────────────────────────
   const slideW = Math.min(width, 1200) - (isMobile ? 24 : 40);
@@ -654,6 +679,160 @@ export default function HomeScreen({ navigation }: any) {
     )
   );
 
+  const renderPromotedProducts = () => (
+    <View style={styles.sectionBlock}>
+      <View style={styles.sectionHeader}>
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Text style={[styles.sectionTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>🔥 Promoted Products</Text>
+            {promotedProducts.some(p => p.featured) && (
+              <View style={[styles.sectionBadge, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' }]}>
+                <Text style={[styles.sectionBadgeText, { color: '#B45309' }]}>⚡ TOP DEALS</Text>
+              </View>
+            )}
+          </View>
+          <Text style={[styles.sectionSub, { color: isDark ? '#64748B' : '#94A3B8' }]}>
+            Handpicked deals & boosted merchandise from verified vendors
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.seeAllBtn, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}
+          onPress={() => navigation.navigate('Products')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.seeAllBtnText, { color: theme.primary }]}>See All →</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Quick Add Feedback Banner */}
+      {addedCartFeedback && (
+        <View style={[styles.cartFeedbackBanner, { backgroundColor: theme.primary + '18', borderColor: theme.primary }]}>
+          <Text style={[styles.cartFeedbackText, { color: theme.primary }]}>{addedCartFeedback}</Text>
+        </View>
+      )}
+
+      {productsLoading ? (
+        <ActivityIndicator color={theme.primary} style={{ marginVertical: 24 }} />
+      ) : promotedProducts.length === 0 ? (
+        <View style={[styles.emptyCard, { borderColor: isDark ? '#334155' : '#E2E8F0', backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }]}>
+          <Text style={styles.emptyCardIcon}>🛍️</Text>
+          <Text style={[styles.emptyCardText, { color: isDark ? '#64748B' : '#94A3B8' }]}>No products listed yet</Text>
+        </View>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingRight: 8, paddingBottom: 6 }}
+        >
+          {promotedProducts.map((product) => {
+            const isFeatured = !!product.featured;
+            const cardWidth = isDesktop ? 220 : isTablet ? 190 : 165;
+            const imgHeight = isDesktop ? 150 : isTablet ? 135 : 120;
+            const rawImgUrl = product.images?.[0]?.url || product.imageUrl;
+            const imgUri = rawImgUrl ? (getImageUri(rawImgUrl) || rawImgUrl) : null;
+
+            return (
+              <TouchableOpacity
+                key={product.id}
+                style={[
+                  styles.productCard,
+                  {
+                    width: cardWidth,
+                    backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                    borderColor: isFeatured ? '#F59E0B' : (isDark ? '#334155' : '#E2E8F0'),
+                    borderWidth: isFeatured ? 2 : 1,
+                  },
+                  isFeatured && {
+                    shadowColor: '#F59E0B',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.25,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  },
+                ]}
+                onPress={() => navigation.navigate('ProductDetail', { productId: product.id })}
+                activeOpacity={0.88}
+              >
+                {/* Product Cover Image */}
+                <View style={{ position: 'relative', width: '100%', height: imgHeight, borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden', backgroundColor: isDark ? '#0F172A' : '#F1F5F9' }}>
+                  {imgUri ? (
+                    <Image source={{ uri: imgUri }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                  ) : (
+                    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 32 }}>📦</Text>
+                    </View>
+                  )}
+
+                  {/* Promoted Badge */}
+                  {isFeatured && (
+                    <View style={styles.promotedBadge}>
+                      <Text style={styles.promotedBadgeText}>🔥 PROMOTED</Text>
+                    </View>
+                  )}
+
+                  {/* Category Pill */}
+                  {product.category && (
+                    <View style={[styles.catPill, isFeatured && { bottom: 6, left: 6 }]}>
+                      <Text style={styles.catPillText} numberOfLines={1}>{product.category}</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Details */}
+                <View style={styles.productCardBody}>
+                  <Text style={[styles.productCardName, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={2}>
+                    {product.name}
+                  </Text>
+
+                  {product.vendor?.name && (
+                    <Text style={[styles.productVendorText, { color: isDark ? '#64748B' : '#94A3B8' }]} numberOfLines={1}>
+                      🏪 {product.vendor.name}
+                    </Text>
+                  )}
+
+                  <View style={styles.productPriceRow}>
+                    <Text style={[styles.productPriceText, { color: theme.primary }]}>
+                      {fmt(product.price || 0)}
+                    </Text>
+                  </View>
+
+                  {/* Footer with Stock Status and Quick Add */}
+                  <View style={styles.productCardFooter}>
+                    <Text style={[
+                      styles.stockStatusText,
+                      { color: (product.stock ?? 0) > 0 ? '#10B981' : '#EF4444' }
+                    ]}>
+                      {(product.stock ?? 0) > 0 ? '✓ In Stock' : 'Out of stock'}
+                    </Text>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.quickAddBtn,
+                        { backgroundColor: theme.primary },
+                        (product.stock ?? 0) <= 0 && { opacity: 0.5 }
+                      ]}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        if ((product.stock ?? 0) <= 0) return;
+                        addToCart({ id: product.id, name: product.name, price: product.price, type: 'product' });
+                        setAddedCartFeedback(`Added "${product.name}" to cart!`);
+                        setTimeout(() => setAddedCartFeedback(null), 2500);
+                      }}
+                      disabled={(product.stock ?? 0) <= 0}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.quickAddBtnText}>+ 🛒</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+    </View>
+  );
+
   const renderSpotlights = () => (
     <View style={styles.sectionBlock}>
       <View style={styles.sectionHeader}>
@@ -959,6 +1138,9 @@ export default function HomeScreen({ navigation }: any) {
 
           {/* Slider Carousel */}
           {renderSlider()}
+
+          {/* Promoted Products */}
+          {renderPromotedProducts()}
 
           {/* Premium Spotlights */}
           {renderSpotlights()}
@@ -1586,5 +1768,114 @@ const styles = StyleSheet.create({
   vendorModalCancelText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+
+  // ── Promoted Products Showcase ─────────────────────────────────────────────
+  seeAllBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seeAllBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  cartFeedbackBanner: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  cartFeedbackText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  productCard: {
+    borderRadius: 16,
+    marginRight: 14,
+    marginBottom: 6,
+    overflow: 'hidden',
+  },
+  promotedBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    zIndex: 2,
+  },
+  promotedBadgeText: {
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+  catPill: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    maxWidth: '70%',
+  },
+  catPillText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  productCardBody: {
+    padding: 10,
+  },
+  productCardName: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 17,
+    minHeight: 34,
+    marginBottom: 4,
+  },
+  productVendorText: {
+    fontSize: 11,
+    marginBottom: 6,
+  },
+  productPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 8,
+  },
+  productPriceText: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  productCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(150,150,150,0.15)',
+  },
+  stockStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  quickAddBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickAddBtnText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
 });
