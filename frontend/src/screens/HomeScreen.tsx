@@ -628,7 +628,10 @@ export default function HomeScreen({ navigation }: any) {
                         <Text>📦</Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={[styles.searchResultName, { color: isDark ? '#F1F5F9' : '#1E293B' }]} numberOfLines={1}>{item.name}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Text style={[styles.searchResultName, { color: isDark ? '#F1F5F9' : '#1E293B', flexShrink: 1 }]} numberOfLines={1}>{item.name}</Text>
+                          {item.featured && <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: '800' }}>🚀 BOOSTED</Text>}
+                        </View>
                         <Text style={[styles.searchResultMeta, { color: isDark ? '#64748B' : '#94A3B8' }]}>{fmt(item.price)}</Text>
                       </View>
                       <Text style={[styles.searchResultArrow, { color: '#F59E0B' }]}>→</Text>
@@ -684,7 +687,7 @@ export default function HomeScreen({ navigation }: any) {
       <View style={styles.sectionHeader}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <Text style={[styles.sectionTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>🔥 Promoted Products</Text>
+            <Text style={[styles.sectionTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>🚀 Boosted & Promoted Products</Text>
             {promotedProducts.some(p => p.featured) && (
               <View style={[styles.sectionBadge, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' }]}>
                 <Text style={[styles.sectionBadgeText, { color: '#B45309' }]}>⚡ TOP DEALS</Text>
@@ -763,10 +766,10 @@ export default function HomeScreen({ navigation }: any) {
                     </View>
                   )}
 
-                  {/* Promoted Badge */}
+                  {/* Boosted Badge */}
                   {isFeatured && (
                     <View style={styles.promotedBadge}>
-                      <Text style={styles.promotedBadgeText}>🔥 PROMOTED</Text>
+                      <Text style={styles.promotedBadgeText}>🚀 BOOSTED</Text>
                     </View>
                   )}
 
@@ -854,40 +857,44 @@ export default function HomeScreen({ navigation }: any) {
         </View>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 4, paddingBottom: 4 }}>
-          {promotedListings.map(item => (
-            <TouchableOpacity
-              key={`${item.itemType}-${item.id}`}
-              style={[styles.spotCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}
-              onPress={() => {
-                if (item.itemType === 'product') navigation.navigate('ProductDetail', { productId: item.id });
-                else navigation.navigate('Services');
-              }}
-              activeOpacity={0.88}
-            >
-              {item.imageUrl ? (
-                <Image source={{ uri: getImageUri(item.imageUrl) || item.imageUrl }} style={styles.spotImage} resizeMode="cover" />
-              ) : (
-                <View style={[styles.spotPlaceholder, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}>
-                  <Text style={styles.spotPlaceholderIcon}>{item.itemType === 'product' ? '📦' : '⚡'}</Text>
+          {promotedListings.map(item => {
+            const rawSpotImg = item.images?.[0]?.url || item.imageUrl;
+            const spotImgUri = rawSpotImg ? (getImageUri(rawSpotImg) || rawSpotImg) : null;
+            return (
+              <TouchableOpacity
+                key={`${item.itemType}-${item.id}`}
+                style={[styles.spotCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}
+                onPress={() => {
+                  if (item.itemType === 'product') navigation.navigate('ProductDetail', { productId: item.id });
+                  else navigation.navigate('Services');
+                }}
+                activeOpacity={0.88}
+              >
+                {spotImgUri ? (
+                  <Image source={{ uri: spotImgUri }} style={styles.spotImage} resizeMode="cover" />
+                ) : (
+                  <View style={[styles.spotPlaceholder, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}>
+                    <Text style={styles.spotPlaceholderIcon}>{item.itemType === 'product' ? '📦' : '⚡'}</Text>
+                  </View>
+                )}
+                <View style={[styles.spotTag, item.itemType === 'product' && { backgroundColor: '#F59E0B' }]}>
+                  <Text style={styles.spotTagText}>{item.itemType === 'product' ? '🚀 BOOSTED' : '🔥 HOT'}</Text>
                 </View>
-              )}
-              <View style={styles.spotTag}>
-                <Text style={styles.spotTagText}>🔥 HOT</Text>
-              </View>
-              <View style={styles.spotBody}>
-                <Text style={[styles.spotName, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={1}>{item.name}</Text>
-                <Text style={[styles.spotCat, { color: isDark ? '#64748B' : '#94A3B8' }]} numberOfLines={1}>
-                  {item.category || (item.itemType === 'product' ? 'Merchandise' : 'Service')}
-                </Text>
-                <View style={styles.spotPriceRow}>
-                  <Text style={[styles.spotPrice, { color: theme.primary }]}>
-                    {fmt(item.price ?? item.basePrice ?? 0)}
+                <View style={styles.spotBody}>
+                  <Text style={[styles.spotName, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={1}>{item.name}</Text>
+                  <Text style={[styles.spotCat, { color: isDark ? '#64748B' : '#94A3B8' }]} numberOfLines={1}>
+                    {item.category || (item.itemType === 'product' ? 'Merchandise' : 'Service')}
                   </Text>
-                  {item.itemType === 'service' && <Text style={[styles.spotPriceSuffix, { color: isDark ? '#64748B' : '#94A3B8' }]}>/hr</Text>}
+                  <View style={styles.spotPriceRow}>
+                    <Text style={[styles.spotPrice, { color: theme.primary }]}>
+                      {fmt(item.price ?? item.basePrice ?? 0)}
+                    </Text>
+                    {item.itemType === 'service' && <Text style={[styles.spotPriceSuffix, { color: isDark ? '#64748B' : '#94A3B8' }]}>/hr</Text>}
+                  </View>
                 </View>
-              </View>
-            </TouchableOpacity>
-          ))}
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       )}
     </View>
