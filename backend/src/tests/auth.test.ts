@@ -57,6 +57,7 @@ describe('Handyman E-Commerce Backend Integration Tests', () => {
           password: 'password123',
           name: 'Test Handyman Plumber',
           role: 'HANDYMAN',
+          phone: '+1234567890',
           specialty: 'Plumbing',
           address: '456 Broadway, New York, NY',
           latitude: 40.7128,
@@ -86,6 +87,7 @@ describe('Handyman E-Commerce Backend Integration Tests', () => {
           password: 'password123',
           name: 'Test Vendor Store',
           role: 'VENDOR',
+          phone: '+1234567890',
           address: '789 Broadway, New York, NY',
           latitude: 40.7200,
           longitude: -74.0100,
@@ -100,7 +102,7 @@ describe('Handyman E-Commerce Backend Integration Tests', () => {
       expect(res.body.user.address).toBe('789 Broadway, New York, NY');
       expect(res.body.user.latitude).toBe(40.7200);
       expect(res.body.user.longitude).toBe(-74.0100);
-      expect(res.body.user.verificationStatus).toBe('PENDING_REVIEW');
+      expect(res.body.user.verificationStatus).toBe('VERIFIED');
       expect(res.body.user.requiresKYC).toBe(false);
     });
 

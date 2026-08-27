@@ -53,15 +53,7 @@ function createEscrowForPaidItem(checkoutType, id, paidAmount) {
                     transactionAmount = booking.isSplitPayment ? booking.totalPrice / 2 : booking.totalPrice;
                 }
                 if (!booking.handymanId) {
-                    // Handyman is not yet assigned; record amountPaid and defer escrow until assignment
-                    yield tx.booking.update({
-                        where: { id },
-                        data: {
-                            amountPaid: {
-                                increment: transactionAmount,
-                            },
-                        },
-                    });
+                    // Handyman is not yet assigned; defer escrow creation until assignment
                     return null;
                 }
                 const existingEscrows = yield tx.escrow.findMany({
@@ -94,15 +86,6 @@ function createEscrowForPaidItem(checkoutType, id, paidAmount) {
                         userId: booking.handymanId,
                         balance: 0.0,
                         pendingBalance: providerAmount,
-                    },
-                });
-                // Increment amountPaid on booking
-                yield tx.booking.update({
-                    where: { id },
-                    data: {
-                        amountPaid: {
-                            increment: transactionAmount,
-                        },
                     },
                 });
                 const walletRecord = yield tx.wallet.findUnique({ where: { userId: booking.handymanId } });
@@ -201,15 +184,6 @@ function createEscrowForPaidItem(checkoutType, id, paidAmount) {
                     }
                     escrows.push(escrow);
                 }
-                // Update order amountPaid
-                yield tx.order.update({
-                    where: { id },
-                    data: {
-                        amountPaid: {
-                            increment: transactionAmount,
-                        },
-                    },
-                });
                 return escrows;
             }
             else if (checkoutType === 'parcel') {

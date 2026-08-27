@@ -82,7 +82,6 @@ export default function AdminScreen() {
   const [serviceDesc, setServiceDesc]         = useState('');
   const [serviceCategory, setServiceCategory] = useState('Plumbing');
   const [serviceBasePrice, setServiceBasePrice] = useState('');
-  const [serviceImageUrl, setServiceImageUrl] = useState('');
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
 
   // System Settings state (Admin only)
@@ -822,8 +821,6 @@ export default function AdminScreen() {
           setFaviconUrlInput(response.data.imageUrl);
         } else if (imageTarget === 'slide') {
           setSlideImageUrl(response.data.imageUrl);
-        } else if (imageTarget === 'service') {
-          setServiceImageUrl(response.data.imageUrl);
         }
         
         setUploadedSizeKB(response.data.sizeKB);
@@ -1089,7 +1086,6 @@ export default function AdminScreen() {
     setServiceDesc(service.description || '');
     setServiceCategory(service.category || 'Plumbing');
     setServiceBasePrice(service.basePrice ? service.basePrice.toString() : '');
-    setServiceImageUrl(service.imageUrl || '');
     setUploadedSizeKB(null);
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
@@ -1135,7 +1131,6 @@ export default function AdminScreen() {
         description: serviceDesc,
         category: serviceCategory,
         basePrice: parseFloat(serviceBasePrice),
-        imageUrl: serviceImageUrl.trim() || undefined,
       };
       if (editingServiceId) {
         await apiClient.put(`/services/${editingServiceId}`, payload);
@@ -1159,7 +1154,6 @@ export default function AdminScreen() {
     setServiceDesc('');
     setServiceCategory('Plumbing');
     setServiceBasePrice('');
-    setServiceImageUrl('');
   };
 
   // ─── Settings Save ────────────────────────────────────────────────────────
@@ -2145,61 +2139,6 @@ export default function AdminScreen() {
                 <TextInput style={styles.input} value={serviceBasePrice} onChangeText={setServiceBasePrice} keyboardType="numeric" placeholder="80.00" />
               </View>
 
-              {/* Service Picture / Icon Upload */}
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Service Picture / Banner</Text>
-                {serviceImageUrl ? (
-                  <View style={styles.imageSuccessContainer}>
-                    <Image source={{ uri: getImageUri(serviceImageUrl) || serviceImageUrl }} style={styles.imageSuccessPreview} resizeMode="cover" />
-                    <View style={styles.imageSuccessInfo}>
-                      <Text style={styles.imageSuccessTitle}>✅ Image Attached</Text>
-                      <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                        <TouchableOpacity
-                          style={[styles.imageChangeBtn, { borderColor: theme.primary }]}
-                          onPress={() => handleOpenImageOptions('service')}
-                        >
-                          <Text style={[styles.imageChangeBtnText, { color: theme.primary }]}>Change Image</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.imageChangeBtn, { borderColor: '#EF4444' }]}
-                          onPress={() => setServiceImageUrl('')}
-                        >
-                          <Text style={[styles.imageChangeBtnText, { color: '#EF4444' }]}>Remove</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                ) : (
-                  <View style={{ gap: 8 }}>
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                      <TouchableOpacity
-                        style={[styles.imageOptionBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}
-                        onPress={() => handleTakePhoto('service')}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.imageOptionBtnIcon}>📸</Text>
-                        <Text style={[styles.imageOptionBtnText, { color: theme.primary }]}>Take Photo</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.imageOptionBtn, { backgroundColor: theme.primary, borderColor: theme.primary }]}
-                        onPress={() => handlePickImage('service')}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={styles.imageOptionBtnIcon}>🖼️</Text>
-                        <Text style={[styles.imageOptionBtnText, { color: '#FFFFFF' }]}>Choose Gallery</Text>
-                      </TouchableOpacity>
-                    </View>
-                    <TextInput
-                      style={[styles.input, { fontSize: 12 }]}
-                      value={serviceImageUrl}
-                      onChangeText={setServiceImageUrl}
-                      placeholder="Or paste image URL (https://...)"
-                      autoCapitalize="none"
-                    />
-                  </View>
-                )}
-              </View>
-
               <View style={styles.btnRow}>
                 <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: theme.primary }]} onPress={handleSaveService} disabled={loading}>
                   {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>{editingServiceId ? 'Save Changes' : 'Publish Service'}</Text>}
@@ -2308,11 +2247,6 @@ export default function AdminScreen() {
                     >
                       {isSelected && <Text style={styles.batchItemCheckText}>✓</Text>}
                     </TouchableOpacity>
-
-                    {/* Service Image Thumbnail */}
-                    {s.imageUrl ? (
-                      <Image source={{ uri: getImageUri(s.imageUrl) || s.imageUrl }} style={{ width: 44, height: 44, borderRadius: 8, marginRight: 10 }} resizeMode="cover" />
-                    ) : null}
 
                     <View style={styles.listItemInfo}>
                       <Text style={styles.listItemName}>

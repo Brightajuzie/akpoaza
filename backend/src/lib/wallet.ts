@@ -38,15 +38,7 @@ export async function createEscrowForPaidItem(checkoutType: 'booking' | 'order' 
       }
 
       if (!booking.handymanId) {
-        // Handyman is not yet assigned; record amountPaid and defer escrow until assignment
-        await tx.booking.update({
-          where: { id },
-          data: {
-            amountPaid: {
-              increment: transactionAmount,
-            },
-          },
-        });
+        // Handyman is not yet assigned; defer escrow creation until assignment
         return null;
       }
 
@@ -85,16 +77,6 @@ export async function createEscrowForPaidItem(checkoutType: 'booking' | 'order' 
           userId: booking.handymanId,
           balance: 0.0,
           pendingBalance: providerAmount,
-        },
-      });
-
-      // Increment amountPaid on booking
-      await tx.booking.update({
-        where: { id },
-        data: {
-          amountPaid: {
-            increment: transactionAmount,
-          },
         },
       });
 
@@ -207,16 +189,6 @@ export async function createEscrowForPaidItem(checkoutType: 'booking' | 'order' 
 
         escrows.push(escrow);
       }
-
-      // Update order amountPaid
-      await tx.order.update({
-        where: { id },
-        data: {
-          amountPaid: {
-            increment: transactionAmount,
-          },
-        },
-      });
 
       return escrows;
 

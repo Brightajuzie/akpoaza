@@ -229,6 +229,31 @@ router.put('/:id', auth_1.authenticateToken, (req, res) => __awaiter(void 0, voi
                 return res.status(400).json({ error: 'Email already in use by another user' });
             }
         }
+        if (verificationStatus === 'VERIFIED') {
+            const targetRole = role || existingUser.role;
+            if (targetRole === 'HANDYMAN' || targetRole === 'RIDER' || targetRole === 'VENDOR') {
+                const finalPhone = phone !== undefined ? phone : existingUser.phone;
+                const finalOpayPhone = opayPhone !== undefined ? opayPhone : existingUser.opayPhone;
+                const finalAddress = address !== undefined ? address : existingUser.address;
+                const finalSpecialty = specialty !== undefined ? specialty : existingUser.specialty;
+                const finalVehicle = req.body.vehicleType !== undefined ? req.body.vehicleType : existingUser.vehicleType;
+                const finalPlate = req.body.licensePlate !== undefined ? req.body.licensePlate : existingUser.licensePlate;
+                const missing = [];
+                if (!finalPhone && !finalOpayPhone)
+                    missing.push('Phone / OPay');
+                if (!finalAddress)
+                    missing.push('Address');
+                if (targetRole === 'HANDYMAN' && !finalSpecialty)
+                    missing.push('Service Specialty');
+                if (targetRole === 'RIDER' && !finalVehicle && !finalPlate)
+                    missing.push('Vehicle / License Plate');
+                if (missing.length > 0) {
+                    return res.status(400).json({
+                        error: `Cannot verify user: registration is incomplete. Missing: ${missing.join(', ')}. User must complete registration before being verified.`,
+                    });
+                }
+            }
+        }
         let passwordHash = undefined;
         if (password) {
             const salt = yield bcrypt_1.default.genSalt(10);
@@ -245,6 +270,8 @@ router.put('/:id', auth_1.authenticateToken, (req, res) => __awaiter(void 0, voi
                 opayPhone: opayPhone !== undefined ? opayPhone : undefined,
                 specialty: specialty !== undefined ? specialty : undefined,
                 address: address !== undefined ? address : undefined,
+                vehicleType: req.body.vehicleType !== undefined ? req.body.vehicleType : undefined,
+                licensePlate: req.body.licensePlate !== undefined ? req.body.licensePlate : undefined,
                 latitude: latitude !== undefined && latitude !== null ? parseFloat(latitude) : undefined,
                 longitude: longitude !== undefined && longitude !== null ? parseFloat(longitude) : undefined,
                 verificationStatus: verificationStatus || undefined,

@@ -81,12 +81,36 @@ router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, functio
             bvnHash = crypto_1.default.createHash('sha256').update(identityNumber).digest('hex');
         }
         // Determine verification status
+        // Rule 1: Customers are automatically active.
+        // Rule 2: Vendors must complete registration (address, phone/opay, BVN/NIN/KYC ref) before being verified.
+        // Rule 3: Services men (HANDYMAN) and Riders can ONLY be verified by Admin after complete registration (status PENDING_REVIEW).
         let verificationStatus = 'UNVERIFIED';
+        const hasContact = Boolean(phone || opayPhone);
+        const hasAddress = Boolean(address);
+        const hasIdentity = Boolean(identityNumber || kycReferenceId);
         if (role === 'CUSTOMER') {
             verificationStatus = 'VERIFIED';
         }
-        else if (kycReferenceId && identityNumber) {
-            verificationStatus = 'PENDING_REVIEW';
+        else if (role === 'VENDOR') {
+            // Vendors must complete registration before being verified
+            if (hasContact && hasAddress && hasIdentity) {
+                verificationStatus = 'VERIFIED';
+            }
+            else {
+                verificationStatus = 'UNVERIFIED';
+            }
+        }
+        else if (role === 'HANDYMAN' || role === 'RIDER') {
+            // Services men and riders can ONLY be verified by Admin after complete registration
+            const hasRoleSpecific = role === 'HANDYMAN'
+                ? Boolean(specialty)
+                : Boolean(req.body.vehicleType || req.body.licensePlate);
+            if (hasContact && hasAddress && hasIdentity && hasRoleSpecific) {
+                verificationStatus = 'PENDING_REVIEW';
+            }
+            else {
+                verificationStatus = 'UNVERIFIED';
+            }
         }
         const newUser = yield prisma_1.default.user.create({
             data: {

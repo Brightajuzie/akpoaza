@@ -393,6 +393,10 @@ describe('Escrow and Wallet Settlement Integration Tests', () => {
 
       expect(bookRes.status).toBe(201);
       splitBookingId = bookRes.body.id;
+      await prisma.booking.update({
+        where: { id: splitBookingId },
+        data: { handymanId },
+      });
 
       // Initialize split checkout
       const checkoutRes = await request(app)

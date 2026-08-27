@@ -103,7 +103,6 @@ model Service {
   description String
   category    String
   basePrice   Float
-  imageUrl    String?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   featured    Boolean   @default(false)

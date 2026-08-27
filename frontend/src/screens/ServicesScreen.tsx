@@ -9,7 +9,6 @@ import apiClient, { getImageUri } from '../api/client';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
 import FloatingCartBar from '../components/FloatingCartBar';
-import ImageViewerModal from '../components/ImageViewerModal';
 
 interface ChatMessage {
   id: string; text: string;
@@ -37,7 +36,6 @@ export default function ServicesScreen({ navigation }: any) {
   const [searchFocused, setSearchFocused] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [ratingsMap, setRatingsMap] = useState<Record<string, { averageRating: number | null; count: number }>>({});
-  const [previewImage, setPreviewImage] = useState<any | null>(null);
 
   const { theme, colorMode } = useContext(SettingsContext);
   const { fmt } = useCurrency();
@@ -185,24 +183,6 @@ export default function ServicesScreen({ navigation }: any) {
         {/* Top accent */}
         <View style={[styles.cardAccent, { backgroundColor: conf.color }]} />
 
-        {/* Service Picture with Tap-to-View Zoom */}
-        {item.imageUrl ? (
-          <TouchableOpacity
-            style={styles.serviceImageWrap}
-            activeOpacity={0.9}
-            onPress={() => setPreviewImage(item)}
-          >
-            <Image
-              source={{ uri: getImageUri(item.imageUrl) || item.imageUrl }}
-              style={styles.serviceCardImage}
-              resizeMode="cover"
-            />
-            <View style={styles.imageZoomBadge}>
-              <Text style={styles.imageZoomText}>🔍</Text>
-            </View>
-          </TouchableOpacity>
-        ) : null}
-
         {isFeatured && (
           <View style={styles.featuredBadge}>
             <Text style={styles.featuredBadgeText}>🔥 FEATURED</Text>
@@ -211,11 +191,9 @@ export default function ServicesScreen({ navigation }: any) {
 
         <View style={styles.cardMain}>
           {/* Icon + Category */}
-          {!item.imageUrl && (
-            <View style={[styles.catIconWrap, { backgroundColor: isDark ? conf.color + '22' : conf.bg }]}>
-              <Text style={styles.catIcon}>{conf.icon}</Text>
-            </View>
-          )}
+          <View style={[styles.catIconWrap, { backgroundColor: isDark ? conf.color + '22' : conf.bg }]}>
+            <Text style={styles.catIcon}>{conf.icon}</Text>
+          </View>
 
           <View style={styles.cardInfo}>
             {/* Category pill */}
@@ -262,14 +240,6 @@ export default function ServicesScreen({ navigation }: any) {
 
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
-      <ImageViewerModal
-        visible={previewImage !== null}
-        imageUrl={previewImage?.imageUrl}
-        title={previewImage?.name}
-        subtitle={previewImage?.category}
-        price={previewImage ? `${fmt(previewImage.basePrice)}/hr` : undefined}
-        onClose={() => setPreviewImage(null)}
-      />
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <View style={[styles.header, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderBottomColor: isDark ? '#334155' : '#E2E8F0' }]}>
