@@ -213,7 +213,7 @@ export default function HomeScreen({ navigation }: any) {
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => performSearch(text), 380);
+    searchDebounceRef.current = setTimeout(() => performSearch(text), 120);
   };
 
   const fetchPromoted = useCallback(async () => {
@@ -560,13 +560,12 @@ export default function HomeScreen({ navigation }: any) {
       <View style={[
         styles.searchBox,
         { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: searchFocused ? theme.primary : (isDark ? '#334155' : '#E2E8F0') },
-        searchFocused && { shadowColor: theme.primary, shadowOpacity: 0.15 }
       ]}>
         <Text style={styles.searchBoxIcon}>🔍</Text>
         <TextInput
           style={[styles.searchBoxInput, { color: isDark ? '#F1F5F9' : '#1E293B' }]}
           placeholder="Search products, services, categories..."
-          placeholderTextColor={isDark ? '#475569' : '#94A3B8'}
+          placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
           value={searchQuery}
           onChangeText={handleSearchChange}
           onFocus={() => setSearchFocused(true)}
@@ -581,16 +580,6 @@ export default function HomeScreen({ navigation }: any) {
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults(null); }} style={styles.searchClear}>
             <Text style={[styles.searchClearText, { color: isDark ? '#64748B' : '#94A3B8' }]}>✕</Text>
-          </TouchableOpacity>
-        )}
-        {searchQuery.length > 0 && (
-          <TouchableOpacity
-            style={[styles.searchBtn, { backgroundColor: theme.primary }]}
-            onPress={() => {
-              navigation.navigate('Products', { search: searchQuery.trim() });
-            }}
-          >
-            <Text style={styles.searchBtnText}>Search</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -1439,34 +1428,20 @@ const styles = StyleSheet.create({
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1.5,
+    borderRadius: 12,
+    borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: Platform.OS === 'ios' ? 10 : 4,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 12,
-    elevation: 2,
   },
   searchBoxIcon: { fontSize: 16, marginRight: 8 },
   searchBoxInput: { flex: 1, fontSize: 14, fontWeight: '500', paddingVertical: 8 },
   searchClear: { padding: 6 },
   searchClearText: { fontSize: 13, fontWeight: '700' },
-  searchBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 9,
-    marginLeft: 6,
-  },
-  searchBtnText: { color: '#FFF', fontSize: 13, fontWeight: '700' },
   searchDropdown: {
     marginTop: 6,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     overflow: 'hidden',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 5,
   },
   searchGroupLabel: {
     fontSize: 10, fontWeight: '800', letterSpacing: 0.6,

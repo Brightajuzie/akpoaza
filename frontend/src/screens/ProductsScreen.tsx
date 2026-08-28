@@ -158,7 +158,7 @@ export default function ProductsScreen({ navigation, route }: any) {
           style={[
             styles.card,
             { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isFeatured ? '#F59E0B' : (isDark ? '#334155' : '#E2E8F0') },
-            isFeatured && { borderWidth: 2, shadowColor: '#F59E0B', shadowOpacity: 0.25 },
+            isFeatured && { borderWidth: 2 },
           ]}
           activeOpacity={0.88}
           onPress={() => handleBookService(item)}
@@ -230,7 +230,7 @@ export default function ProductsScreen({ navigation, route }: any) {
         style={[
           styles.card,
           { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isFeatured ? '#F59E0B' : (isDark ? '#334155' : '#E2E8F0') },
-          isFeatured && { borderWidth: 2, shadowColor: '#F59E0B', shadowOpacity: 0.2 },
+          isFeatured && { borderWidth: 2 },
         ]}
         activeOpacity={0.88}
         onPress={() => navigation.navigate('ProductDetail', { productId: item.id })}
@@ -541,13 +541,13 @@ const styles = StyleSheet.create({
   searchRow: {
     flexDirection: 'row', alignItems: 'center',
     marginHorizontal: 16, marginBottom: 8,
-    borderRadius: 12, borderWidth: 1.5,
+    borderRadius: 12, borderWidth: 1,
     paddingHorizontal: 12, paddingVertical: Platform.OS === 'ios' ? 10 : 2,
   },
   locationRow: {
     flexDirection: 'row', alignItems: 'center',
     marginHorizontal: 16, marginBottom: 8,
-    borderRadius: 12, borderWidth: 1.5,
+    borderRadius: 12, borderWidth: 1,
     paddingHorizontal: 12, paddingVertical: Platform.OS === 'ios' ? 10 : 2,
   },
   searchIcon: { fontSize: 15, marginRight: 8 },
@@ -593,7 +593,6 @@ const styles = StyleSheet.create({
   card: {
     flex: 1, margin: 6, borderRadius: 16, borderWidth: 1,
     overflow: 'hidden', minWidth: 0, position: 'relative',
-    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.07, shadowRadius: 10, elevation: 3,
   },
   cardImage: { width: '100%' },
   cardImagePlaceholder: {

@@ -461,7 +461,7 @@ const styles = StyleSheet.create({
   pageSubtitle: { fontSize: 12, fontWeight: '500', marginBottom: 12 },
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
-    borderRadius: 12, borderWidth: 1.5,
+    borderRadius: 12, borderWidth: 1,
     paddingHorizontal: 12, marginBottom: 10,
     paddingVertical: Platform.OS === 'ios' ? 10 : 2,
   },
@@ -487,7 +487,6 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 18, borderWidth: 1,
     overflow: 'hidden',
-    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
   },
   cardAccent: { height: 4, width: '100%' },
   serviceImageWrap: {
