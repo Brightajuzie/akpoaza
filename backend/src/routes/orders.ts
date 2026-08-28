@@ -411,26 +411,28 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
     }
 
     // Execute state update (with inventory release on cancellation)
-    const updatedOrder = await prisma.$transaction(async (tx) => {
-      if (status === 'CANCELLED') {
-        // Restore stock levels
-        for (const item of order.items) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: {
-              stock: {
-                increment: item.quantity,
-              },
-            },
-          });
-        }
-      }
-
-      return tx.order.update({
+    let updatedOrder: any;
+    if (status === 'CANCELLED') {
+      const updates: any[] = order.items.map((item) =>
+        prisma.product.update({
+          where: { id: item.productId },
+          data: { stock: { increment: item.quantity } },
+        })
+      );
+      updates.push(
+        prisma.order.update({
+          where: { id },
+          data: { status },
+        })
+      );
+      const results = await prisma.$transaction(updates);
+      updatedOrder = results[results.length - 1];
+    } else {
+      updatedOrder = await prisma.order.update({
         where: { id },
         data: { status },
       });
-    });
+    }
 
     if (status === 'DELIVERED') {
       await prisma.escrow.updateMany({
