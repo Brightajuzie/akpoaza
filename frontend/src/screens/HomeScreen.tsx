@@ -572,6 +572,11 @@ export default function HomeScreen({ navigation }: any) {
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
           returnKeyType="search"
+          onSubmitEditing={() => {
+            if (searchQuery.trim()) {
+              navigation.navigate('Products', { search: searchQuery.trim() });
+            }
+          }}
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults(null); }} style={styles.searchClear}>
@@ -581,7 +586,9 @@ export default function HomeScreen({ navigation }: any) {
         {searchQuery.length > 0 && (
           <TouchableOpacity
             style={[styles.searchBtn, { backgroundColor: theme.primary }]}
-            onPress={() => performSearch(searchQuery)}
+            onPress={() => {
+              navigation.navigate('Products', { search: searchQuery.trim() });
+            }}
           >
             <Text style={styles.searchBtnText}>Search</Text>
           </TouchableOpacity>
