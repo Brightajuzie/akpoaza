@@ -17,6 +17,7 @@ const stripe_1 = __importDefault(require("stripe"));
 const axios_1 = __importDefault(require("axios"));
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const wallet_1 = require("../lib/wallet");
+const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
 // Paystack generic configuration
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
@@ -544,6 +545,69 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
             }
         }
         return res.status(400).json({ error: 'Invalid payment provider specified.' });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+// ─── Direct Virtual Wallet Payment ───────────────────────────────────────────
+router.post('/wallet-pay', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const { checkoutType, id, isSplit } = req.body;
+    if (!userId)
+        return res.status(401).json({ error: 'Unauthorized' });
+    if (!checkoutType || !id)
+        return res.status(400).json({ error: 'checkoutType and id are required' });
+    try {
+        const wallet = yield (0, wallet_1.getOrCreateWallet)(userId);
+        let amountToPay = 0;
+        if (checkoutType === 'order') {
+            const order = yield prisma_1.default.order.findUnique({ where: { id } });
+            if (!order)
+                return res.status(404).json({ error: 'Order not found' });
+            amountToPay = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : (isSplit ? order.totalAmount / 2 : order.totalAmount);
+        }
+        else if (checkoutType === 'booking') {
+            const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
+            if (!booking)
+                return res.status(404).json({ error: 'Booking not found' });
+            amountToPay = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : (isSplit ? booking.totalPrice / 2 : booking.totalPrice);
+        }
+        else if (checkoutType === 'parcel') {
+            const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
+            if (!parcel)
+                return res.status(404).json({ error: 'Parcel delivery not found' });
+            amountToPay = parcel.totalAmount;
+        }
+        if (wallet.balance < amountToPay) {
+            return res.status(400).json({
+                error: `Insufficient wallet balance. Available: ₦${wallet.balance.toLocaleString()}, Required: ₦${amountToPay.toLocaleString()}. Please fund your wallet or choose another payment method.`
+            });
+        }
+        // Deduct from wallet
+        yield prisma_1.default.wallet.update({
+            where: { id: wallet.id },
+            data: { balance: { decrement: amountToPay } },
+        });
+        // Create transaction record
+        yield prisma_1.default.transaction.create({
+            data: {
+                walletId: wallet.id,
+                amount: amountToPay,
+                type: 'DEBIT',
+                description: `Payment for ${checkoutType} #${id.slice(0, 8)}`,
+            }
+        });
+        const reference = `WALLET_${id}_${Date.now()}`;
+        const result = yield processPaymentVerification({
+            provider: 'PAYSTACK',
+            reference,
+            checkoutType,
+            id,
+            chargedAmount: amountToPay,
+        });
+        res.json(Object.assign({ success: true, message: `Payment of ₦${amountToPay.toLocaleString()} completed using your wallet balance!`, reference }, result));
     }
     catch (error) {
         next(error);
@@ -1364,6 +1428,68 @@ router.post('/webhook/split', (req, res, next) => __awaiter(void 0, void 0, void
     catch (err) {
         console.error(`[EscrowReleaseEndpointError] ${err.message}`);
         next(err);
+    }
+}));
+// Admin: Fetch all escrows and payment stats
+router.get('/admin/all-escrows', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
+    if (role !== 'ADMIN')
+        return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+    try {
+        const escrows = yield prisma_1.default.escrow.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: {
+                booking: {
+                    include: {
+                        service: true,
+                        customer: { select: { id: true, name: true, email: true, phone: true } },
+                        handyman: { select: { id: true, name: true, email: true, phone: true } },
+                    },
+                },
+                order: {
+                    include: {
+                        user: { select: { id: true, name: true, email: true, phone: true } },
+                    },
+                },
+            },
+        });
+        const totalEscrowAmount = escrows.reduce((sum, e) => sum + e.amount, 0);
+        const heldAmount = escrows.filter(e => e.status === 'HELD').reduce((sum, e) => sum + e.amount, 0);
+        const releasedAmount = escrows.filter(e => e.status === 'RELEASED').reduce((sum, e) => sum + e.amount, 0);
+        res.json({
+            escrows,
+            summary: {
+                totalCount: escrows.length,
+                totalEscrowAmount,
+                heldAmount,
+                releasedAmount,
+            },
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+// Admin: Force-release specific escrow to handyman/vendor
+router.post('/admin/force-release-escrow/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
+    if (role !== 'ADMIN')
+        return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+    const { id } = req.params;
+    try {
+        const escrow = yield prisma_1.default.escrow.findUnique({ where: { id } });
+        if (!escrow)
+            return res.status(404).json({ error: 'Escrow record not found.' });
+        if (escrow.status === 'RELEASED') {
+            return res.status(400).json({ error: 'Escrow funds have already been released.' });
+        }
+        const released = yield (0, wallet_1.releaseEscrow)(id);
+        res.json({ success: true, message: 'Escrow funds forcibly released by Administrator.', escrow: released });
+    }
+    catch (error) {
+        next(error);
     }
 }));
 exports.default = router;

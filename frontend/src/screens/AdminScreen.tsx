@@ -11,6 +11,7 @@ import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
 import MapComponent from '../components/MapComponent';
 import ResponsiveContainer from '../components/ResponsiveContainer';
+import ImageViewerModal from '../components/ImageViewerModal';
 
 // ─── AI Filter Configuration ────────────────────────────────────────────────
 const AI_FILTERS = [
@@ -45,6 +46,20 @@ export default function AdminScreen() {
   const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders' | 'slides'>(
     route?.params?.activeTab || 'products'
   );
+
+  // KYC Photo preview modal
+  const [previewModalVisible, setPreviewModalVisible] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [previewImageTitle, setPreviewImageTitle] = useState('');
+  const [previewImageSubtitle, setPreviewImageSubtitle] = useState('');
+
+  const handleOpenImagePreview = (url: string, title?: string, subtitle?: string) => {
+    setPreviewImageUrl(url);
+    setPreviewImageTitle(title || 'Verification Photo');
+    setPreviewImageSubtitle(subtitle || '');
+    setPreviewModalVisible(true);
+  };
+
   // Track which tabs have been loaded to avoid redundant fetches
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
 
@@ -138,6 +153,59 @@ export default function AdminScreen() {
   const [updatingBookingId, setUpdatingBookingId] = useState<string | null>(null);
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [reassignBookingId, setReassignBookingId] = useState<string | null>(null);
+  const [bookingSearchQuery, setBookingSearchQuery] = useState('');
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'ALL' | 'PENDING' | 'ACCEPTED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'SPLIT_PENDING'>('ALL');
+  const [escrows, setEscrows]                     = useState<any[]>([]);
+  const [escrowSummary, setEscrowSummary]         = useState<any>(null);
+  const [escrowsLoading, setEscrowsLoading]       = useState(false);
+
+  const fetchBookings = async () => {
+    setBookingsLoading(true);
+    try {
+      const res = await apiClient.get('/bookings/admin/all');
+      setBookings(res.data);
+    } catch (e) {
+      console.error('Failed to load admin bookings', e);
+    } finally {
+      setBookingsLoading(false);
+    }
+  };
+
+  const fetchEscrows = async () => {
+    setEscrowsLoading(true);
+    try {
+      const res = await apiClient.get('/payments/admin/all-escrows');
+      setEscrows(res.data.escrows || []);
+      setEscrowSummary(res.data.summary || null);
+    } catch (e) {
+      console.error('Failed to load admin escrows', e);
+    } finally {
+      setEscrowsLoading(false);
+    }
+  };
+
+  const handleForceReleaseEscrow = async (escrowId: string) => {
+    Alert.alert('Release Escrow Funds', 'Are you sure you want to forcibly release these escrow funds to the handyman wallet?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Release Funds',
+        style: 'destructive',
+        onPress: async () => {
+          setUpdatingBookingId(escrowId);
+          try {
+            await apiClient.post(`/payments/admin/force-release-escrow/${escrowId}`);
+            Alert.alert('Escrow Released', 'Payment has been released successfully to the professional.');
+            fetchBookings();
+            fetchEscrows();
+          } catch (err: any) {
+            Alert.alert('Error', err.response?.data?.error || 'Failed to release escrow.');
+          } finally {
+            setUpdatingBookingId(null);
+          }
+        }
+      }
+    ]);
+  };
 
   // Users state (Admin only)
   const [users, setUsers]                   = useState<any[]>([]);
@@ -211,17 +279,7 @@ export default function AdminScreen() {
     }
   };
 
-  const fetchBookings = async () => {
-    setBookingsLoading(true);
-    try {
-      const res = await apiClient.get('/bookings/admin/all');
-      setBookings(res.data);
-    } catch (e) {
-      console.error('Failed to load admin bookings', e);
-    } finally {
-      setBookingsLoading(false);
-    }
-  };
+
 
   const fetchUsers = async () => {
     setUsersLoading(true);
@@ -659,7 +717,7 @@ export default function AdminScreen() {
     if (loadedTabs.has(tabId)) return; // already loaded
     setLoadedTabs(prev => new Set([...prev, tabId]));
     if (!isAdmin) return;
-    if (tabId === 'bookings') fetchBookings();
+    if (tabId === 'bookings') { fetchBookings(); fetchEscrows(); }
     if (tabId === 'users')    fetchUsers();
     if (tabId === 'kyc')      fetchKycReviews();
     if (tabId === 'orders')   { fetchOrders(); fetchRiders(); }
@@ -756,8 +814,8 @@ export default function AdminScreen() {
     }
 
     const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      quality: 1,
+      allowsEditing: false,
+      quality: 0.8,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -790,8 +848,8 @@ export default function AdminScreen() {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 1,
+      allowsEditing: false,
+      quality: 0.8,
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -839,15 +897,20 @@ export default function AdminScreen() {
         // On web, asset.uri is a blob: URL — fetch it and append as a real Blob
         const blobResponse = await fetch(pickedImageUri);
         const blob = await blobResponse.blob();
-        const filename = `image_${Date.now()}.${blob.type.split('/')[1] || 'jpg'}`;
+        const rawExt = blob.type ? (blob.type.split('/')[1] || 'jpg') : 'jpg';
+        const ext = rawExt === 'jpeg' ? 'jpg' : rawExt;
+        const filename = `product_${Date.now()}.${ext}`;
         formData.append('image', blob, filename);
       } else {
         // Native: React Native FormData supports { uri, name, type }
-        const filename = pickedImageUri.split('/').pop() || 'image.jpg';
-        const ext      = filename.split('.').pop()?.toLowerCase() || 'jpg';
+        let filename = pickedImageUri.split('/').pop() || `product_${Date.now()}.jpg`;
+        if (!filename.includes('.')) {
+          filename = `${filename}.jpg`;
+        }
+        const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
         const mimeType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
         formData.append('image', {
-          uri:  pickedImageUri,
+          uri: pickedImageUri,
           name: filename,
           type: mimeType,
         } as any);
@@ -2992,54 +3055,277 @@ export default function AdminScreen() {
         {/* ── BOOKINGS TAB ── */}
         {activeTab === 'bookings' && isAdmin && (
           <View>
-            <Text style={styles.formTitle}>📋 All Bookings</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={styles.formTitle}>📋 Service Bookings &amp; Payments</Text>
+              <TouchableOpacity
+                onPress={() => { fetchBookings(); fetchEscrows(); }}
+                style={[styles.userAddBtn, { backgroundColor: theme.primary }]}
+              >
+                <Text style={styles.userAddBtnText}>🔄 Refresh</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Metrics Row */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+              <View style={{ flex: 1, minWidth: 140, backgroundColor: '#F0F4FF', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#D0E1FF' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#0052CC', textTransform: 'uppercase' }}>📋 Total Bookings</Text>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#0A2540', marginTop: 4 }}>{bookings.length}</Text>
+              </View>
+              <View style={{ flex: 1, minWidth: 140, backgroundColor: '#FFF8E6', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#FFE5B4' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#B7791F', textTransform: 'uppercase' }}>🛡️ Escrow Held</Text>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: '#744210', marginTop: 4 }}>
+                  ₦{escrowSummary?.heldAmount ? escrowSummary.heldAmount.toLocaleString() : '0'}
+                </Text>
+              </View>
+              <View style={{ flex: 1, minWidth: 140, backgroundColor: '#EBFBEE', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#C3F0CA' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#2B8A3E', textTransform: 'uppercase' }}>⚡ Split Payments</Text>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#1B4B27', marginTop: 4 }}>
+                  {bookings.filter((b: any) => b.isSplitPayment).length}
+                </Text>
+              </View>
+              <View style={{ flex: 1, minWidth: 140, backgroundColor: '#F3F0FF', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: '#E5DBFF' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#6741D9', textTransform: 'uppercase' }}>✅ Completed</Text>
+                <Text style={{ fontSize: 22, fontWeight: '800', color: '#3B1578', marginTop: 4 }}>
+                  {bookings.filter((b: any) => b.status === 'COMPLETED').length}
+                </Text>
+              </View>
+            </View>
+
+            {/* Search Input */}
+            <View style={{ marginBottom: 12 }}>
+              <TextInput
+                style={{
+                  backgroundColor: '#F8F9FA',
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: '#E9ECEF',
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  fontSize: 14,
+                  color: '#1C1C1E',
+                }}
+                placeholder="🔍 Search by customer, handyman, service, address, or booking ID..."
+                placeholderTextColor="#8E8E93"
+                value={bookingSearchQuery}
+                onChangeText={setBookingSearchQuery}
+              />
+            </View>
+
+            {/* Status Filter Pills */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', gap: 8, paddingRight: 16 }}>
+                {[
+                  { id: 'ALL', label: '📋 All' },
+                  { id: 'PENDING', label: '⏳ Pending' },
+                  { id: 'ACCEPTED', label: '🔹 Accepted' },
+                  { id: 'IN_PROGRESS', label: '🛠 In Progress' },
+                  { id: 'COMPLETED', label: '✅ Completed' },
+                  { id: 'CANCELLED', label: '❌ Cancelled' },
+                  { id: 'SPLIT_PENDING', label: '⚡ 50% Split Due' },
+                ].map((pill) => (
+                  <TouchableOpacity
+                    key={pill.id}
+                    onPress={() => setBookingStatusFilter(pill.id as any)}
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 7,
+                      borderRadius: 20,
+                      backgroundColor: bookingStatusFilter === pill.id ? theme.primary : '#F2F2F7',
+                      borderWidth: 1,
+                      borderColor: bookingStatusFilter === pill.id ? theme.primary : '#E5E5EA',
+                    }}
+                  >
+                    <Text style={{ color: bookingStatusFilter === pill.id ? '#fff' : '#1C1C1E', fontWeight: '700', fontSize: 12 }}>
+                      {pill.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </ScrollView>
+
             {bookingsLoading ? (
               <ActivityIndicator size="large" color={theme.primary} style={{ marginTop: 20 }} />
-            ) : bookings.length === 0 ? (
-              <Text style={styles.emptyText}>No bookings found.</Text>
+            ) : bookings.filter((b: any) => {
+                const q = bookingSearchQuery.toLowerCase().trim();
+                const matchesSearch = !q ||
+                  (b.id || '').toLowerCase().includes(q) ||
+                  (b.service?.name || '').toLowerCase().includes(q) ||
+                  (b.customer?.name || '').toLowerCase().includes(q) ||
+                  (b.customer?.email || '').toLowerCase().includes(q) ||
+                  (b.customer?.phone || '').toLowerCase().includes(q) ||
+                  (b.handyman?.name || '').toLowerCase().includes(q) ||
+                  (b.address || '').toLowerCase().includes(q);
+
+                if (!matchesSearch) return false;
+
+                if (bookingStatusFilter === 'ALL') return true;
+                if (bookingStatusFilter === 'SPLIT_PENDING') return Boolean(b.isSplitPayment && b.amountPaid < b.totalPrice);
+                return b.status === bookingStatusFilter;
+              }).length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <Text style={{ fontSize: 40, marginBottom: 12 }}>📋</Text>
+                <Text style={styles.emptyText}>No matching bookings found.</Text>
+              </View>
             ) : (
-              bookings.map((b: any) => (
-                <View key={b.id} style={[styles.listItem, { flexDirection: 'row', alignItems: 'flex-start' }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.listItemName}>{b.service?.name || 'Service'}</Text>
-                    <Text style={styles.listItemMeta}>Customer: {b.customer?.name}</Text>
-                    <Text style={styles.listItemMeta}>Handyman: {b.handyman?.name || 'Unassigned'}</Text>
-                    <Text style={styles.listItemMeta}>Status: <Text style={{ fontWeight: '700' }}>{b.status}</Text></Text>
-                    <Text style={styles.listItemMeta}>Price: ₦{b.totalPrice?.toFixed(2)}</Text>
-                    <Text style={styles.listItemMeta}>Scheduled: {new Date(b.scheduledAt).toLocaleString()}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'column', gap: 6, marginLeft: 8 }}>
-                    {(b.status === 'PENDING' || b.status === 'ACCEPTED' || b.status === 'IN_PROGRESS') && (
-                      <TouchableOpacity
-                        style={[styles.actionBtn, { backgroundColor: '#007AFF', paddingVertical: 8 }]}
-                        onPress={() => navigation.navigate('LiveTracking', { bookingId: b.id, role: 'ADMIN' })}
-                      >
-                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>📍 Track</Text>
-                      </TouchableOpacity>
-                    )}
-                    {b.status !== 'COMPLETED' && b.status !== 'CANCELLED' && (
-                      <TouchableOpacity
-                        style={[styles.actionBtn, { backgroundColor: '#FF9500', paddingVertical: 8 }]}
-                        onPress={() => { setReassignBookingId(b.id); setShowReassignModal(true); }}
-                        disabled={updatingBookingId === b.id}
-                      >
-                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>🔄 Reassign</Text>
-                      </TouchableOpacity>
-                    )}
-                    {b.status !== 'COMPLETED' && b.status !== 'CANCELLED' && (
-                      <TouchableOpacity
-                        style={[styles.actionBtn, { backgroundColor: '#FF3B30', paddingVertical: 8 }]}
-                        onPress={() => handleAdminCancel(b.id)}
-                        disabled={updatingBookingId === b.id}
-                      >
-                        {updatingBookingId === b.id
-                          ? <ActivityIndicator size="small" color="#fff" />
-                          : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>❌ Cancel</Text>}
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              ))
+              bookings
+                .filter((b: any) => {
+                  const q = bookingSearchQuery.toLowerCase().trim();
+                  const matchesSearch = !q ||
+                    (b.id || '').toLowerCase().includes(q) ||
+                    (b.service?.name || '').toLowerCase().includes(q) ||
+                    (b.customer?.name || '').toLowerCase().includes(q) ||
+                    (b.customer?.email || '').toLowerCase().includes(q) ||
+                    (b.customer?.phone || '').toLowerCase().includes(q) ||
+                    (b.handyman?.name || '').toLowerCase().includes(q) ||
+                    (b.address || '').toLowerCase().includes(q);
+
+                  if (!matchesSearch) return false;
+
+                  if (bookingStatusFilter === 'ALL') return true;
+                  if (bookingStatusFilter === 'SPLIT_PENDING') return Boolean(b.isSplitPayment && b.amountPaid < b.totalPrice);
+                  return b.status === bookingStatusFilter;
+                })
+                .map((b: any) => {
+                  const isHeldEscrow = b.escrows && b.escrows.some((e: any) => e.status === 'HELD');
+                  const heldEscrowObj = isHeldEscrow ? b.escrows.find((e: any) => e.status === 'HELD') : null;
+                  const statusBg = b.status === 'COMPLETED' ? '#E6FCF5' : b.status === 'ACCEPTED' ? '#E7F5FF' : b.status === 'IN_PROGRESS' ? '#F3F0FF' : b.status === 'CANCELLED' ? '#FFF5F5' : '#FFF9DB';
+                  const statusColor = b.status === 'COMPLETED' ? '#0CA678' : b.status === 'ACCEPTED' ? '#1C7ED6' : b.status === 'IN_PROGRESS' ? '#7950F2' : b.status === 'CANCELLED' ? '#E03131' : '#F08C00';
+
+                  return (
+                    <View key={b.id} style={[styles.listItem, { flexDirection: 'column', gap: 10, padding: 16 }]}>
+                      {/* Top Row: ID & Status Badge */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={[styles.listItemName, { fontSize: 15 }]}>
+                          Booking #{b.id.substring(0, 8).toUpperCase()}
+                        </Text>
+                        <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: statusBg }}>
+                          <Text style={{ color: statusColor, fontWeight: '800', fontSize: 12 }}>{b.status}</Text>
+                        </View>
+                      </View>
+
+                      {/* Service & Price Banner */}
+                      <View style={{ backgroundColor: '#F8F9FA', borderRadius: 10, padding: 12 }}>
+                        <Text style={{ fontSize: 16, fontWeight: '800', color: '#1C1C1E' }}>{b.service?.name || 'Handyman Service'}</Text>
+                        <Text style={{ fontSize: 12, color: '#8E8E93', marginTop: 2 }}>Category: {b.service?.category || 'General'}</Text>
+
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E9ECEF' }}>
+                          <View>
+                            <Text style={{ fontSize: 11, color: '#8E8E93', textTransform: 'uppercase', fontWeight: '700' }}>Total Price</Text>
+                            <Text style={{ fontSize: 16, fontWeight: '800', color: theme.primary }}>₦{b.totalPrice?.toLocaleString()}</Text>
+                          </View>
+                          {b.isSplitPayment ? (
+                            <View style={{ alignItems: 'flex-end' }}>
+                              <Text style={{ fontSize: 11, color: '#FF9500', fontWeight: '700' }}>⚡ 50% Split Payment</Text>
+                              <Text style={{ fontSize: 12, color: '#1C1C1E', fontWeight: '600' }}>
+                                Paid: ₦{(b.amountPaid || b.totalPrice / 2).toLocaleString()} | Remaining: ₦{(b.totalPrice - (b.amountPaid || b.totalPrice / 2)).toLocaleString()}
+                              </Text>
+                            </View>
+                          ) : (
+                            <View style={{ alignItems: 'flex-end' }}>
+                              <Text style={{ fontSize: 11, color: '#34C759', fontWeight: '700' }}>💳 Full Payment</Text>
+                              <Text style={{ fontSize: 12, color: '#8E8E93' }}>100% Paid</Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* Escrow Chip */}
+                      {isHeldEscrow && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF9DB', borderRadius: 8, padding: 8, borderWidth: 1, borderColor: '#FFE066' }}>
+                          <Text style={{ fontSize: 13, marginRight: 6 }}>🛡️</Text>
+                          <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: '#F08C00' }}>
+                            Escrow Held: ₦{heldEscrowObj?.amount?.toLocaleString()} (Auto-releases on job completion)
+                          </Text>
+                          <TouchableOpacity
+                            style={{ backgroundColor: '#F08C00', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
+                            onPress={() => handleForceReleaseEscrow(heldEscrowObj.id)}
+                            disabled={updatingBookingId === heldEscrowObj.id}
+                          >
+                            {updatingBookingId === heldEscrowObj.id ? (
+                              <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                              <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>Release Now</Text>
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {/* Customer & Handyman Grid */}
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <View style={{ flex: 1, backgroundColor: '#F1F3F5', borderRadius: 8, padding: 8 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: '#495057', textTransform: 'uppercase' }}>👤 Customer</Text>
+                          <Text style={{ fontSize: 13, fontWeight: '700', color: '#212529', marginTop: 2 }}>{b.customer?.name || 'N/A'}</Text>
+                          <Text style={{ fontSize: 11, color: '#6C757D' }}>{b.customer?.phone || b.customer?.email || ''}</Text>
+                        </View>
+                        <View style={{ flex: 1, backgroundColor: '#F1F3F5', borderRadius: 8, padding: 8 }}>
+                          <Text style={{ fontSize: 11, fontWeight: '800', color: '#495057', textTransform: 'uppercase' }}>🛠 Handyman</Text>
+                          {b.handyman ? (
+                            <>
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#212529', marginTop: 2 }}>{b.handyman.name}</Text>
+                              <Text style={{ fontSize: 11, color: '#6C757D' }}>{b.handyman.specialty || b.handyman.phone || 'Assigned'}</Text>
+                            </>
+                          ) : (
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#FF9500', marginTop: 2 }}>⚠️ Unassigned</Text>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* Address & Date */}
+                      <Text style={{ fontSize: 12, color: '#495057' }}>
+                        📍 <Text style={{ fontWeight: '700' }}>Address:</Text> {b.address}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: '#495057' }}>
+                        📅 <Text style={{ fontWeight: '700' }}>Scheduled:</Text> {new Date(b.scheduledAt).toLocaleString()}
+                      </Text>
+
+                      {/* Action Bar */}
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#F1F3F5' }}>
+                        {(b.status === 'PENDING' || b.status === 'ACCEPTED' || b.status === 'IN_PROGRESS') && (
+                          <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: '#007AFF', paddingHorizontal: 12, paddingVertical: 8 }]}
+                            onPress={() => navigation.navigate('LiveTracking', { bookingId: b.id, role: 'ADMIN' })}
+                          >
+                            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>📍 Track Live</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {b.status !== 'COMPLETED' && b.status !== 'CANCELLED' && (
+                          <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: '#FF9500', paddingHorizontal: 12, paddingVertical: 8 }]}
+                            onPress={() => { setReassignBookingId(b.id); setShowReassignModal(true); }}
+                            disabled={updatingBookingId === b.id}
+                          >
+                            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>🔄 Reassign Handyman</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {b.status === 'ACCEPTED' && (
+                          <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: '#34C759', paddingHorizontal: 12, paddingVertical: 8 }]}
+                            onPress={() => handleUpdateBookingStatus(b.id, 'COMPLETED')}
+                            disabled={updatingBookingId === b.id}
+                          >
+                            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>✓ Mark Completed</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {b.status !== 'COMPLETED' && b.status !== 'CANCELLED' && (
+                          <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: '#FF3B30', paddingHorizontal: 12, paddingVertical: 8 }]}
+                            onPress={() => handleAdminCancel(b.id)}
+                            disabled={updatingBookingId === b.id}
+                          >
+                            {updatingBookingId === b.id ? (
+                              <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 11 }}>❌ Cancel Booking</Text>
+                            )}
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
             )}
           </View>
         )}
@@ -3306,6 +3592,46 @@ export default function AdminScreen() {
                     <Text style={styles.listItemMeta}>
                       Submitted: {rev.kycSubmittedAt ? new Date(rev.kycSubmittedAt).toLocaleDateString() : 'N/A'}
                     </Text>
+
+                    {/* Photos Preview for Handyman & Rider */}
+                    {(rev.role === 'HANDYMAN' || rev.role === 'RIDER') && (
+                      <View style={{ marginTop: 10, padding: 12, backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderRadius: 12, borderWidth: 1, borderColor }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: textColor, marginBottom: 8 }}>
+                          📸 Required Verification Photos
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 14, flexWrap: 'wrap' }}>
+                          <View style={{ alignItems: 'center' }}>
+                            <Text style={{ fontSize: 11, color: subtextColor, marginBottom: 4 }}>1. Passport Photo</Text>
+                            {rev.passportPhoto ? (
+                              <TouchableOpacity onPress={() => handleOpenImagePreview(rev.passportPhoto, `${rev.name} - Passport Photo`, 'Clear Face Portrait')}>
+                                <Image source={{ uri: getImageUri(rev.passportPhoto) ?? undefined }} style={{ width: 74, height: 74, borderRadius: 10, borderWidth: 1, borderColor }} />
+                                <Text style={{ fontSize: 10, color: theme.primary, textAlign: 'center', marginTop: 3, fontWeight: '600' }}>🔍 View Large</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <View style={{ width: 74, height: 74, borderRadius: 10, backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5', justifyContent: 'center', alignItems: 'center' }}>
+                                <Text style={{ fontSize: 10, color: '#DC2626', fontWeight: '700', textAlign: 'center' }}>⚠️ Missing{'\n'}Photo</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          <View style={{ alignItems: 'center' }}>
+                            <Text style={{ fontSize: 11, color: subtextColor, marginBottom: 4 }}>
+                              2. Action Picture
+                            </Text>
+                            {rev.actionPhoto ? (
+                              <TouchableOpacity onPress={() => handleOpenImagePreview(rev.actionPhoto, `${rev.name} - Action Picture`, rev.role === 'HANDYMAN' ? 'Service Work / Tools' : 'With Delivery Vehicle')}>
+                                <Image source={{ uri: getImageUri(rev.actionPhoto) ?? undefined }} style={{ width: 74, height: 74, borderRadius: 10, borderWidth: 1, borderColor }} />
+                                <Text style={{ fontSize: 10, color: theme.primary, textAlign: 'center', marginTop: 3, fontWeight: '600' }}>🔍 View Large</Text>
+                              </TouchableOpacity>
+                            ) : (
+                              <View style={{ width: 74, height: 74, borderRadius: 10, backgroundColor: '#FEE2E2', borderWidth: 1, borderColor: '#FCA5A5', justifyContent: 'center', alignItems: 'center' }}>
+                                <Text style={{ fontSize: 10, color: '#DC2626', fontWeight: '700', textAlign: 'center' }}>⚠️ Missing{'\n'}Photo</Text>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    )}
 
                     {/* Registration Completeness Indicator */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 }}>
@@ -3881,6 +4207,15 @@ export default function AdminScreen() {
         <View style={{ height: 40 }} />
         </ResponsiveContainer>
       </ScrollView>
+
+      {/* High-Resolution Photo Viewer Modal */}
+      <ImageViewerModal
+        visible={previewModalVisible}
+        imageUrl={previewImageUrl}
+        title={previewImageTitle}
+        subtitle={previewImageSubtitle}
+        onClose={() => setPreviewModalVisible(false)}
+      />
     </View>
   );
 }

@@ -14,7 +14,21 @@ import { useCurrency } from '../context/CurrencyContext';
 const TIME_SLOTS = ['08:00 AM', '10:00 AM', '12:00 PM', '02:00 PM', '04:00 PM', '06:00 PM'];
 
 export default function BookingSetupScreen({ route, navigation }: any) {
-  const { service } = route.params;
+  const preselectedHandyman = route.params?.preselectedHandyman;
+  const service = route.params?.service || (preselectedHandyman ? {
+    id: preselectedHandyman.specialty || 'General',
+    name: `${preselectedHandyman.name} (${preselectedHandyman.specialty || 'Specialist'})`,
+    category: preselectedHandyman.specialty || 'General',
+    basePrice: 5000,
+    description: `Book certified professional ${preselectedHandyman.name}`,
+  } : {
+    id: 'general-service',
+    name: 'General Handyman Service',
+    category: 'General',
+    basePrice: 5000,
+    description: 'Professional maintenance and repair service',
+  });
+
   const { userToken } = useContext(AuthContext);
   const { theme, colorMode } = useContext(SettingsContext);
   const { fmt } = useCurrency();
@@ -25,7 +39,7 @@ export default function BookingSetupScreen({ route, navigation }: any) {
   const [longitude, setLongitude] = useState(route.params?.savedLongitude || 3.3792);
   const [selectedDate, setSelectedDate] = useState<string>(route.params?.savedDate || 'Tomorrow');
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>(route.params?.savedTimeSlot || '10:00 AM');
-  const [autoAssign, setAutoAssign] = useState(true);
+  const [autoAssign, setAutoAssign] = useState(preselectedHandyman ? false : true);
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
@@ -36,7 +50,7 @@ export default function BookingSetupScreen({ route, navigation }: any) {
   ];
 
   const bookingRedirectParams = {
-    service, savedAddress: address, savedLatitude: latitude,
+    service, preselectedHandyman, savedAddress: address, savedLatitude: latitude,
     savedLongitude: longitude, savedDate: selectedDate,
     savedTimeSlot: selectedTimeSlot, autoProceed: true,
   };
@@ -70,7 +84,13 @@ export default function BookingSetupScreen({ route, navigation }: any) {
     if (!userToken) {
       navigation.navigate('Checkout', {
         checkoutType: 'booking', isGuest: true, service,
-        bookingParams: { serviceId: service.id, scheduledAt: scheduledDate.toISOString(), address, latitude, longitude, autoAssign },
+        bookingParams: {
+          serviceId: service.id,
+          scheduledAt: scheduledDate.toISOString(),
+          address, latitude, longitude,
+          autoAssign: preselectedHandyman ? false : autoAssign,
+          handymanId: preselectedHandyman?.id || undefined,
+        },
         amount: service.basePrice,
       });
       return;
@@ -81,7 +101,9 @@ export default function BookingSetupScreen({ route, navigation }: any) {
       const res = await apiClient.post('/bookings', {
         serviceId: service.id,
         scheduledAt: scheduledDate.toISOString(),
-        address, latitude, longitude, autoAssign,
+        address, latitude, longitude,
+        autoAssign: preselectedHandyman ? false : autoAssign,
+        handymanId: preselectedHandyman?.id || undefined,
       });
       setLoading(false);
       const handyman = res.data.handyman;

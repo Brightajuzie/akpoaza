@@ -226,4 +226,54 @@ router.patch('/:id/boost', authenticateToken, async (req: AuthRequest, res: Resp
   }
 });
 
+// Get verified Handymen and Riders specialists to display on Services screen
+router.get('/public/specialists', async (req, res, next) => {
+  try {
+    const specialists = await prisma.user.findMany({
+      where: {
+        role: { in: ['HANDYMAN', 'RIDER'] },
+        verificationStatus: 'VERIFIED',
+      },
+      select: {
+        id: true,
+        name: true,
+        role: true,
+        specialty: true,
+        vehicleType: true,
+        licensePlate: true,
+        passportPhoto: true,
+        actionPhoto: true,
+        address: true,
+        phone: true,
+        _count: {
+          select: {
+            jobs: { where: { status: 'COMPLETED' } },
+            deliveries: { where: { status: 'DELIVERED' } },
+          },
+        },
+      },
+      take: 20,
+    });
+
+    const formatted = specialists.map((s) => ({
+      id: s.id,
+      name: s.name,
+      role: s.role,
+      specialty: s.specialty || (s.role === 'HANDYMAN' ? 'General Maintenance' : 'Express Delivery'),
+      vehicleType: s.vehicleType || (s.role === 'RIDER' ? 'Motorcycle' : null),
+      licensePlate: s.licensePlate,
+      passportPhoto: s.passportPhoto,
+      actionPhoto: s.actionPhoto,
+      address: s.address,
+      phone: s.phone,
+      rating: 4.9,
+      completedJobs: (s._count?.jobs || 0) + (s._count?.deliveries || 0),
+    }));
+
+    res.json(formatted);
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

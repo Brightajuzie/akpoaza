@@ -224,4 +224,55 @@ router.patch('/:id/boost', auth_1.authenticateToken, (req, res, next) => __await
         next(error);
     }
 }));
+// Get verified Handymen and Riders specialists to display on Services screen
+router.get('/public/specialists', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const specialists = yield prisma_1.default.user.findMany({
+            where: {
+                role: { in: ['HANDYMAN', 'RIDER'] },
+                verificationStatus: 'VERIFIED',
+            },
+            select: {
+                id: true,
+                name: true,
+                role: true,
+                specialty: true,
+                vehicleType: true,
+                licensePlate: true,
+                passportPhoto: true,
+                actionPhoto: true,
+                address: true,
+                phone: true,
+                _count: {
+                    select: {
+                        jobs: { where: { status: 'COMPLETED' } },
+                        deliveries: { where: { status: 'DELIVERED' } },
+                    },
+                },
+            },
+            take: 20,
+        });
+        const formatted = specialists.map((s) => {
+            var _a, _b;
+            return ({
+                id: s.id,
+                name: s.name,
+                role: s.role,
+                specialty: s.specialty || (s.role === 'HANDYMAN' ? 'General Maintenance' : 'Express Delivery'),
+                vehicleType: s.vehicleType || (s.role === 'RIDER' ? 'Motorcycle' : null),
+                licensePlate: s.licensePlate,
+                passportPhoto: s.passportPhoto,
+                actionPhoto: s.actionPhoto,
+                address: s.address,
+                phone: s.phone,
+                rating: 4.9,
+                completedJobs: (((_a = s._count) === null || _a === void 0 ? void 0 : _a.jobs) || 0) + (((_b = s._count) === null || _b === void 0 ? void 0 : _b.deliveries) || 0),
+            });
+        });
+        res.json(formatted);
+    }
+    catch (error) {
+        next(error);
+    }
+}));
 exports.default = router;

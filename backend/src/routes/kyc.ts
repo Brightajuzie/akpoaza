@@ -38,6 +38,9 @@ router.get('/status', authenticateToken, async (req: AuthRequest, res: Response)
         kycSubmittedAt: true,
         opayPhone: true,
         rejectionReason: true,
+        passportPhoto: true,
+        actionPhoto: true,
+        profileImage: true,
       },
     });
 
@@ -290,7 +293,9 @@ router.post('/submit', authenticateToken, async (req: AuthRequest, res: Response
     longitude, 
     specialty, 
     vehicleType, 
-    licensePlate 
+    licensePlate,
+    passportPhoto,
+    actionPhoto,
   } = req.body;
 
   if (!bvn && !nin && !referenceId) {
@@ -330,6 +335,9 @@ router.post('/submit', authenticateToken, async (req: AuthRequest, res: Response
     const effectiveSpecialty = currentUser.role === 'HANDYMAN' ? (specialty || currentUser.specialty) : null;
     const effectiveVehicleType = currentUser.role === 'RIDER' ? (vehicleType || currentUser.vehicleType) : null;
     const effectiveLicensePlate = currentUser.role === 'RIDER' ? (licensePlate || currentUser.licensePlate) : null;
+    const effectivePassportPhoto = passportPhoto || currentUser.passportPhoto;
+    const effectiveActionPhoto = actionPhoto || currentUser.actionPhoto;
+    const effectiveProfileImage = effectivePassportPhoto || currentUser.profileImage;
 
     // Check registration completeness
     const hasContact = Boolean(effectivePhone || effectiveOpayPhone);
@@ -370,6 +378,9 @@ router.post('/submit', authenticateToken, async (req: AuthRequest, res: Response
         specialty: effectiveSpecialty,
         vehicleType: effectiveVehicleType,
         licensePlate: effectiveLicensePlate,
+        passportPhoto: effectivePassportPhoto,
+        actionPhoto: effectiveActionPhoto,
+        profileImage: effectiveProfileImage,
         rejectionReason: null, // Clear any previous rejection
       },
     });
@@ -449,6 +460,9 @@ router.get('/admin/reviews', authenticateToken, async (req: AuthRequest, res: Re
         specialty: true,
         vehicleType: true,
         licensePlate: true,
+        passportPhoto: true,
+        actionPhoto: true,
+        profileImage: true,
         latitude: true,
         longitude: true,
         createdAt: true,
@@ -467,6 +481,10 @@ router.get('/admin/reviews', authenticateToken, async (req: AuthRequest, res: Re
       if (!u.bvnHash && !u.kycReferenceId) missing.push('Identity / BVN');
       if (u.role === 'HANDYMAN' && !u.specialty) missing.push('Service Specialty');
       if (u.role === 'RIDER' && !u.vehicleType && !u.licensePlate) missing.push('Vehicle / Plate');
+      if (u.role === 'HANDYMAN' || u.role === 'RIDER') {
+        if (!u.passportPhoto) missing.push('Passport Photo');
+        if (!u.actionPhoto) missing.push('Action Photo');
+      }
 
       const isRegistrationComplete = missing.length === 0;
 

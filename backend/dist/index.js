@@ -95,6 +95,88 @@ app.get('/download/aab', (req, res) => sendAabFile(res));
 app.get('/api/download/aab', (req, res) => sendAabFile(res));
 // Serve static uploads folder
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../uploads')));
+// ── Google SEO: Dynamic XML Sitemap ──────────────────────────────────────────
+const generateSitemap = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const host = req.get('host') || 'fixmart.ng';
+        const protocol = req.protocol || 'https';
+        const baseUrl = `${protocol}://${host}`;
+        const [products, services] = yield Promise.all([
+            prisma_1.default.product.findMany({ select: { id: true, updatedAt: true } }),
+            prisma_1.default.service.findMany({ select: { id: true, updatedAt: true } }),
+        ]);
+        const staticRoutes = [
+            { loc: '/', changefreq: 'daily', priority: '1.0' },
+            { loc: '/shop', changefreq: 'daily', priority: '0.9' },
+            { loc: '/services', changefreq: 'daily', priority: '0.9' },
+            { loc: '/login', changefreq: 'monthly', priority: '0.4' },
+            { loc: '/signup', changefreq: 'monthly', priority: '0.5' },
+        ];
+        let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+        xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+        // Static Pages
+        staticRoutes.forEach((route) => {
+            xml += `  <url>\n`;
+            xml += `    <loc>${baseUrl}${route.loc}</loc>\n`;
+            xml += `    <changefreq>${route.changefreq}</changefreq>\n`;
+            xml += `    <priority>${route.priority}</priority>\n`;
+            xml += `  </url>\n`;
+        });
+        // Dynamic Products
+        products.forEach((p) => {
+            xml += `  <url>\n`;
+            xml += `    <loc>${baseUrl}/products/${p.id}</loc>\n`;
+            xml += `    <lastmod>${(p.updatedAt || new Date()).toISOString()}</lastmod>\n`;
+            xml += `    <changefreq>weekly</changefreq>\n`;
+            xml += `    <priority>0.8</priority>\n`;
+            xml += `  </url>\n`;
+        });
+        // Dynamic Services
+        services.forEach((s) => {
+            xml += `  <url>\n`;
+            xml += `    <loc>${baseUrl}/services/${s.id}</loc>\n`;
+            xml += `    <lastmod>${(s.updatedAt || new Date()).toISOString()}</lastmod>\n`;
+            xml += `    <changefreq>weekly</changefreq>\n`;
+            xml += `    <priority>0.8</priority>\n`;
+            xml += `  </url>\n`;
+        });
+        xml += `</urlset>`;
+        res.header('Content-Type', 'application/xml');
+        res.send(xml);
+    }
+    catch (error) {
+        console.error('[GoogleSitemap] Failed to generate sitemap:', error);
+        res.status(500).send('Error generating sitemap');
+    }
+});
+app.get('/sitemap.xml', generateSitemap);
+app.get('/api/sitemap.xml', generateSitemap);
+// ── Google SEO: robots.txt ───────────────────────────────────────────────────
+const sendRobotsTxt = (req, res) => {
+    const host = req.get('host') || 'fixmart.ng';
+    const protocol = req.protocol || 'https';
+    const sitemapUrl = `${protocol}://${host}/sitemap.xml`;
+    const robots = `# Google & Global Search Engine Crawler Rules
+User-agent: Googlebot
+Allow: /
+
+User-agent: Googlebot-Image
+Allow: /uploads/
+Allow: /
+
+User-agent: *
+Allow: /
+Disallow: /api/
+Allow: /api/sitemap.xml
+Allow: /api/robots.txt
+
+Sitemap: ${sitemapUrl}
+`;
+    res.header('Content-Type', 'text/plain');
+    res.send(robots);
+};
+app.get('/robots.txt', sendRobotsTxt);
+app.get('/api/robots.txt', sendRobotsTxt);
 // Root route
 app.get('/', (req, res) => {
     res.status(200).json({

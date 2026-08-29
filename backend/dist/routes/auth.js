@@ -127,6 +127,9 @@ router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, functio
                 longitude: (role === 'HANDYMAN' || role === 'VENDOR' || role === 'RIDER') && longitude !== undefined && longitude !== null ? parseFloat(longitude) : null,
                 vehicleType: role === 'RIDER' ? req.body.vehicleType : null,
                 licensePlate: role === 'RIDER' ? req.body.licensePlate : null,
+                passportPhoto: req.body.passportPhoto || null,
+                actionPhoto: req.body.actionPhoto || null,
+                profileImage: req.body.passportPhoto || req.body.profileImage || null,
                 bvnHash,
                 kycReferenceId: kycReferenceId || null,
                 kycSubmittedAt: kycReferenceId ? new Date() : null,
@@ -318,6 +321,8 @@ router.get('/me', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void
                 currentLng: true,
                 specialty: true,
                 profileImage: true,
+                passportPhoto: true,
+                actionPhoto: true,
                 verificationStatus: true,
                 kycReferenceId: true,
                 kycSubmittedAt: true,
@@ -375,13 +380,13 @@ router.patch('/location', auth_1.authenticateToken, (req, res) => __awaiter(void
         res.status(500).json({ error: 'Failed to update location' });
     }
 }));
-// Update Current User Profile (name, phone, address, country, currency)
+// Update Current User Profile (name, phone, address, country, currency, photos)
 router.patch('/profile', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
     if (!userId)
         return res.status(401).json({ error: 'Unauthorized' });
-    const { name, phone, address, country, currency } = req.body;
+    const { name, phone, address, country, currency, passportPhoto, actionPhoto, profileImage } = req.body;
     try {
         const updatedUser = yield prisma_1.default.user.update({
             where: { id: userId },
@@ -391,6 +396,9 @@ router.patch('/profile', auth_1.authenticateToken, (req, res) => __awaiter(void 
                 address: address !== undefined ? address : undefined,
                 country: country || undefined,
                 currency: currency || undefined,
+                passportPhoto: passportPhoto !== undefined ? passportPhoto : undefined,
+                actionPhoto: actionPhoto !== undefined ? actionPhoto : undefined,
+                profileImage: profileImage !== undefined ? profileImage : (passportPhoto || undefined),
             },
             select: {
                 id: true,
@@ -400,6 +408,8 @@ router.patch('/profile', auth_1.authenticateToken, (req, res) => __awaiter(void 
                 phone: true,
                 address: true,
                 profileImage: true,
+                passportPhoto: true,
+                actionPhoto: true,
                 country: true,
                 currency: true,
                 verificationStatus: true,

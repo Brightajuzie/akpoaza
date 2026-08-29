@@ -3,12 +3,14 @@ import {
   View, Text, FlatList, StyleSheet, ActivityIndicator,
   TouchableOpacity, Alert, TextInput, Modal, Image,
   KeyboardAvoidingView, Platform, useWindowDimensions, RefreshControl,
+  ScrollView, Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import apiClient, { getImageUri } from '../api/client';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
 import FloatingCartBar from '../components/FloatingCartBar';
+import ImageViewerModal from '../components/ImageViewerModal';
 
 interface ChatMessage {
   id: string; text: string;
@@ -29,6 +31,9 @@ const CATEGORY_CONFIG: Record<string, { icon: string; color: string; bg: string 
 export default function ServicesScreen({ navigation }: any) {
   const [services, setServices] = useState<any[]>([]);
   const [filteredServices, setFilteredServices] = useState<any[]>([]);
+  const [specialists, setSpecialists] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'catalog' | 'personnel'>('catalog');
+  const [specialistRoleFilter, setSpecialistRoleFilter] = useState<'ALL' | 'HANDYMAN' | 'RIDER'>('ALL');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +41,19 @@ export default function ServicesScreen({ navigation }: any) {
   const [searchFocused, setSearchFocused] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [ratingsMap, setRatingsMap] = useState<Record<string, { averageRating: number | null; count: number }>>({});
+
+  // Image Viewer Modal state
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState('');
+  const [previewSub, setPreviewSub] = useState('');
+
+  const openImageZoom = (url: string, title?: string, subtitle?: string) => {
+    setPreviewUrl(url);
+    setPreviewTitle(title || 'Verification Photo');
+    setPreviewSub(subtitle || '');
+    setPreviewVisible(true);
+  };
 
   const { theme, colorMode } = useContext(SettingsContext);
   const { fmt } = useCurrency();
@@ -72,13 +90,20 @@ export default function ServicesScreen({ navigation }: any) {
       else setLoading(true);
       setError(null);
 
-      const res = await apiClient.get('/services');
-      const data = res.data;
-      setServices(data);
-      setFilteredServices(data);
+      const [servicesRes, specialistsRes] = await Promise.allSettled([
+        apiClient.get('/services'),
+        apiClient.get('/services/public/specialists'),
+      ]);
 
-      // ── Show cards immediately, then fill in ratings in the background ──
-      fetchRatings(data);
+      if (servicesRes.status === 'fulfilled') {
+        const data = servicesRes.value.data;
+        setServices(data);
+        setFilteredServices(data);
+        fetchRatings(data);
+      }
+      if (specialistsRes.status === 'fulfilled') {
+        setSpecialists(specialistsRes.value.data || []);
+      }
     } catch (e: any) {
       console.error('Failed to fetch services', e);
       setError('Could not load services. Please check your connection and try again.');
@@ -106,6 +131,17 @@ export default function ServicesScreen({ navigation }: any) {
     }
     setFilteredServices(result);
   }, [search, selectedCategory, services]);
+
+  const filteredSpecialists = specialists.filter(s => {
+    if (specialistRoleFilter !== 'ALL' && s.role !== specialistRoleFilter) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (s.name ?? '').toLowerCase().includes(q) ||
+        (s.specialty ?? '').toLowerCase().includes(q) ||
+        (s.address ?? '').toLowerCase().includes(q);
+    }
+    return true;
+  });
 
   const handleBookService = (service: any) =>
     navigation.navigate('BookingSetup', { service });
@@ -238,15 +274,156 @@ export default function ServicesScreen({ navigation }: any) {
     );
   };
 
+  const renderSpecialistCard = ({ item }: any) => {
+    const isHandyman = item.role === 'HANDYMAN';
+    return (
+      <View style={[
+        styles.specialistCard,
+        { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' },
+        { margin: 8, flex: numColumns > 1 ? 1 : undefined },
+      ]}>
+        {/* Header with Passport Photo */}
+        <View style={styles.specialistHeaderRow}>
+          <TouchableOpacity
+            style={styles.passportAvatarWrap}
+            onPress={() => item.passportPhoto && openImageZoom(item.passportPhoto, `${item.name} - Passport Photo`, 'Clear Face Portrait')}
+            activeOpacity={0.85}
+          >
+            {item.passportPhoto ? (
+              <Image source={{ uri: getImageUri(item.passportPhoto) ?? undefined }} style={styles.passportAvatar} />
+            ) : (
+              <View style={[styles.passportAvatarFallback, { backgroundColor: isHandyman ? '#E0F2FE' : '#DCFCE7' }]}>
+                <Text style={{ fontSize: 24 }}>{isHandyman ? '🛠️' : '🏍️'}</Text>
+              </View>
+            )}
+            <View style={styles.verifiedCheckBadge}>
+              <Text style={{ fontSize: 10, color: '#FFF', fontWeight: '900' }}>✓</Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[styles.specialistName, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <View style={[styles.roleBadge, { backgroundColor: isHandyman ? '#E0F2FE' : '#DCFCE7' }]}>
+                <Text style={[styles.roleBadgeText, { color: isHandyman ? '#0284C7' : '#16A34A' }]}>
+                  {isHandyman ? 'SERVICES' : 'COURIER'}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={[styles.specialistSub, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+              {isHandyman ? `🔧 ${item.specialty}` : `🏍️ ${item.vehicleType || 'Motorcycle'}${item.licensePlate ? ` · ${item.licensePlate}` : ''}`}
+            </Text>
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ color: '#F59E0B', fontSize: 12, marginRight: 2 }}>★</Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#F1F5F9' : '#0F172A' }}>
+                  {item.rating ? Number(item.rating).toFixed(1) : '4.9'}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 11, color: isDark ? '#64748B' : '#94A3B8' }}>
+                • {item.completedJobs || 0} jobs completed
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Action Picture Section */}
+        <View style={styles.actionPhotoSection}>
+          <Text style={[styles.actionPhotoTitle, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+            {isHandyman ? '🛠️ On the Job (Action Picture):' : '🏍️ Vehicle & Equipment (Action Picture):'}
+          </Text>
+          {item.actionPhoto ? (
+            <TouchableOpacity
+              style={styles.actionPhotoWrap}
+              onPress={() => openImageZoom(item.actionPhoto, `${item.name} - Action Picture`, isHandyman ? 'Service Work / Tools' : 'Delivery Vehicle & Equipment')}
+              activeOpacity={0.9}
+            >
+              <Image source={{ uri: getImageUri(item.actionPhoto) ?? undefined }} style={styles.actionPhotoImg} resizeMode="cover" />
+              <LinearGradient colors={['transparent', 'rgba(0,0,0,0.65)']} style={styles.actionPhotoOverlay}>
+                <Text style={styles.actionPhotoOverlayText}>🔍 Tap to inspect</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.actionPhotoFallback, { backgroundColor: isDark ? '#0F172A' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+              <Text style={{ fontSize: 26, marginBottom: 2 }}>{isHandyman ? '🛠️' : '🏍️'}</Text>
+              <Text style={{ fontSize: 11, color: isDark ? '#64748B' : '#94A3B8', fontWeight: '600' }}>
+                {isHandyman ? 'Verified Service Personnel' : 'Verified Courier Rider'}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.specialistBtnRow}>
+          <TouchableOpacity
+            style={[styles.specialistChatBtn, { borderColor: theme.primary + '60' }]}
+            onPress={() => {
+              if (item.phone) {
+                Alert.alert('Contact Specialist', `Reach out to ${item.name}:`, [
+                  { text: '📞 Call', onPress: () => Linking.openURL(`tel:${item.phone}`) },
+                  { text: '💬 WhatsApp', onPress: () => Linking.openURL(`whatsapp://send?phone=${item.phone}`) },
+                  { text: 'Cancel', style: 'cancel' },
+                ]);
+              } else {
+                handleOpenChat({ name: item.name, category: item.specialty || 'General' });
+              }
+            }}
+          >
+            <Text style={[styles.specialistChatBtnText, { color: theme.primary }]}>💬 Contact</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.specialistBookBtn, { backgroundColor: theme.primary }]}
+            onPress={() => {
+              if (isHandyman) {
+                navigation.navigate('BookingSetup', { preselectedHandyman: item });
+              } else {
+                navigation.navigate('BookParcel');
+              }
+            }}
+          >
+            <Text style={styles.specialistBookBtnText}>
+              {isHandyman ? 'Book Handyman →' : 'Book Delivery →'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <View style={[styles.header, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderBottomColor: isDark ? '#334155' : '#E2E8F0' }]}>
-        <Text style={[styles.pageTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>🛠️ Find a Professional</Text>
+        <Text style={[styles.pageTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>🛠️ Services &amp; Specialists</Text>
         <Text style={[styles.pageSubtitle, { color: isDark ? '#64748B' : '#94A3B8' }]}>
-          Verified specialists near you
+          Verified technicians &amp; courier riders near you
         </Text>
+
+        {/* Top Tab Switcher */}
+        <View style={[styles.tabBarWrap, { backgroundColor: isDark ? '#0F172A' : '#F1F5F9' }]}>
+          <TouchableOpacity
+            style={[styles.topTabBtn, activeTab === 'catalog' && { backgroundColor: theme.primary }]}
+            onPress={() => setActiveTab('catalog')}
+          >
+            <Text style={[styles.topTabBtnText, activeTab === 'catalog' && { color: '#FFFFFF', fontWeight: '800' }]}>
+              🛠️ Services ({filteredServices.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.topTabBtn, activeTab === 'personnel' && { backgroundColor: theme.primary }]}
+            onPress={() => setActiveTab('personnel')}
+          >
+            <Text style={[styles.topTabBtnText, activeTab === 'personnel' && { color: '#FFFFFF', fontWeight: '800' }]}>
+              👷 Verified Personnel ({specialists.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Search */}
         <View style={[
@@ -256,7 +433,7 @@ export default function ServicesScreen({ navigation }: any) {
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
             style={[styles.searchInput, { color: isDark ? '#F1F5F9' : '#0F172A' }]}
-            placeholder="Search plumbing, electrical, cleaning..."
+            placeholder={activeTab === 'catalog' ? "Search plumbing, electrical, cleaning..." : "Search handyman name, specialty, rider..."}
             placeholderTextColor={isDark ? '#475569' : '#94A3B8'}
             value={search}
             onChangeText={setSearch}
@@ -270,37 +447,60 @@ export default function ServicesScreen({ navigation }: any) {
           )}
         </View>
 
-        {/* Category Pills */}
-        <FlatList
-          data={categories}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={c => c}
-          contentContainerStyle={styles.pillList}
-          renderItem={({ item }) => {
-            const active = selectedCategory === item;
-            const conf = item !== 'All' ? getCatConf(item) : null;
-            return (
+        {/* Category Pills for Services OR Role Pills for Personnel */}
+        {activeTab === 'catalog' ? (
+          <FlatList
+            data={categories}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={c => c}
+            contentContainerStyle={styles.pillList}
+            renderItem={({ item }) => {
+              const active = selectedCategory === item;
+              const conf = item !== 'All' ? getCatConf(item) : null;
+              return (
+                <TouchableOpacity
+                  style={[
+                    styles.pill,
+                    { backgroundColor: active ? (conf?.color || theme.primary) : (isDark ? '#0F172A' : '#F1F5F9'), borderColor: active ? (conf?.color || theme.primary) : (isDark ? '#334155' : '#E2E8F0') }
+                  ]}
+                  onPress={() => setSelectedCategory(item)}
+                >
+                  {conf && <Text style={styles.pillIcon}>{conf.icon}</Text>}
+                  <Text style={[styles.pillText, { color: active ? '#FFF' : (isDark ? '#94A3B8' : '#64748B') }]}>{item}</Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        ) : (
+          <View style={{ flexDirection: 'row', paddingHorizontal: 16, paddingBottom: 10, gap: 8 }}>
+            {[
+              { id: 'ALL', label: `All (${specialists.length})` },
+              { id: 'HANDYMAN', label: `🛠️ Handymen (${specialists.filter(s => s.role === 'HANDYMAN').length})` },
+              { id: 'RIDER', label: `🏍️ Riders (${specialists.filter(s => s.role === 'RIDER').length})` },
+            ].map(r => (
               <TouchableOpacity
+                key={r.id}
                 style={[
                   styles.pill,
-                  { backgroundColor: active ? (conf?.color || theme.primary) : (isDark ? '#0F172A' : '#F1F5F9'), borderColor: active ? (conf?.color || theme.primary) : (isDark ? '#334155' : '#E2E8F0') }
+                  { backgroundColor: specialistRoleFilter === r.id ? theme.primary : (isDark ? '#0F172A' : '#F1F5F9'), borderColor: specialistRoleFilter === r.id ? theme.primary : (isDark ? '#334155' : '#E2E8F0') }
                 ]}
-                onPress={() => setSelectedCategory(item)}
+                onPress={() => setSpecialistRoleFilter(r.id as any)}
               >
-                {conf && <Text style={styles.pillIcon}>{conf.icon}</Text>}
-                <Text style={[styles.pillText, { color: active ? '#FFF' : (isDark ? '#94A3B8' : '#64748B') }]}>{item}</Text>
+                <Text style={[styles.pillText, { color: specialistRoleFilter === r.id ? '#FFF' : (isDark ? '#94A3B8' : '#64748B') }]}>
+                  {r.label}
+                </Text>
               </TouchableOpacity>
-            );
-          }}
-        />
+            ))}
+          </View>
+        )}
       </View>
 
-      {/* ── Services Grid ─────────────────────────────────────────────────── */}
+      {/* ── Main Content ─────────────────────────────────────────────────── */}
       {loading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={theme.primary} />
-          <Text style={[styles.loadingText, { color: isDark ? '#64748B' : '#94A3B8' }]}>Loading services...</Text>
+          <Text style={[styles.loadingText, { color: isDark ? '#64748B' : '#94A3B8' }]}>Loading services &amp; specialists...</Text>
         </View>
       ) : error ? (
         <View style={styles.loadingWrap}>
@@ -314,7 +514,7 @@ export default function ServicesScreen({ navigation }: any) {
             <Text style={styles.emptyResetText}>Retry</Text>
           </TouchableOpacity>
         </View>
-      ) : (
+      ) : activeTab === 'catalog' ? (
         <FlatList
           key={`svc-${numColumns}`}
           data={filteredServices}
@@ -322,6 +522,49 @@ export default function ServicesScreen({ navigation }: any) {
           numColumns={numColumns}
           contentContainerStyle={[styles.list, { paddingBottom: 110 }]}
           showsVerticalScrollIndicator={false}
+          ListHeaderComponent={specialists.length > 0 ? (
+            <View style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 8, marginBottom: 8 }}>
+                <Text style={{ fontSize: 15, fontWeight: '800', color: isDark ? '#F1F5F9' : '#0F172A' }}>
+                  🌟 Verified Specialists &amp; Riders
+                </Text>
+                <TouchableOpacity onPress={() => setActiveTab('personnel')}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: theme.primary }}>View All ›</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 4, gap: 10 }}>
+                {specialists.slice(0, 8).map(spec => (
+                  <TouchableOpacity
+                    key={spec.id}
+                    style={[
+                      styles.specialistReelCard,
+                      { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }
+                    ]}
+                    onPress={() => setActiveTab('personnel')}
+                    activeOpacity={0.85}
+                  >
+                    <TouchableOpacity
+                      onPress={() => spec.passportPhoto && openImageZoom(spec.passportPhoto, `${spec.name} - Passport Photo`)}
+                    >
+                      {spec.passportPhoto ? (
+                        <Image source={{ uri: getImageUri(spec.passportPhoto) ?? undefined }} style={styles.specialistReelAvatar} />
+                      ) : (
+                        <View style={[styles.specialistReelAvatarFallback, { backgroundColor: spec.role === 'HANDYMAN' ? '#E0F2FE' : '#DCFCE7' }]}>
+                          <Text style={{ fontSize: 18 }}>{spec.role === 'HANDYMAN' ? '🛠️' : '🏍️'}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                    <Text style={[styles.specialistReelName, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={1}>
+                      {spec.name}
+                    </Text>
+                    <Text style={[styles.specialistReelRole, { color: spec.role === 'HANDYMAN' ? '#0284C7' : '#16A34A' }]} numberOfLines={1}>
+                      {spec.role === 'HANDYMAN' ? spec.specialty : 'Courier'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
           renderItem={renderServiceCard}
           refreshControl={
             <RefreshControl
@@ -342,6 +585,32 @@ export default function ServicesScreen({ navigation }: any) {
               >
                 <Text style={styles.emptyResetText}>Clear Filters</Text>
               </TouchableOpacity>
+            </View>
+          }
+        />
+      ) : (
+        /* Personnel FlatList */
+        <FlatList
+          key={`pers-${numColumns}`}
+          data={filteredSpecialists}
+          keyExtractor={i => i.id}
+          numColumns={numColumns}
+          contentContainerStyle={[styles.list, { paddingBottom: 110 }]}
+          showsVerticalScrollIndicator={false}
+          renderItem={renderSpecialistCard}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => fetchServices(true)}
+              colors={[theme.primary]}
+              tintColor={theme.primary}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyIcon}>👷</Text>
+              <Text style={[styles.emptyTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>No personnel found</Text>
+              <Text style={[styles.emptySub, { color: isDark ? '#64748B' : '#94A3B8' }]}>No verified handymen or riders matched your search filter.</Text>
             </View>
           }
         />
@@ -443,6 +712,15 @@ export default function ServicesScreen({ navigation }: any) {
           </KeyboardAvoidingView>
         )}
       </Modal>
+
+      {/* High-Resolution Zoom Modal */}
+      <ImageViewerModal
+        visible={previewVisible}
+        imageUrl={previewUrl}
+        title={previewTitle}
+        subtitle={previewSub}
+        onClose={() => setPreviewVisible(false)}
+      />
     </View>
   );
 }
@@ -459,6 +737,27 @@ const styles = StyleSheet.create({
   },
   pageTitle: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5, marginBottom: 2 },
   pageSubtitle: { fontSize: 12, fontWeight: '500', marginBottom: 12 },
+
+  // Top Tab Switcher
+  tabBarWrap: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 10,
+  },
+  topTabBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topTabBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#8E8E93',
+  },
+
   searchBar: {
     flexDirection: 'row', alignItems: 'center',
     borderRadius: 12, borderWidth: 1,
@@ -483,36 +782,192 @@ const styles = StyleSheet.create({
   loadingText: { fontSize: 13, fontWeight: '500' },
   list: { padding: 4 },
 
+  // Top Personnel Reel
+  specialistReelCard: {
+    width: 90,
+    padding: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  specialistReelAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#E2E8F0',
+  },
+  specialistReelAvatarFallback: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  specialistReelName: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  specialistReelRole: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 1,
+    textAlign: 'center',
+  },
+
+  // Specialist Detailed Card (Showing Passport Photo & Action Photo)
+  specialistCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  specialistHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  passportAvatarWrap: {
+    position: 'relative',
+  },
+  passportAvatar: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: '#34C759',
+  },
+  passportAvatarFallback: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#34C759',
+  },
+  verifiedCheckBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: '#34C759',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFF',
+  },
+  specialistName: {
+    fontSize: 16,
+    fontWeight: '800',
+    flex: 1,
+  },
+  roleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  roleBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  specialistSub: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+
+  // Action Photo Section
+  actionPhotoSection: {
+    marginBottom: 14,
+  },
+  actionPhotoTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  actionPhotoWrap: {
+    height: 150,
+    borderRadius: 14,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#0F172A',
+  },
+  actionPhotoImg: {
+    width: '100%',
+    height: '100%',
+  },
+  actionPhotoOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  actionPhotoOverlayText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  actionPhotoFallback: {
+    height: 80,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // Specialist Card Action Buttons
+  specialistBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  specialistChatBtn: {
+    flex: 1,
+    height: 42,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  specialistChatBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  specialistBookBtn: {
+    flex: 1.5,
+    height: 42,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  specialistBookBtnText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
   // Service card
   card: {
     borderRadius: 18, borderWidth: 1,
     overflow: 'hidden',
   },
   cardAccent: { height: 4, width: '100%' },
-  serviceImageWrap: {
-    width: '100%',
-    height: 140,
-    position: 'relative',
-    backgroundColor: '#0F172A',
-  },
-  serviceCardImage: {
-    width: '100%',
-    height: '100%',
-  },
-  imageZoomBadge: {
-    position: 'absolute',
-    bottom: 8,
-    right: 8,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  imageZoomText: {
-    fontSize: 13,
-  },
   featuredBadge: {
     position: 'absolute', top: 12, right: 12,
     backgroundColor: '#EF4444',

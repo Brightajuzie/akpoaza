@@ -10,8 +10,11 @@ import {
   Alert,
   Animated,
   useWindowDimensions,
+  Image,
+  Platform,
 } from 'react-native';
-import apiClient from '../api/client';
+import * as ImagePicker from 'expo-image-picker';
+import apiClient, { getImageUri } from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 
@@ -42,12 +45,164 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
   const scanLineAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Step 4: Documents
+  // Step 4: Photos & Documents
+  const [passportPhoto, setPassportPhoto] = useState<string | null>(userInfo?.passportPhoto || null);
+  const [actionPhoto, setActionPhoto] = useState<string | null>(userInfo?.actionPhoto || null);
+  const [uploadingPassport, setUploadingPassport] = useState(false);
+  const [uploadingAction, setUploadingAction] = useState(false);
   const [uploadedDocName, setUploadedDocName] = useState<string | null>(null);
   const isVendor = userInfo?.role === 'VENDOR';
+  const isHandymanOrRider = userInfo?.role === 'HANDYMAN' || userInfo?.role === 'RIDER';
 
   // Step 5: OPay Wallet Link
   const [opayPhone, setOpayPhone] = useState(userInfo?.phone || '');
+
+  // Photo upload helpers
+  const handleUploadPhoto = async (target: 'passport' | 'action', source: 'camera' | 'gallery' | 'file') => {
+    try {
+      if (Platform.OS === 'web' && source === 'file') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.onchange = async (e: any) => {
+          const file = e.target?.files?.[0];
+          if (!file) return;
+          if (file.size > 10 * 1024 * 1024) {
+            Alert.alert('File too large', 'Please choose an image smaller than 10MB.');
+            return;
+          }
+          await uploadImageFile(target, file);
+        };
+        input.click();
+        return;
+      }
+
+      if (source === 'camera') {
+        if (Platform.OS !== 'web') {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Please grant camera access.');
+            return;
+          }
+        }
+        const result = await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          quality: 0.8,
+          aspect: target === 'passport' ? [1, 1] : [4, 3],
+        });
+        if (!result.canceled && result.assets?.[0]) {
+          await uploadAsset(target, result.assets[0]);
+        }
+      } else {
+        if (Platform.OS !== 'web') {
+          const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission Required', 'Please grant photo library access.');
+            return;
+          }
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.8,
+          aspect: target === 'passport' ? [1, 1] : [4, 3],
+        });
+        if (!result.canceled && result.assets?.[0]) {
+          await uploadAsset(target, result.assets[0]);
+        }
+      }
+    } catch (err: any) {
+      console.error('Photo error:', err);
+      Alert.alert('Error', 'Could not select photo.');
+    }
+  };
+
+  const uploadAsset = async (target: 'passport' | 'action', asset: ImagePicker.ImagePickerAsset) => {
+    if (target === 'passport') setUploadingPassport(true);
+    else setUploadingAction(true);
+
+    try {
+      const formData = new FormData();
+      if (Platform.OS === 'web') {
+        const blobResponse = await fetch(asset.uri);
+        const blob = await blobResponse.blob();
+        const filename = `${target}_${Date.now()}.${blob.type.split('/')[1] || 'jpg'}`;
+        formData.append('image', blob, filename);
+      } else {
+        const filename = asset.uri.split('/').pop() || `${target}.jpg`;
+        const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
+        const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+        formData.append('image', {
+          uri: asset.uri,
+          name: filename,
+          type: mimeType,
+        } as any);
+      }
+
+      const res = await apiClient.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 30000,
+      });
+
+      if (res.data?.success && res.data.imageUrl) {
+        if (target === 'passport') {
+          setPassportPhoto(res.data.imageUrl);
+        } else {
+          setActionPhoto(res.data.imageUrl);
+        }
+        Alert.alert('✅ Photo Uploaded', `${target === 'passport' ? 'Passport photograph' : 'Action picture'} uploaded successfully!`);
+      }
+    } catch (uploadErr: any) {
+      Alert.alert('Upload Failed', uploadErr.response?.data?.error || 'Could not upload image.');
+    } finally {
+      if (target === 'passport') setUploadingPassport(false);
+      else setUploadingAction(false);
+    }
+  };
+
+  const uploadImageFile = async (target: 'passport' | 'action', file: File) => {
+    if (target === 'passport') setUploadingPassport(true);
+    else setUploadingAction(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file, file.name);
+      const res = await apiClient.post('/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 30000,
+      });
+      if (res.data?.success && res.data.imageUrl) {
+        if (target === 'passport') {
+          setPassportPhoto(res.data.imageUrl);
+        } else {
+          setActionPhoto(res.data.imageUrl);
+        }
+        Alert.alert('✅ Photo Uploaded', `${target === 'passport' ? 'Passport photograph' : 'Action picture'} uploaded successfully!`);
+      }
+    } catch (uploadErr: any) {
+      Alert.alert('Upload Failed', uploadErr.response?.data?.error || 'Could not upload image.');
+    } finally {
+      if (target === 'passport') setUploadingPassport(false);
+      else setUploadingAction(false);
+    }
+  };
+
+  const showPhotoOptions = (target: 'passport' | 'action') => {
+    const title = target === 'passport' ? 'Upload Passport Photograph' : 'Upload Action Picture';
+    if (Platform.OS === 'web') {
+      handleUploadPhoto(target, 'file');
+      return;
+    }
+    Alert.alert(
+      title,
+      target === 'passport' ? 'Please provide a clear front portrait photo.' : 'Please provide a photo of you at work / with vehicle.',
+      [
+        { text: '📸 Take Photo (Camera)', onPress: () => handleUploadPhoto(target, 'camera') },
+        { text: '🖼️ Choose from Gallery', onPress: () => handleUploadPhoto(target, 'gallery') },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
+  };
 
   // Animated Scan Line & pulsing camera view
   useEffect(() => {
@@ -217,6 +372,8 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
       const payload: any = {
         opayPhone,
         referenceId: livenessRef,
+        passportPhoto: passportPhoto || null,
+        actionPhoto: actionPhoto || null,
       };
       if (bvn) payload.bvn = bvn;
       if (nin) payload.nin = nin;
@@ -442,16 +599,136 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
           </View>
         )}
 
-        {/* STEP 4: CAC / DOCUMENTS */}
+        {/* STEP 4: CAC / PHOTOS & DOCUMENTS */}
         {currentStep === 4 && (
           <View>
             <Text style={[styles.stepTitle, { color: theme.text }]}>
-              {isVendor ? '4. CAC Certificate Upload' : '4. Government ID Upload'}
+              {isVendor ? '4. CAC Certificate Upload' : '4. Verification Photos & Government ID'}
             </Text>
             <Text style={[styles.stepDescription, { color: theme.lightText }]}>
               {isVendor
                 ? 'Upload a scan of your Corporate Affairs Commission business certificate (PDF or Image).'
-                : 'Upload a clear front photo of your government-issued ID card.'}
+                : 'Upload both required photos (Passport Photograph & Action Picture) and your government-issued ID card.'}
+            </Text>
+
+            {/* HANDYMAN & RIDER: 2 Required Photos */}
+            {isHandymanOrRider && (
+              <View style={{ marginBottom: 20 }}>
+                {/* 1. Passport Photo */}
+                <View style={[styles.photoCard, { borderColor: theme.border }]}>
+                  <View style={styles.photoCardHeader}>
+                    <Text style={[styles.photoNumberBadge, { backgroundColor: theme.primary }]}>1</Text>
+                    <View style={{ flex: 1, marginLeft: 8 }}>
+                      <Text style={[styles.photoCardTitle, { color: theme.text }]}>Passport Photograph</Text>
+                      <Text style={[styles.photoCardSub, { color: theme.lightText }]}>Clear portrait showing your face</Text>
+                    </View>
+                    {passportPhoto && <Text style={styles.photoBadgeSuccess}>Uploaded ✓</Text>}
+                  </View>
+
+                  {passportPhoto ? (
+                    <View style={styles.photoPreviewRow}>
+                      <Image source={{ uri: getImageUri(passportPhoto) ?? undefined }} style={styles.photoThumbnail} />
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: theme.text }}>Passport Photo</Text>
+                        <Text style={{ fontSize: 11, color: '#34C759', marginTop: 2 }}>Ready for Admin Review</Text>
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                          <TouchableOpacity 
+                            style={[styles.smallBtn, { borderColor: theme.border }]} 
+                            onPress={() => showPhotoOptions('passport')}
+                          >
+                            <Text style={[styles.smallBtnText, { color: theme.text }]}>Change</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={styles.smallRemoveBtn} 
+                            onPress={() => setPassportPhoto(null)}
+                          >
+                            <Text style={styles.smallRemoveBtnText}>Remove</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  ) : (
+                    <View>
+                      {uploadingPassport ? (
+                        <View style={styles.uploadingBox}>
+                          <ActivityIndicator color={theme.primary} size="small" />
+                          <Text style={[styles.uploadingText, { color: theme.lightText }]}>Uploading photo...</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity 
+                          style={[styles.btn, { backgroundColor: theme.primary, height: 44, borderRadius: 10 }]}
+                          onPress={() => showPhotoOptions('passport')}
+                        >
+                          <Text style={styles.btnText}>📸 Select / Take Passport Photo</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+                </View>
+
+                {/* 2. Action Picture */}
+                <View style={[styles.photoCard, { borderColor: theme.border, marginTop: 12 }]}>
+                  <View style={styles.photoCardHeader}>
+                    <Text style={[styles.photoNumberBadge, { backgroundColor: theme.primary }]}>2</Text>
+                    <View style={{ flex: 1, marginLeft: 8 }}>
+                      <Text style={[styles.photoCardTitle, { color: theme.text }]}>
+                        {userInfo?.role === 'HANDYMAN' ? 'Action Picture (At Work / Tools)' : 'Action Picture (With Vehicle)'}
+                      </Text>
+                      <Text style={[styles.photoCardSub, { color: theme.lightText }]}>
+                        {userInfo?.role === 'HANDYMAN' ? 'Photo of you doing repairs / with tools' : 'Photo of you with your delivery vehicle'}
+                      </Text>
+                    </View>
+                    {actionPhoto && <Text style={styles.photoBadgeSuccess}>Uploaded ✓</Text>}
+                  </View>
+
+                  {actionPhoto ? (
+                    <View style={styles.photoPreviewRow}>
+                      <Image source={{ uri: getImageUri(actionPhoto) ?? undefined }} style={styles.photoThumbnail} />
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: theme.text }}>Action Picture</Text>
+                        <Text style={{ fontSize: 11, color: '#34C759', marginTop: 2 }}>Ready for Admin Review</Text>
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                          <TouchableOpacity 
+                            style={[styles.smallBtn, { borderColor: theme.border }]} 
+                            onPress={() => showPhotoOptions('action')}
+                          >
+                            <Text style={[styles.smallBtnText, { color: theme.text }]}>Change</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={styles.smallRemoveBtn} 
+                            onPress={() => setActionPhoto(null)}
+                          >
+                            <Text style={styles.smallRemoveBtnText}>Remove</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  ) : (
+                    <View>
+                      {uploadingAction ? (
+                        <View style={styles.uploadingBox}>
+                          <ActivityIndicator color={theme.primary} size="small" />
+                          <Text style={[styles.uploadingText, { color: theme.lightText }]}>Uploading photo...</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity 
+                          style={[styles.btn, { backgroundColor: theme.primary, height: 44, borderRadius: 10 }]}
+                          onPress={() => showPhotoOptions('action')}
+                        >
+                          <Text style={styles.btnText}>
+                            {userInfo?.role === 'HANDYMAN' ? '🛠️ Select / Take Action Photo' : '🏍️ Select / Take Action Photo'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* 3. Government ID / CAC Certificate */}
+            <Text style={[styles.stepTitle, { color: theme.text, fontSize: 15, marginBottom: 6 }]}>
+              {isVendor ? 'Business Certificate' : '3. Government ID Card'}
             </Text>
 
             {!uploadedDocName ? (
@@ -465,7 +742,7 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
                 ) : (
                   <View style={{ alignItems: 'center' }}>
                     <Text style={{ fontSize: 32 }}>📁</Text>
-                    <Text style={[styles.uploadTitle, { color: theme.text }]}>Select Certificate File</Text>
+                    <Text style={[styles.uploadTitle, { color: theme.text }]}>Select ID Card / Certificate File</Text>
                     <Text style={[styles.uploadSubtitle, { color: theme.lightText }]}>Supports JPG, PNG, PDF up to 5MB</Text>
                   </View>
                 )}
@@ -489,14 +766,25 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
               </View>
             )}
 
-            {uploadedDocName && (
-              <TouchableOpacity 
-                style={[styles.btn, { backgroundColor: theme.primary, marginTop: 24 }]} 
-                onPress={() => setCurrentStep(5)}
-              >
-                <Text style={styles.btnText}>Proceed to Payout Configuration</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity 
+              style={[styles.btn, { backgroundColor: theme.primary, marginTop: 24 }]} 
+              onPress={() => {
+                if (isHandymanOrRider && (!passportPhoto || !actionPhoto)) {
+                  Alert.alert(
+                    'Photos Recommended',
+                    'You have not uploaded both required photos (Passport Photo & Action Picture). You can proceed now and update them later in your profile, but complete photos are required for Admin approval.',
+                    [
+                      { text: 'Upload Photos First', style: 'cancel' },
+                      { text: 'Proceed Anyway', onPress: () => setCurrentStep(5) },
+                    ]
+                  );
+                  return;
+                }
+                setCurrentStep(5);
+              }}
+            >
+              <Text style={styles.btnText}>Proceed to Payout Configuration</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -532,6 +820,22 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
                 <Text style={[styles.summaryLabel, { color: theme.lightText }]}>Biometric Selfie</Text>
                 <Text style={[styles.summaryVal, { color: theme.text }]}>Passed ✓</Text>
               </View>
+              {isHandymanOrRider && (
+                <>
+                  <View style={styles.summaryRow}>
+                    <Text style={[styles.summaryLabel, { color: theme.lightText }]}>Passport Photo</Text>
+                    <Text style={[styles.summaryVal, { color: passportPhoto ? '#34C759' : '#FF9500' }]}>
+                      {passportPhoto ? 'Uploaded ✓' : '⚠️ Missing'}
+                    </Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={[styles.summaryLabel, { color: theme.lightText }]}>Action Picture</Text>
+                    <Text style={[styles.summaryVal, { color: actionPhoto ? '#34C759' : '#FF9500' }]}>
+                      {actionPhoto ? 'Uploaded ✓' : '⚠️ Missing'}
+                    </Text>
+                  </View>
+                </>
+              )}
               <View style={styles.summaryRow}>
                 <Text style={[styles.summaryLabel, { color: theme.lightText }]}>Verification Status</Text>
                 <Text style={[styles.summaryVal, { color: theme.primary, fontWeight: '700' }]}>PENDING REVIEW</Text>
@@ -759,6 +1063,86 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   summaryVal: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  // Photo Upload Cards
+  photoCard: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 14,
+  },
+  photoCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  photoNumberBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  photoCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  photoCardSub: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  photoBadgeSuccess: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#16A34A',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  photoPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 10,
+  },
+  photoThumbnail: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    backgroundColor: '#E2E8F0',
+  },
+  smallBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  smallBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  smallRemoveBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  smallRemoveBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#EF4444',
+  },
+  uploadingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    gap: 8,
+  },
+  uploadingText: {
     fontSize: 13,
     fontWeight: '600',
   },

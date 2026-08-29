@@ -43,10 +43,11 @@ const upload = (0, multer_1.default)({
     storage,
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-        const filetypes = /jpeg|jpg|png|gif|webp/;
-        const mimetype = filetypes.test(file.mimetype);
-        const extname = filetypes.test(path_1.default.extname(file.originalname).toLowerCase());
-        if (mimetype && extname)
+        const filetypes = /jpeg|jpg|png|gif|webp|heic|heif/;
+        const isImageMime = !file.mimetype || file.mimetype.startsWith('image/') || file.mimetype === 'application/octet-stream';
+        const ext = path_1.default.extname(file.originalname || '').toLowerCase();
+        const isImageExt = !ext || filetypes.test(ext);
+        if (isImageMime || isImageExt)
             return cb(null, true);
         cb(new Error('Only images (jpg, jpeg, png, gif, webp) are allowed!'));
     },
@@ -94,7 +95,7 @@ function uploadToCloudinary(buffer, options) {
     });
 }
 // ── POST /api/upload ─────────────────────────────────────────────────────────
-router.post('/', auth_1.authenticateToken, upload.single('image'), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+router.post('/', auth_1.optionalAuthenticateToken, upload.single('image'), (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     if (!req.file) {
         return res.status(400).json({ error: 'No image file uploaded' });
     }

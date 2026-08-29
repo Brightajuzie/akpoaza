@@ -387,25 +387,25 @@ router.patch('/:id/status', auth_1.authenticateToken, (req, res, next) => __awai
             }
         }
         // Execute state update (with inventory release on cancellation)
-        const updatedOrder = yield prisma_1.default.$transaction((tx) => __awaiter(void 0, void 0, void 0, function* () {
-            if (status === 'CANCELLED') {
-                // Restore stock levels
-                for (const item of order.items) {
-                    yield tx.product.update({
-                        where: { id: item.productId },
-                        data: {
-                            stock: {
-                                increment: item.quantity,
-                            },
-                        },
-                    });
-                }
-            }
-            return tx.order.update({
+        let updatedOrder;
+        if (status === 'CANCELLED') {
+            const updates = order.items.map((item) => prisma_1.default.product.update({
+                where: { id: item.productId },
+                data: { stock: { increment: item.quantity } },
+            }));
+            updates.push(prisma_1.default.order.update({
+                where: { id },
+                data: { status },
+            }));
+            const results = yield prisma_1.default.$transaction(updates);
+            updatedOrder = results[results.length - 1];
+        }
+        else {
+            updatedOrder = yield prisma_1.default.order.update({
                 where: { id },
                 data: { status },
             });
-        }));
+        }
         if (status === 'DELIVERED') {
             yield prisma_1.default.escrow.updateMany({
                 where: { orderId: id, status: 'HELD' },

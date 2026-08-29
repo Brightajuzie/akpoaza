@@ -52,6 +52,7 @@ router.get('/admin/all', auth_1.authenticateToken, (req, res, next) => __awaiter
             orderBy: { createdAt: 'desc' },
             include: {
                 service: true,
+                escrows: true,
                 customer: { select: { id: true, name: true, email: true, phone: true } },
                 handyman: { select: { id: true, name: true, email: true, phone: true, specialty: true } },
             },
@@ -90,7 +91,7 @@ router.get('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 
 }));
 // Guest Booking for unauthenticated users
 router.post('/guest-booking', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    const { serviceId, scheduledAt, address, latitude, longitude, autoAssign, guestEmail, guestName, guestPhone } = req.body;
+    const { serviceId, scheduledAt, address, latitude, longitude, autoAssign, handymanId: reqHandymanId, guestEmail, guestName, guestPhone } = req.body;
     if (!guestEmail || !guestName) {
         return res.status(400).json({ error: 'Guest email and name are required' });
     }
@@ -112,17 +113,39 @@ router.post('/guest-booking', (req, res, next) => __awaiter(void 0, void 0, void
             });
         }
         const customerId = user.id;
-        const service = yield prisma_1.default.service.findUnique({ where: { id: serviceId } });
+        let service = yield prisma_1.default.service.findUnique({ where: { id: serviceId } });
+        if (!service) {
+            service = yield prisma_1.default.service.findFirst({
+                where: {
+                    OR: [
+                        { category: { equals: serviceId, mode: 'insensitive' } },
+                        { name: { contains: serviceId, mode: 'insensitive' } },
+                    ],
+                },
+            });
+        }
+        if (!service) {
+            service = yield prisma_1.default.service.findFirst();
+        }
         if (!service)
-            return res.status(404).json({ error: 'Service not found' });
-        let handymanId = null;
+            return res.status(404).json({ error: 'Service catalog is not initialized' });
+        let handymanId = reqHandymanId || null;
         let status = 'PENDING';
         let matchDistance = null;
         const customerLat = latitude ? parseFloat(latitude) : null;
         const customerLng = longitude ? parseFloat(longitude) : null;
-        const MAX_RADIUS_KM = 50;
-        const FALLBACK_RADIUS_KM = 100;
-        if (autoAssign && customerLat !== null && customerLng !== null) {
+        if (handymanId) {
+            const specifiedHandyman = yield prisma_1.default.user.findUnique({ where: { id: handymanId } });
+            if (specifiedHandyman) {
+                status = 'ACCEPTED';
+                if (customerLat !== null && customerLng !== null && specifiedHandyman.latitude && specifiedHandyman.longitude) {
+                    matchDistance = Math.round(getDistanceKm(customerLat, customerLng, specifiedHandyman.latitude, specifiedHandyman.longitude) * 10) / 10;
+                }
+            }
+        }
+        else if (autoAssign && customerLat !== null && customerLng !== null) {
+            const MAX_RADIUS_KM = 50;
+            const FALLBACK_RADIUS_KM = 100;
             const busyHandymanRecords = yield prisma_1.default.booking.findMany({
                 where: { status: 'IN_PROGRESS' },
                 select: { handymanId: true },
@@ -183,7 +206,7 @@ router.post('/guest-booking', (req, res, next) => __awaiter(void 0, void 0, void
 router.post('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const customerId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-    const { serviceId, scheduledAt, address, latitude, longitude, autoAssign } = req.body;
+    const { serviceId, scheduledAt, address, latitude, longitude, autoAssign, handymanId: reqHandymanId } = req.body;
     if (!customerId)
         return res.status(401).json({ error: 'Unauthorized' });
     if (!serviceId || !scheduledAt || !address) {
@@ -191,18 +214,40 @@ router.post('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0,
     }
     try {
         // Look up service in DB to retrieve verified price
-        const service = yield prisma_1.default.service.findUnique({ where: { id: serviceId } });
+        let service = yield prisma_1.default.service.findUnique({ where: { id: serviceId } });
         if (!service) {
-            return res.status(404).json({ error: 'Service not found' });
+            service = yield prisma_1.default.service.findFirst({
+                where: {
+                    OR: [
+                        { category: { equals: serviceId, mode: 'insensitive' } },
+                        { name: { contains: serviceId, mode: 'insensitive' } },
+                    ],
+                },
+            });
         }
-        let handymanId = null;
+        if (!service) {
+            service = yield prisma_1.default.service.findFirst();
+        }
+        if (!service) {
+            return res.status(404).json({ error: 'Service catalog is not initialized' });
+        }
+        let handymanId = reqHandymanId || null;
         let status = 'PENDING';
         let matchDistance = null;
         const customerLat = latitude ? parseFloat(latitude) : null;
         const customerLng = longitude ? parseFloat(longitude) : null;
-        const MAX_RADIUS_KM = 50; // primary search radius
-        const FALLBACK_RADIUS_KM = 100; // wider fallback radius
-        if (autoAssign && customerLat !== null && customerLng !== null) {
+        if (handymanId) {
+            const specifiedHandyman = yield prisma_1.default.user.findUnique({ where: { id: handymanId } });
+            if (specifiedHandyman) {
+                status = 'ACCEPTED';
+                if (customerLat !== null && customerLng !== null && specifiedHandyman.latitude && specifiedHandyman.longitude) {
+                    matchDistance = Math.round(getDistanceKm(customerLat, customerLng, specifiedHandyman.latitude, specifiedHandyman.longitude) * 10) / 10;
+                }
+            }
+        }
+        else if (autoAssign && customerLat !== null && customerLng !== null) {
+            const MAX_RADIUS_KM = 50; // primary search radius
+            const FALLBACK_RADIUS_KM = 100; // wider fallback radius
             // Find handymen actively IN_PROGRESS (on-site at a job) — ACCEPTED just means paid/confirmed
             // but does not mean the handyman is currently occupied.
             const busyHandymanRecords = yield prisma_1.default.booking.findMany({

@@ -17,6 +17,8 @@ model User {
   provider           AuthProvider       @default(LOCAL)
   providerId         String?
   profileImage       String?
+  passportPhoto      String?
+  actionPhoto        String?
   phone              String?
   address            String?
   createdAt          DateTime           @default(now())

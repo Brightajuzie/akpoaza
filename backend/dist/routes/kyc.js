@@ -47,6 +47,9 @@ router.get('/status', auth_1.authenticateToken, (req, res) => __awaiter(void 0, 
                 kycSubmittedAt: true,
                 opayPhone: true,
                 rejectionReason: true,
+                passportPhoto: true,
+                actionPhoto: true,
+                profileImage: true,
             },
         });
         if (!user) {
@@ -261,7 +264,7 @@ router.post('/liveness', auth_1.authenticateToken, (req, res) => __awaiter(void 
  */
 router.post('/submit', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const userId = req.user.userId;
-    const { bvn, nin, opayPhone, phone, referenceId, address, latitude, longitude, specialty, vehicleType, licensePlate } = req.body;
+    const { bvn, nin, opayPhone, phone, referenceId, address, latitude, longitude, specialty, vehicleType, licensePlate, passportPhoto, actionPhoto, } = req.body;
     if (!bvn && !nin && !referenceId) {
         return res.status(400).json({ error: 'Either BVN, NIN, or verification reference ID is required to complete verification.' });
     }
@@ -294,6 +297,9 @@ router.post('/submit', auth_1.authenticateToken, (req, res) => __awaiter(void 0,
         const effectiveSpecialty = currentUser.role === 'HANDYMAN' ? (specialty || currentUser.specialty) : null;
         const effectiveVehicleType = currentUser.role === 'RIDER' ? (vehicleType || currentUser.vehicleType) : null;
         const effectiveLicensePlate = currentUser.role === 'RIDER' ? (licensePlate || currentUser.licensePlate) : null;
+        const effectivePassportPhoto = passportPhoto || currentUser.passportPhoto;
+        const effectiveActionPhoto = actionPhoto || currentUser.actionPhoto;
+        const effectiveProfileImage = effectivePassportPhoto || currentUser.profileImage;
         // Check registration completeness
         const hasContact = Boolean(effectivePhone || effectiveOpayPhone);
         const hasAddress = Boolean(effectiveAddress);
@@ -332,6 +338,9 @@ router.post('/submit', auth_1.authenticateToken, (req, res) => __awaiter(void 0,
                 specialty: effectiveSpecialty,
                 vehicleType: effectiveVehicleType,
                 licensePlate: effectiveLicensePlate,
+                passportPhoto: effectivePassportPhoto,
+                actionPhoto: effectiveActionPhoto,
+                profileImage: effectiveProfileImage,
                 rejectionReason: null, // Clear any previous rejection
             },
         });
@@ -405,6 +414,9 @@ router.get('/admin/reviews', auth_1.authenticateToken, (req, res) => __awaiter(v
                 specialty: true,
                 vehicleType: true,
                 licensePlate: true,
+                passportPhoto: true,
+                actionPhoto: true,
+                profileImage: true,
                 latitude: true,
                 longitude: true,
                 createdAt: true,
@@ -427,6 +439,12 @@ router.get('/admin/reviews', auth_1.authenticateToken, (req, res) => __awaiter(v
                 missing.push('Service Specialty');
             if (u.role === 'RIDER' && !u.vehicleType && !u.licensePlate)
                 missing.push('Vehicle / Plate');
+            if (u.role === 'HANDYMAN' || u.role === 'RIDER') {
+                if (!u.passportPhoto)
+                    missing.push('Passport Photo');
+                if (!u.actionPhoto)
+                    missing.push('Action Photo');
+            }
             const isRegistrationComplete = missing.length === 0;
             return Object.assign(Object.assign({}, u), { isRegistrationComplete, missingFields: missing });
         });

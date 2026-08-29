@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useContext, useRef } from 'react';
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ScrollView, Animated, Linking } from 'react-native';
-import apiClient from '../api/client';
+import { View, Text, FlatList, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, Modal, TextInput, ScrollView, Animated, Linking, Image, RefreshControl } from 'react-native';
+import apiClient, { getImageUri } from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
@@ -16,14 +16,32 @@ export default function HistoryScreen({ route, navigation }: any) {
   const textColor = isDark ? '#F1F5F9' : '#0F172A';
   const subtextColor = isDark ? '#94A3B8' : '#64748B';
 
-  const type = route.params?.type || 'orders';
+  const type = route.params?.type || 'bookings';
   const currentRole = route.params?.role || userInfo?.role || 'CUSTOMER';
 
-  const [activeTab, setActiveTab] = useState<'main' | 'parcels'>(route.params?.tab === 'parcels' ? 'parcels' : 'main');
-  const [data, setData] = useState<any[]>([]);
+  const getInitialTab = (): 'bookings' | 'orders' | 'parcels' => {
+    if (route.params?.tab === 'parcels') return 'parcels';
+    if (route.params?.tab === 'bookings' || route.params?.type === 'bookings') return 'bookings';
+    if (route.params?.tab === 'orders' || route.params?.type === 'orders') return 'orders';
+    if (userInfo?.role === 'HANDYMAN') return 'bookings';
+    if (userInfo?.role === 'RIDER' || userInfo?.role === 'VENDOR') return 'orders';
+    return 'bookings';
+  };
+
+  const [activeTab, setActiveTab] = useState<'bookings' | 'orders' | 'parcels'>(getInitialTab());
+  const [bookings, setBookings] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [parcels, setParcels] = useState<any[]>([]);
   const [parcelsLoading, setParcelsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Computed data for active tab compatibility
+  const data = activeTab === 'bookings' ? bookings : orders;
+  const setData = (newData: any) => {
+    if (activeTab === 'bookings') setBookings(newData);
+    else setOrders(newData);
+  };
 
   // Live tracking (customer)
   const [activeTrackingId, setActiveTrackingId] = useState<string | null>(null);
@@ -55,29 +73,28 @@ export default function HistoryScreen({ route, navigation }: any) {
     }
   };
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchBookings = async () => {
     try {
-      const endpoint = type === 'orders' 
-        ? (currentRole === 'VENDOR' ? '/orders/vendor' : currentRole === 'RIDER' ? '/orders/rider/available' : '/orders') 
-        : '/bookings';
-      const response = await apiClient.get(endpoint);
-      setData(response.data);
-    } catch (error) {
-      console.error(`Failed to fetch ${type}`, error);
-    } finally {
-      setLoading(false);
+      const res = await apiClient.get('/bookings');
+      setBookings(res.data || []);
+    } catch (e) {
+      console.error('Failed to fetch bookings', e);
     }
   };
 
-  useEffect(() => {
-    if (userToken) {
-      fetchData();
-      fetchParcels();
-    } else {
-      setLoading(false);
+  const fetchOrders = async () => {
+    try {
+      const endpoint = currentRole === 'VENDOR'
+        ? '/orders/vendor'
+        : currentRole === 'RIDER'
+          ? '/orders/rider/available'
+          : '/orders';
+      const res = await apiClient.get(endpoint);
+      setOrders(res.data || []);
+    } catch (e) {
+      console.error('Failed to fetch orders', e);
     }
-  }, [type, userToken, currentRole, userInfo?.role]);
+  };
 
   const fetchParcels = async () => {
     setParcelsLoading(true);
@@ -92,6 +109,38 @@ export default function HistoryScreen({ route, navigation }: any) {
       setParcelsLoading(false);
     }
   };
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      await Promise.allSettled([
+        fetchBookings(),
+        fetchOrders(),
+        fetchParcels(),
+      ]);
+    } catch (error) {
+      console.error('Failed to fetch history data', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (userToken) {
+      fetchData();
+    } else {
+      setLoading(false);
+    }
+  }, [userToken, currentRole, userInfo?.role]);
+
+  useEffect(() => {
+    if (route.params?.tab) {
+      setActiveTab(route.params.tab);
+    } else if (route.params?.type) {
+      setActiveTab(route.params.type === 'bookings' ? 'bookings' : 'orders');
+    }
+  }, [route.params?.tab, route.params?.type]);
 
   // Pulse animation loop
   useEffect(() => {
@@ -612,6 +661,43 @@ export default function HistoryScreen({ route, navigation }: any) {
           <Text style={styles.boldLabel}>Scheduled:</Text> {new Date(item.scheduledAt).toLocaleDateString()} at {new Date(item.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>
 
+        {/* Split Payment & Escrow Status Box */}
+        {(item.isSplitPayment || isEscrowHeld) && (
+          <View style={{ backgroundColor: '#F8F9FA', borderRadius: 8, padding: 10, marginVertical: 8, borderWidth: 1, borderColor: '#E9ECEF' }}>
+            {item.isSplitPayment && (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: isEscrowHeld ? 6 : 0 }}>
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#FF9500', textTransform: 'uppercase' }}>⚡ 50% Split Payment</Text>
+                  <Text style={{ fontSize: 12, color: '#495057', marginTop: 1 }}>
+                    Paid: ₦{(item.amountPaid || item.totalPrice / 2).toLocaleString()} | Due: ₦{(item.totalPrice - (item.amountPaid || item.totalPrice / 2)).toLocaleString()}
+                  </Text>
+                </View>
+                {customerRole && item.amountPaid < item.totalPrice && item.status !== 'CANCELLED' && (
+                  <TouchableOpacity
+                    style={{ backgroundColor: theme.primary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 }}
+                    onPress={() => navigation.navigate('Checkout', {
+                      checkoutType: 'booking',
+                      id: item.id,
+                      amount: item.totalPrice - item.amountPaid,
+                      isRemainingPayment: true,
+                    })}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>Pay 2nd 50%</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+            {isEscrowHeld && (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={{ fontSize: 12, marginRight: 4 }}>🛡️</Text>
+                <Text style={{ fontSize: 12, color: '#34C759', fontWeight: '700' }}>
+                  {customerRole ? 'Payment held in Escrow — released upon your confirmation.' : 'Funds held safely in Escrow pending customer confirmation.'}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={[styles.bookingFooter, { borderTopColor: theme.border }]}>
           <Text style={[styles.amount, { color: theme.text }]}>₦{item.totalPrice.toFixed(2)}</Text>
 
@@ -799,40 +885,126 @@ export default function HistoryScreen({ route, navigation }: any) {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
 
-      {/* ── Tab Switcher ── */}
-      <View style={styles.tabSwitcherRow}>
+      {/* ── Scrollable Tab Switcher ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabScrollContainer}
+        contentContainerStyle={styles.tabScrollContent}
+      >
         <TouchableOpacity
-          style={[styles.tabSwitchBtn, activeTab === 'main' && { backgroundColor: theme.primary }]}
-          onPress={() => setActiveTab('main')}
+          style={[styles.tabScrollBtn, activeTab === 'bookings' && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+          onPress={() => setActiveTab('bookings')}
         >
-          <Text style={[styles.tabSwitchText, activeTab === 'main' && { color: '#fff' }]}>
-            {type === 'orders' ? (userInfo?.role === 'RIDER' ? '🚚 Deliveries' : '🛒 Orders') : '📋 Bookings'}
+          <Text style={[styles.tabScrollText, activeTab === 'bookings' && { color: '#fff', fontWeight: '800' }]}>
+            {userInfo?.role === 'HANDYMAN' ? '📋 Jobs' : '📋 Bookings'}
           </Text>
+          {bookings.length > 0 && (
+            <View style={[styles.tabScrollBadge, { backgroundColor: activeTab === 'bookings' ? 'rgba(255,255,255,0.3)' : theme.primary + '22' }]}>
+              <Text style={[styles.tabScrollBadgeText, { color: activeTab === 'bookings' ? '#fff' : theme.primary }]}>{bookings.length}</Text>
+            </View>
+          )}
         </TouchableOpacity>
+
         <TouchableOpacity
-          style={[styles.tabSwitchBtn, activeTab === 'parcels' && { backgroundColor: '#5856D6' }]}
+          style={[styles.tabScrollBtn, activeTab === 'orders' && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+          onPress={() => setActiveTab('orders')}
+        >
+          <Text style={[styles.tabScrollText, activeTab === 'orders' && { color: '#fff', fontWeight: '800' }]}>
+            {userInfo?.role === 'VENDOR' ? '🛒 Sales' : userInfo?.role === 'RIDER' ? '🚚 Deliveries' : '🛒 Orders'}
+          </Text>
+          {orders.length > 0 && (
+            <View style={[styles.tabScrollBadge, { backgroundColor: activeTab === 'orders' ? 'rgba(255,255,255,0.3)' : theme.primary + '22' }]}>
+              <Text style={[styles.tabScrollBadgeText, { color: activeTab === 'orders' ? '#fff' : theme.primary }]}>{orders.length}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabScrollBtn, activeTab === 'parcels' && { backgroundColor: '#5856D6', borderColor: '#5856D6' }]}
           onPress={() => { setActiveTab('parcels'); fetchParcels(); }}
         >
-          <Text style={[styles.tabSwitchText, activeTab === 'parcels' && { color: '#fff' }]}>📦 Parcels</Text>
+          <Text style={[styles.tabScrollText, activeTab === 'parcels' && { color: '#fff', fontWeight: '800' }]}>
+            📦 Parcels
+          </Text>
+          {parcels.length > 0 && (
+            <View style={[styles.tabScrollBadge, { backgroundColor: activeTab === 'parcels' ? 'rgba(255,255,255,0.3)' : '#5856D622' }]}>
+              <Text style={[styles.tabScrollBadgeText, { color: activeTab === 'parcels' ? '#fff' : '#5856D6' }]}>{parcels.length}</Text>
+            </View>
+          )}
         </TouchableOpacity>
-      </View>
+      </ScrollView>
 
-      {activeTab === 'main' ? (
+      {/* ── BOOKINGS TAB ── */}
+      {activeTab === 'bookings' && (
         <FlatList
-          data={data}
+          data={bookings}
           keyExtractor={(item) => item.id}
-          renderItem={type === 'orders' ? (userInfo?.role === 'VENDOR' ? renderVendorSaleItem : userInfo?.role === 'RIDER' ? renderRiderDeliveryItem : renderOrderItem) : renderBookingItem}
+          renderItem={renderBookingItem}
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} colors={[theme.primary]} />}
           ListHeaderComponent={renderRiderHeader}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>You have no history records yet.</Text>
+              <Text style={{ fontSize: 48, marginBottom: 12 }}>📋</Text>
+              <Text style={[styles.emptyText, { fontWeight: '700', fontSize: 16, color: textColor }]}>
+                {userInfo?.role === 'HANDYMAN' ? 'No Assigned Jobs Yet' : 'No Service Bookings Yet'}
+              </Text>
+              <Text style={{ fontSize: 13, color: subtextColor, textAlign: 'center', marginTop: 4, paddingHorizontal: 32 }}>
+                {userInfo?.role === 'HANDYMAN'
+                  ? 'New customer booking assignments matching your service category will appear here.'
+                  : 'Book expert verified plumbers, electricians, carpenters, and technicians near you.'}
+              </Text>
+              {userInfo?.role !== 'HANDYMAN' && (
+                <TouchableOpacity
+                  style={{ marginTop: 16, backgroundColor: theme.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 }}
+                  onPress={() => navigation.navigate('Services')}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '800' }}>🛠️ Book a Service</Text>
+                </TouchableOpacity>
+              )}
             </View>
           }
         />
-      ) : (
-        // ── PARCELS TAB ──
+      )}
+
+      {/* ── ORDERS TAB ── */}
+      {activeTab === 'orders' && (
+        <FlatList
+          data={orders}
+          keyExtractor={(item) => item.id}
+          renderItem={userInfo?.role === 'VENDOR' ? renderVendorSaleItem : userInfo?.role === 'RIDER' ? renderRiderDeliveryItem : renderOrderItem}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} colors={[theme.primary]} />}
+          ListHeaderComponent={renderRiderHeader}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={{ fontSize: 48, marginBottom: 12 }}>🛒</Text>
+              <Text style={[styles.emptyText, { fontWeight: '700', fontSize: 16, color: textColor }]}>
+                {userInfo?.role === 'VENDOR' ? 'No Sales Records Yet' : userInfo?.role === 'RIDER' ? 'No Order Deliveries Available' : 'No Store Orders Yet'}
+              </Text>
+              <Text style={{ fontSize: 13, color: subtextColor, textAlign: 'center', marginTop: 4, paddingHorizontal: 32 }}>
+                {userInfo?.role === 'VENDOR'
+                  ? 'Orders placed for your store products will be tracked here.'
+                  : 'Purchase quality tools, materials, and spare parts delivered directly to your doorstep.'}
+              </Text>
+              {userInfo?.role !== 'VENDOR' && userInfo?.role !== 'RIDER' && (
+                <TouchableOpacity
+                  style={{ marginTop: 16, backgroundColor: theme.primary, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 }}
+                  onPress={() => navigation.navigate('Products')}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '800' }}>🛍️ Shop Products</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          }
+        />
+      )}
+
+      {/* ── PARCELS TAB ── */}
+      {activeTab === 'parcels' && (
         parcelsLoading ? (
           <ActivityIndicator size="large" color="#5856D6" style={{ marginTop: 60 }} />
         ) : (
@@ -887,9 +1059,46 @@ export default function HistoryScreen({ route, navigation }: any) {
                 )}
                 <Text style={styles.orderMeta}>💰 ₦{parcel.totalAmount?.toLocaleString()}</Text>
                 {parcel.rider && (
-                  <Text style={[styles.orderMeta, { color: '#34C759' }]}>
-                    🏍️ Rider: {parcel.rider.name} · {parcel.rider.vehicleType}
-                  </Text>
+                  <View style={{ marginTop: 10, marginBottom: 4, padding: 10, backgroundColor: isDark ? '#0F172A' : '#F0FDF4', borderRadius: 12, borderWidth: 1, borderColor: isDark ? '#334155' : '#BBF7D0' }}>
+                    <Text style={{ fontSize: 10, fontWeight: '800', color: '#16A34A', marginBottom: 8, letterSpacing: 0.4 }}>
+                      🏍️ ASSIGNED COURIER RIDER
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {/* Passport Photo */}
+                      {parcel.rider.passportPhoto ? (
+                        <Image
+                          source={{ uri: getImageUri(parcel.rider.passportPhoto) ?? undefined }}
+                          style={{ width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: '#34C759', marginRight: 10 }}
+                        />
+                      ) : (
+                        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#DCFCE7', borderWidth: 2, borderColor: '#34C759', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+                          <Text style={{ fontSize: 18 }}>🏍️</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#F1F5F9' : '#0F172A' }}>{parcel.rider.name}</Text>
+                        <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B', marginTop: 1 }}>
+                          {parcel.rider.vehicleType || 'Motorcycle'}{parcel.rider.licensePlate ? ` · ${parcel.rider.licensePlate}` : ''}
+                        </Text>
+                      </View>
+                      {parcel.rider.phone && (
+                        <TouchableOpacity
+                          style={{ backgroundColor: '#E0F2FE', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 }}
+                          onPress={() => Linking.openURL(`tel:${parcel.rider.phone}`)}
+                        >
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: '#0284C7' }}>📞 Call</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    {/* Action Photo thumbnail */}
+                    {parcel.rider.actionPhoto && (
+                      <Image
+                        source={{ uri: getImageUri(parcel.rider.actionPhoto) ?? undefined }}
+                        style={{ width: '100%', height: 80, borderRadius: 8, marginTop: 8 }}
+                        resizeMode="cover"
+                      />
+                    )}
+                  </View>
                 )}
                 <Text style={[styles.orderMeta, { color: '#8E8E93' }]}>
                   🗓️ {parcel.createdAt ? new Date(parcel.createdAt).toLocaleString() : 'N/A'}
@@ -1517,26 +1726,44 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  // ── Parcel tab styles ────────────────────────────────────────────────
-  tabSwitcherRow: {
-    flexDirection: 'row',
-    margin: 16,
-    marginBottom: 8,
-    borderRadius: 14,
-    backgroundColor: '#F2F2F7',
-    padding: 4,
-    gap: 4,
+  // ── Scrollable Tab Switcher ─────────────────────────────────────────
+  tabScrollContainer: {
+    maxHeight: 56,
+    marginTop: 12,
+    marginBottom: 4,
   },
-  tabSwitchBtn: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 10,
+  tabScrollContent: {
+    paddingHorizontal: 16,
     alignItems: 'center',
+    gap: 8,
   },
-  tabSwitchText: {
+  tabScrollBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: 'transparent',
+    gap: 6,
+  },
+  tabScrollText: {
     fontSize: 13,
     fontWeight: '700',
     color: '#3A3A3C',
+  },
+  tabScrollBadge: {
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
+  tabScrollBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
   },
   actionBtn: {
     paddingHorizontal: 14,

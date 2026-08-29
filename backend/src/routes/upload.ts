@@ -3,9 +3,10 @@ import multer from 'multer';
 import Jimp from 'jimp';
 import path from 'path';
 import { v2 as cloudinary } from 'cloudinary';
-import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { optionalAuthenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
+
 
 // ── Cloudinary configuration ────────────────────────────────────────────────
 // Falls back to local-disk mode when CLOUDINARY_CLOUD_NAME is not set,
@@ -33,10 +34,12 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const filetypes = /jpeg|jpg|png|gif|webp/;
-    const mimetype  = filetypes.test(file.mimetype);
-    const extname   = filetypes.test(path.extname(file.originalname).toLowerCase());
-    if (mimetype && extname) return cb(null, true);
+    const filetypes = /jpeg|jpg|png|gif|webp|heic|heif/;
+    const isImageMime = !file.mimetype || file.mimetype.startsWith('image/') || file.mimetype === 'application/octet-stream';
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    const isImageExt = !ext || filetypes.test(ext);
+
+    if (isImageMime || isImageExt) return cb(null, true);
     cb(new Error('Only images (jpg, jpeg, png, gif, webp) are allowed!'));
   },
 });
@@ -92,7 +95,7 @@ function uploadToCloudinary(
 }
 
 // ── POST /api/upload ─────────────────────────────────────────────────────────
-router.post('/', authenticateToken, upload.single('image') as any, async (req: AuthRequest, res, next) => {
+router.post('/', optionalAuthenticateToken, upload.single('image') as any, async (req: AuthRequest, res, next) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No image file uploaded' });
   }

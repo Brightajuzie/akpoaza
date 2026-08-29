@@ -12,7 +12,7 @@ import { useCurrency } from '../context/CurrencyContext';
 import PaymentWebView from '../components/PaymentWebView';
 
 interface PaymentMethod {
-  id: 'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY';
+  id: 'WALLET' | 'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY';
   label: string;
   icon: string;
   color: string;
@@ -21,6 +21,7 @@ interface PaymentMethod {
 }
 
 const ALL_PAYMENT_METHODS: PaymentMethod[] = [
+  { id: 'WALLET', label: 'FixMart Virtual Wallet', icon: '👛', color: '#10B981', subtitle: 'Instant 1-tap payment from wallet balance', enabledKey: 'wallet_enabled' },
   { id: 'STRIPE', label: 'Pay with Stripe', icon: '💳', color: '#635BFF', subtitle: 'Visa, Mastercard, AMEX', enabledKey: 'stripe_enabled' },
   { id: 'PAYSTACK', label: 'Pay with Paystack', icon: '🏦', color: '#0BA4DB', subtitle: 'Cards, Bank Transfer, USSD', enabledKey: 'paystack_enabled' },
   { id: 'FLUTTERWAVE', label: 'Pay with Flutterwave', icon: '⚡', color: '#F5A623', subtitle: 'Cards, Mobile Money, Bank', enabledKey: 'flutterwave_enabled' },
@@ -70,8 +71,11 @@ export default function CheckoutScreen({ route, navigation }: any) {
 
   const availableMethods = useMemo(() => {
     if (!settings || Object.keys(settings).length === 0) return ALL_PAYMENT_METHODS;
-    return ALL_PAYMENT_METHODS.filter(m => settings[m.enabledKey] !== 'false');
-  }, [settings]);
+    return ALL_PAYMENT_METHODS.filter(m => {
+      if (m.id === 'WALLET') return !!userToken; // Wallet payment requires logged-in user
+      return settings[m.enabledKey] !== 'false';
+    });
+  }, [settings, userToken]);
 
   const ensureRecordCreated = async (provider: string): Promise<string | null> => {
     if (activeRecordId) return activeRecordId;
@@ -136,12 +140,69 @@ export default function CheckoutScreen({ route, navigation }: any) {
     clearCart();
     if (!userToken) {
       setShowRegisterPrompt(true);
+    } else if (checkoutType === 'booking') {
+      Alert.alert(
+        '🎉 Booking Confirmed & Paid!',
+        refMessage || 'Your handyman service booking has been confirmed and paid successfully.',
+        [
+          {
+            text: '📋 View My Bookings',
+            onPress: () => navigation.navigate('History', { type: 'bookings', tab: 'bookings', role: 'CUSTOMER' }),
+          },
+          {
+            text: '← Back to Services',
+            onPress: () => navigation.navigate('Services'),
+          },
+        ]
+      );
+    } else if (checkoutType === 'parcel') {
+      Alert.alert(
+        '🎉 Parcel Delivery Confirmed & Paid!',
+        refMessage || 'Your parcel dispatch has been assigned and paid successfully.',
+        [
+          {
+            text: '📦 View Deliveries',
+            onPress: () => navigation.navigate('History', { type: 'parcels', tab: 'parcels' }),
+          },
+          {
+            text: '← Back to Parcel Booking',
+            onPress: () => navigation.navigate('BookParcel'),
+          },
+        ]
+      );
     } else {
       Alert.alert(
-        '✅ Payment Successful',
-        refMessage || 'Your payment was completed successfully!',
-        [{ text: 'View History', onPress: () => navigation.navigate('History') }]
+        '🎉 Order Placed & Paid!',
+        refMessage || 'Your marketplace order has been placed and paid successfully.',
+        [
+          {
+            text: '🛒 View My Orders',
+            onPress: () => navigation.navigate('History', { type: 'orders', tab: 'orders', role: 'CUSTOMER' }),
+          },
+          {
+            text: '🛍️ Continue Shopping',
+            onPress: () => navigation.navigate('Products'),
+          },
+        ]
       );
+    }
+  };
+
+  const handleWalletPayment = async () => {
+    setLoadingProvider('WALLET');
+    try {
+      const recId = await ensureRecordCreated('WALLET');
+      if (!recId) { setLoadingProvider(null); return; }
+
+      const response = await apiClient.post('/payments/wallet-pay', {
+        checkoutType, id: recId, isSplit: isRemainingPayment ? true : isSplit,
+      });
+
+      handlePaymentCompleted(response.data?.message || 'Paid successfully with wallet balance!');
+    } catch (error: any) {
+      Alert.alert('Wallet Payment Failed', error.response?.data?.error || 'Could not complete payment using wallet.');
+    } finally {
+      setLoadingProvider(null);
     }
   };
 
@@ -160,8 +221,14 @@ export default function CheckoutScreen({ route, navigation }: any) {
       const { token, user } = response.data;
       await login(token, user);
       setShowRegisterPrompt(false);
-      Alert.alert('🎉 Account Created!', 'Your account has been saved and your order is linked.');
-      navigation.navigate('HomeTab');
+      Alert.alert('🎉 Account Created!', 'Your account has been saved and your booking/order is linked.');
+      if (checkoutType === 'booking') {
+        navigation.navigate('History', { type: 'bookings', tab: 'bookings', role: 'CUSTOMER' });
+      } else if (checkoutType === 'parcel') {
+        navigation.navigate('History', { type: 'parcels', tab: 'parcels' });
+      } else {
+        navigation.navigate('History', { type: 'orders', tab: 'orders', role: 'CUSTOMER' });
+      }
     } catch (err: any) {
       Alert.alert('Registration Error', err.response?.data?.error || 'Failed to create account.');
     } finally {
@@ -481,7 +548,8 @@ export default function CheckoutScreen({ route, navigation }: any) {
                   isLoading && { opacity: 0.85 },
                 ]}
                 onPress={() => {
-                  if (method.id === 'STRIPE') handleStripePayment();
+                  if (method.id === 'WALLET') handleWalletPayment();
+                  else if (method.id === 'STRIPE') handleStripePayment();
                   else handleWebViewPayment(method.id);
                 }}
                 disabled={isAnyLoading}

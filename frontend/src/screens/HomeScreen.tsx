@@ -60,6 +60,7 @@ const NAV_LINKS = [
   { label: 'Products', screen: 'Products' },
   { label: 'Services', screen: 'Services' },
   { label: 'Book Rider', screen: 'BookParcel' },
+  { label: 'My Bookings', screen: 'History' },
   { label: 'Wallet', screen: 'Wallet' },
 ];
 
@@ -403,6 +404,7 @@ export default function HomeScreen({ navigation }: any) {
         <View style={[styles.mobileDrawer, { backgroundColor: theme.card, borderColor: theme.border, shadowColor: isDark ? '#000' : '#888' }]}>
           {[
             { icon: '🏠', label: 'Home', screen: 'HomeTab' },
+            { icon: '📋', label: 'My Bookings & Orders', screen: 'History' },
             { icon: '🏷️', label: 'Sell on FixMart', screen: '__sell__' },
             { icon: '📦', label: 'Products', screen: 'Products' },
             { icon: '⚡', label: 'Services', screen: 'Services' },
