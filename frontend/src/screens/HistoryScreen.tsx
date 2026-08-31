@@ -574,6 +574,51 @@ export default function HistoryScreen({ route, navigation }: any) {
     );
   };
 
+  /**
+   * Opens Google Maps (Android/web) or Apple Maps (iOS) with turn-by-turn directions
+   * to the given destination. Falls back to address string if no coords provided.
+   */
+  const openDirections = async (
+    destLat?: number | null,
+    destLng?: number | null,
+    destAddress?: string | null,
+    label?: string
+  ) => {
+    const { Platform } = await import('react-native');
+    const encodedLabel = encodeURIComponent(label || destAddress || 'Destination');
+
+    if (destLat && destLng) {
+      if (Platform.OS === 'ios') {
+        // Apple Maps with directions
+        const appleMapsUrl = `maps://app?daddr=${destLat},${destLng}&q=${encodedLabel}&dirflg=d`;
+        const googleMapsUrl = `comgooglemaps://?daddr=${destLat},${destLng}&directionsmode=driving`;
+        const canGoogle = await Linking.canOpenURL(googleMapsUrl);
+        Linking.openURL(canGoogle ? googleMapsUrl : appleMapsUrl);
+      } else if (Platform.OS === 'android') {
+        // Google Maps intent with navigation
+        const googleNavUrl = `google.navigation:q=${destLat},${destLng}&mode=d`;
+        const canNav = await Linking.canOpenURL(googleNavUrl);
+        if (canNav) {
+          Linking.openURL(googleNavUrl);
+        } else {
+          Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=driving`);
+        }
+      } else {
+        // Web: Google Maps URL
+        Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destLat},${destLng}&travelmode=driving`);
+      }
+    } else if (destAddress) {
+      const encoded = encodeURIComponent(destAddress);
+      if (Platform.OS === 'ios') {
+        Linking.openURL(`maps://app?daddr=${encoded}&dirflg=d`);
+      } else {
+        Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${encoded}&travelmode=driving`);
+      }
+    } else {
+      Alert.alert('No Location', 'No destination coordinates or address available for this booking.');
+    }
+  };
+
   const renderBookingItem = ({ item }: any) => {
     const isTrackingThis = activeTrackingId === item.id;
     const customerRole = userInfo?.role === 'CUSTOMER';
@@ -715,6 +760,21 @@ export default function HistoryScreen({ route, navigation }: any) {
                 <Text style={[styles.trackBtnText, { color: theme.primary }]}>
                   {customerRole ? '🗺 Track' : '📍 Navigate'}
                 </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Handyman / Service Personnel — Get Directions to Customer Location */}
+            {handymanRole && (item.status === 'ACCEPTED' || item.status === 'IN_PROGRESS') && (
+              <TouchableOpacity
+                style={[styles.trackBtn, { borderColor: '#10B981', backgroundColor: '#ECFDF5' }]}
+                onPress={() => openDirections(
+                  item.latitude ?? null,
+                  item.longitude ?? null,
+                  item.address,
+                  item.customer?.name ? `${item.customer.name}'s Location` : 'Customer Location'
+                )}
+              >
+                <Text style={[styles.trackBtnText, { color: '#059669' }]}>🧭 Directions</Text>
               </TouchableOpacity>
             )}
 
@@ -1121,6 +1181,36 @@ export default function HistoryScreen({ route, navigation }: any) {
                       }}
                     >
                       <Text style={styles.actionBtnText}>✅ Accept</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Rider: Get Directions to Pickup */}
+                  {userInfo?.role === 'RIDER' && parcel.riderId === userInfo.id && parcel.status !== 'DELIVERED' && parcel.status !== 'CANCELLED' && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#10B981' }]}
+                      onPress={() => openDirections(
+                        parcel.pickupLat ?? null,
+                        parcel.pickupLng ?? null,
+                        parcel.pickupAddress,
+                        'Pickup Location'
+                      )}
+                    >
+                      <Text style={styles.actionBtnText}>🧭 To Pickup</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Rider: Get Directions to Dropoff */}
+                  {userInfo?.role === 'RIDER' && parcel.riderId === userInfo.id && (parcel.status === 'SHIPPED' || parcel.status === 'PAID') && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#3B82F6' }]}
+                      onPress={() => openDirections(
+                        parcel.dropoffLat ?? null,
+                        parcel.dropoffLng ?? null,
+                        parcel.dropoffAddress,
+                        'Dropoff Location'
+                      )}
+                    >
+                      <Text style={styles.actionBtnText}>📍 To Dropoff</Text>
                     </TouchableOpacity>
                   )}
 

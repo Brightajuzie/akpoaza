@@ -4,96 +4,9 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { sendNotification } from '../lib/notify';
 import prisma from '../lib/prisma';
 import { triggerSplitWebhook } from '../lib/wallet';
-import http from 'http';
+import { calculateRiderDeliveryPrice, calculateAccurateDistance, haversineDistanceKm } from '../lib/location';
 
 const router = Router();
-
-// Haversine straight-line distance (fallback)
-function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-// Get real road distance from OSRM (Open Source Routing Machine)
-// Returns distance in km and duration in minutes, or null on failure
-function getRoadDistance(
-  lat1: number, lon1: number, lat2: number, lon2: number
-): Promise<{ distanceKm: number; durationMins: number; routeType: 'road' } | null> {
-  return new Promise((resolve) => {
-    const url = `http://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=false&annotations=false`;
-    const req = http.get(url, { timeout: 5000 }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => (data += chunk));
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          if (json.code === 'Ok' && json.routes && json.routes.length > 0) {
-            const route = json.routes[0];
-            resolve({
-              distanceKm: route.distance / 1000,          // metres → km
-              durationMins: Math.ceil(route.duration / 60), // seconds → minutes
-              routeType: 'road',
-            });
-          } else {
-            resolve(null);
-          }
-        } catch {
-          resolve(null);
-        }
-      });
-    });
-    req.on('error', () => resolve(null));
-    req.on('timeout', () => { req.destroy(); resolve(null); });
-  });
-}
-
-// Calculate base price + per km using configurable rates
-// Uses real road routing (OSRM) with Haversine × 1.3 as fallback
-async function calculateDeliveryPrice(lat1: number, lon1: number, lat2: number, lon2: number) {
-  // Load admin-configured pricing from DB (with sensible defaults)
-  const settings = await prisma.appSetting.findMany({
-    where: { key: { in: ['rider_base_fare', 'rider_price_per_km', 'rider_platform_fee_pct'] } }
-  });
-  const settingsMap = Object.fromEntries(settings.map(s => [s.key, s.value]));
-  const BASE_FARE = parseFloat(settingsMap['rider_base_fare'] || '1000');
-  const PER_KM_RATE = parseFloat(settingsMap['rider_price_per_km'] || '200');
-  const PLATFORM_FEE_PCT = parseFloat(settingsMap['rider_platform_fee_pct'] || '10');
-
-  // Try real road distance first
-  let distanceKm: number;
-  let durationMins: number | undefined;
-  let routeType: 'road' | 'straight-line';
-
-  const roadResult = await getRoadDistance(lat1, lon1, lat2, lon2);
-  if (roadResult) {
-    distanceKm = roadResult.distanceKm;
-    durationMins = roadResult.durationMins;
-    routeType = 'road';
-  } else {
-    // Fallback: apply a 1.3 winding factor to straight-line distance
-    const straight = haversineDistanceKm(lat1, lon1, lat2, lon2);
-    distanceKm = straight * 1.3;
-    routeType = 'straight-line';
-  }
-
-  const subTotal = BASE_FARE + (distanceKm * PER_KM_RATE);
-  const platformFee = subTotal * (PLATFORM_FEE_PCT / 100);
-  return {
-    price: Math.ceil(subTotal + platformFee),
-    distanceKm: distanceKm.toFixed(2),
-    durationMins,
-    routeType,
-    BASE_FARE,
-    PER_KM_RATE,
-    PLATFORM_FEE_PCT,
-  };
-}
 
 // Get a quote for a parcel delivery
 router.post('/quote', async (req: Request, res) => {
@@ -108,12 +21,13 @@ router.post('/quote', async (req: Request, res) => {
     return res.status(400).json({ error: 'Valid pickup and dropoff coordinates are required' });
   }
 
-  const result = await calculateDeliveryPrice(pLat, pLng, dLat, dLng);
+  const result = await calculateRiderDeliveryPrice(pLat, pLng, dLat, dLng);
   res.json({
     price: result.price,
     distanceKm: result.distanceKm,
     durationMins: result.durationMins ?? null,
     routeType: result.routeType,
+    provider: result.provider,
     baseFare: result.BASE_FARE,
     perKmRate: result.PER_KM_RATE,
   });
@@ -157,7 +71,7 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
     }
 
     const userId = user.id;
-    const result = await calculateDeliveryPrice(pLat, pLng, dLat, dLng);
+    const result = await calculateRiderDeliveryPrice(pLat, pLng, dLat, dLng);
     const computedTotalAmount = result.price;
 
     // Proximity Rider Assignment
@@ -242,7 +156,7 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
   }
 
   try {
-    const result = await calculateDeliveryPrice(pLat, pLng, dLat, dLng);
+    const result = await calculateRiderDeliveryPrice(pLat, pLng, dLat, dLng);
     const computedTotalAmount = result.price;
 
     // Proximity Rider Assignment

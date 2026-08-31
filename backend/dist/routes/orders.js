@@ -17,7 +17,11 @@ const auth_1 = require("../middleware/auth");
 const notify_1 = require("../lib/notify");
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const wallet_1 = require("../lib/wallet");
+const location_1 = require("../lib/location");
 const router = (0, express_1.Router)();
+function getDistanceKm(lat1, lon1, lat2, lon2) {
+    return (0, location_1.haversineDistanceKm)(lat1, lon1, lat2, lon2);
+}
 // Get orders for a user
 router.get('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
@@ -74,16 +78,6 @@ router.get('/vendor', auth_1.authenticateToken, (req, res, next) => __awaiter(vo
         next(error);
     }
 }));
-function getDistanceKm(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-}
 // Guest Checkout for unauthenticated users
 router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const { items, paymentProvider, guestEmail, guestName, guestPhone, deliveryAddress, latitude, longitude } = req.body;

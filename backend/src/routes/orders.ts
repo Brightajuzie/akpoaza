@@ -4,8 +4,13 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { sendNotification, notifyMany } from '../lib/notify';
 import prisma from '../lib/prisma';
 import { triggerSplitWebhook } from '../lib/wallet';
+import { haversineDistanceKm } from '../lib/location';
 
 const router = Router();
+
+function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  return haversineDistanceKm(lat1, lon1, lat2, lon2);
+}
 
 // Get orders for a user
 router.get('/', authenticateToken, async (req: AuthRequest, res, next) => {
@@ -63,18 +68,6 @@ router.get('/vendor', authenticateToken, async (req: AuthRequest, res, next) => 
     next(error);
   }
 });
-
-function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
 
 // Guest Checkout for unauthenticated users
 router.post('/guest-checkout', async (req: Request, res: Response, next: NextFunction) => {

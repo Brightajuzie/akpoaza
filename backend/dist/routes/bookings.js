@@ -17,6 +17,7 @@ const auth_1 = require("../middleware/auth");
 const notify_1 = require("../lib/notify");
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const wallet_1 = require("../lib/wallet");
+const location_1 = require("../lib/location");
 const router = (0, express_1.Router)();
 // Get bookings for the logged-in user
 router.get('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
@@ -64,14 +65,7 @@ router.get('/admin/all', auth_1.authenticateToken, (req, res, next) => __awaiter
     }
 }));
 function getDistanceKm(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Earth's radius in km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    return (0, location_1.haversineDistanceKm)(lat1, lon1, lat2, lon2);
 }
 // Get single booking by ID
 router.get('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
