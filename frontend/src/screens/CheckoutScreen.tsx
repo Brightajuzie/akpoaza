@@ -12,7 +12,7 @@ import { useCurrency } from '../context/CurrencyContext';
 import PaymentWebView from '../components/PaymentWebView';
 
 interface PaymentMethod {
-  id: 'WALLET' | 'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY';
+  id: 'WALLET' | 'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY' | 'POD';
   label: string;
   icon: string;
   color: string;
@@ -21,7 +21,8 @@ interface PaymentMethod {
 }
 
 const ALL_PAYMENT_METHODS: PaymentMethod[] = [
-  { id: 'WALLET', label: 'FixMart Virtual Wallet', icon: '👛', color: '#10B981', subtitle: 'Instant 1-tap payment from wallet balance', enabledKey: 'wallet_enabled' },
+  { id: 'POD', label: 'Pay on Delivery', icon: '💵', color: '#10B981', subtitle: 'Pay with cash or transfer when your order arrives', enabledKey: 'pod_enabled' },
+  { id: 'WALLET', label: 'FixMart Virtual Wallet', icon: '👛', color: '#059669', subtitle: 'Instant 1-tap payment from wallet balance', enabledKey: 'wallet_enabled' },
   { id: 'STRIPE', label: 'Pay with Stripe', icon: '💳', color: '#635BFF', subtitle: 'Visa, Mastercard, AMEX', enabledKey: 'stripe_enabled' },
   { id: 'PAYSTACK', label: 'Pay with Paystack', icon: '🏦', color: '#0BA4DB', subtitle: 'Cards, Bank Transfer, USSD', enabledKey: 'paystack_enabled' },
   { id: 'FLUTTERWAVE', label: 'Pay with Flutterwave', icon: '⚡', color: '#F5A623', subtitle: 'Cards, Mobile Money, Bank', enabledKey: 'flutterwave_enabled' },
@@ -158,7 +159,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
     } else if (checkoutType === 'parcel') {
       Alert.alert(
         '🎉 Parcel Delivery Confirmed & Paid!',
-        refMessage || 'Your parcel dispatch has been assigned and paid successfully.',
+        refMessage || 'Your parcel dispatch has been assigned and paid successfully. A rider will call you to confirm your location.',
         [
           {
             text: '📦 View Deliveries',
@@ -172,8 +173,8 @@ export default function CheckoutScreen({ route, navigation }: any) {
       );
     } else {
       Alert.alert(
-        '🎉 Order Placed & Paid!',
-        refMessage || 'Your marketplace order has been placed and paid successfully.',
+        '🎉 Order Placed Successfully!',
+        refMessage || 'Your order has been placed! Your product will be delivered within a few hours. A rider will call you to confirm your location.',
         [
           {
             text: '🛒 View My Orders',
@@ -188,6 +189,22 @@ export default function CheckoutScreen({ route, navigation }: any) {
     }
   };
 
+  const handlePodPayment = async () => {
+    setLoadingProvider('POD');
+    try {
+      const recId = await ensureRecordCreated('NONE');
+      if (!recId) { setLoadingProvider(null); return; }
+
+      handlePaymentCompleted(
+        'Your order has been placed! Your product will be delivered within a few hours. A rider will call you to confirm your location.'
+      );
+    } catch (error: any) {
+      Alert.alert('Order Failed', error.response?.data?.error || 'Could not place order for pay on delivery.');
+    } finally {
+      setLoadingProvider(null);
+    }
+  };
+
   const handleWalletPayment = async () => {
     setLoadingProvider('WALLET');
     try {
@@ -198,7 +215,10 @@ export default function CheckoutScreen({ route, navigation }: any) {
         checkoutType, id: recId, isSplit: isRemainingPayment ? true : isSplit,
       });
 
-      handlePaymentCompleted(response.data?.message || 'Paid successfully with wallet balance!');
+      handlePaymentCompleted(
+        response.data?.message ||
+        'Payment successful! Your product will be delivered within a few hours. A rider will call you to confirm your location.'
+      );
     } catch (error: any) {
       Alert.alert('Wallet Payment Failed', error.response?.data?.error || 'Could not complete payment using wallet.');
     } finally {
@@ -548,7 +568,8 @@ export default function CheckoutScreen({ route, navigation }: any) {
                   isLoading && { opacity: 0.85 },
                 ]}
                 onPress={() => {
-                  if (method.id === 'WALLET') handleWalletPayment();
+                  if (method.id === 'POD') handlePodPayment();
+                  else if (method.id === 'WALLET') handleWalletPayment();
                   else if (method.id === 'STRIPE') handleStripePayment();
                   else handleWebViewPayment(method.id);
                 }}

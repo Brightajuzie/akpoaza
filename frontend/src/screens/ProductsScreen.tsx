@@ -286,10 +286,49 @@ export default function ProductsScreen({ navigation, route }: any) {
           <Text style={[styles.cardName, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={2}>
             {item.name}
           </Text>
+
+          {/* Size & Weight specs */}
+          {(item.size || item.weight) && (
+            <View style={styles.specsRow}>
+              {item.size ? (
+                <View style={[styles.specChip, { backgroundColor: isDark ? '#1E3A5F' : '#EFF6FF', borderColor: isDark ? '#1E40AF' : '#BFDBFE' }]}>
+                  <Text style={[styles.specChipText, { color: isDark ? '#93C5FD' : '#1D4ED8' }]}>📐 {item.size}</Text>
+                </View>
+              ) : null}
+              {item.weight ? (
+                <View style={[styles.specChip, { backgroundColor: isDark ? '#1A2E1A' : '#F0FDF4', borderColor: isDark ? '#166534' : '#BBF7D0' }]}>
+                  <Text style={[styles.specChipText, { color: isDark ? '#86EFAC' : '#15803D' }]}>⚖️ {item.weight}</Text>
+                </View>
+              ) : null}
+            </View>
+          )}
+
+          {/* Stock remaining */}
+          {item.stock !== undefined && item.stock !== null && (
+            <View style={styles.stockRow}>
+              {item.stock === 0 ? (
+                <View style={[styles.stockBadge, { backgroundColor: '#FEE2E2', borderColor: '#FECACA' }]}>
+                  <Text style={[styles.stockBadgeText, { color: '#DC2626' }]}>❌ Out of stock</Text>
+                </View>
+              ) : item.stock <= 5 ? (
+                <View style={[styles.stockBadge, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+                  <Text style={[styles.stockBadgeText, { color: '#D97706' }]}>⚠️ Only {item.stock} left</Text>
+                </View>
+              ) : (
+                <View style={[styles.stockBadge, { backgroundColor: isDark ? '#0F2E1A' : '#F0FDF4', borderColor: isDark ? '#166534' : '#BBF7D0' }]}>
+                  <Text style={[styles.stockBadgeText, { color: isDark ? '#86EFAC' : '#15803D' }]}>✅ {item.stock} in stock</Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Vendor name */}
           {item.vendor && (
-            <Text style={[styles.cardVendor, { color: isDark ? '#475569' : '#94A3B8' }]} numberOfLines={1}>
-              🏪 {item.vendor.name}{item.vendor.address ? ` · 📍 ${item.vendor.address}` : ''}
-            </Text>
+            <View style={styles.vendorRow}>
+              <Text style={[styles.cardVendor, { color: isDark ? '#94A3B8' : '#475569' }]} numberOfLines={1}>
+                🏪 <Text style={{ fontWeight: '700' }}>{item.vendor.name}</Text>
+              </Text>
+            </View>
           )}
 
           {/* Price + Add to Cart */}
@@ -298,11 +337,12 @@ export default function ProductsScreen({ navigation, route }: any) {
               {fmt(item.price)}
             </Text>
             <TouchableOpacity
-              style={[styles.addBtn, { backgroundColor: theme.primary }]}
-              onPress={() => handleAddToCart(item)}
-              activeOpacity={0.82}
+              style={[styles.addBtn, { backgroundColor: item.stock === 0 ? '#94A3B8' : theme.primary }]}
+              onPress={() => item.stock !== 0 && handleAddToCart(item)}
+              activeOpacity={item.stock === 0 ? 1 : 0.82}
+              disabled={item.stock === 0}
             >
-              <Text style={styles.addBtnText}>{numColumns === 2 ? '+ Cart' : '+ Add'}</Text>
+              <Text style={styles.addBtnText}>{item.stock === 0 ? 'Sold Out' : (numColumns === 2 ? '+ Cart' : '+ Add')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -649,7 +689,29 @@ const styles = StyleSheet.create({
   cardCat: { fontSize: 10, fontWeight: '700', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.3 },
   cardName: { fontSize: 13, fontWeight: '800', lineHeight: 18, marginBottom: 4 },
   cardDesc: { fontSize: 11, lineHeight: 15, marginBottom: 6 },
-  cardVendor: { fontSize: 10, marginBottom: 8 },
+
+  // Size & weight spec chips
+  specsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 5 },
+  specChip: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: 6, borderWidth: 1,
+  },
+  specChipText: { fontSize: 9, fontWeight: '700' },
+
+  // Stock badge
+  stockRow: { marginBottom: 5 },
+  stockBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderRadius: 6, borderWidth: 1,
+  },
+  stockBadgeText: { fontSize: 9, fontWeight: '800' },
+
+  // Vendor row
+  vendorRow: { marginBottom: 6 },
+  cardVendor: { fontSize: 10, lineHeight: 14 },
+
   cardFooter: {
     flexDirection: 'row', alignItems: 'center',
     justifyContent: 'space-between', gap: 6, marginTop: 2,

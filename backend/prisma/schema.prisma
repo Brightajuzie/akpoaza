@@ -60,6 +60,8 @@ model Product {
   stock       Int            @default(0)
   imageUrl    String?        // primary / cover image (mirrors images[0].url)
   category    String?
+  size        String?        // e.g. "30cm x 20cm x 10cm" or "M / L / XL"
+  weight      String?        // e.g. "1.5kg" or "500g"
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
   vendorId    String?

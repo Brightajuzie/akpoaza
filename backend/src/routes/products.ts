@@ -121,7 +121,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
     return res.status(403).json({ error: 'Forbidden. Admin or Vendor access required.' });
   }
 
-  const { name, description, price, stock, category, imageUrls } = req.body;
+  const { name, description, price, stock, category, imageUrls, size, weight } = req.body;
 
   const imgError = validateImageUrls(imageUrls);
   if (imgError) return res.status(400).json({ error: imgError });
@@ -143,6 +143,8 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
         stock: parseInt(stock, 10) || 0,
         imageUrl: urls[0], // primary / cover mirrors images[0]
         category,
+        size: size || null,
+        weight: weight || null,
         vendorId: role === 'VENDOR' ? userId : null,
         images: {
           create: urls.map((url, idx) => ({ url, position: idx })),
@@ -170,7 +172,7 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
     return res.status(403).json({ error: 'Forbidden. Admin or Vendor access required.' });
   }
 
-  const { name, description, price, stock, category, imageUrls } = req.body;
+  const { name, description, price, stock, category, imageUrls, size, weight } = req.body;
 
   let urls: string[] | undefined;
   if (imageUrls !== undefined) {
@@ -201,6 +203,8 @@ router.put('/:id', authenticateToken, async (req: AuthRequest, res) => {
       ...(price !== undefined && { price: parseFloat(price) }),
       ...(stock !== undefined && { stock: parseInt(stock, 10) }),
       ...(category !== undefined && { category }),
+      ...(size !== undefined && { size: size || null }),
+      ...(weight !== undefined && { weight: weight || null }),
     };
 
     if (urls) {

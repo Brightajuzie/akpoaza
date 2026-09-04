@@ -33,7 +33,18 @@ export default function LiveTrackingScreen({ route, navigation }: any) {
     const fetchLatestLocation = async () => {
       if (!idToJoin) return;
       try {
-        const endpoint = isOrder ? `/parcels/${idToJoin}/location` : `/bookings/${idToJoin}/location`;
+        let endpoint = `/bookings/${idToJoin}/location`;
+        if (isOrder) {
+          // Attempt orders endpoint; if not found try parcels endpoint
+          try {
+            const testOrder = await apiClient.get(`/orders/${idToJoin}/location`);
+            if (testOrder?.data) {
+              endpoint = `/orders/${idToJoin}/location`;
+            }
+          } catch {
+            endpoint = `/parcels/${idToJoin}/location`;
+          }
+        }
         const res = await apiClient.get(endpoint);
         if (res.data) {
           if (role === 'ADMIN') {

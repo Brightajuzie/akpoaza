@@ -191,6 +191,83 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
       });
     });
 
+    // ── Multi-channel notifications for guest checkout ──────────────────
+    try {
+      const itemsSummary = dbProducts.map(p => {
+        const req = items.find((i: any) => i.productId === p.id);
+        return `${req?.quantity || 1}× ${p.name}`;
+      }).join(', ');
+
+      const isPOD = !paymentProvider || paymentProvider === 'NONE';
+      const customerTitle = isPOD ? '📦 Order Placed (Pay on Delivery)' : '🛒 Order Placed Successfully';
+      const customerBody = `Your order for ${itemsSummary} (₦${computedTotalAmount.toLocaleString()}) has been placed. Your product will be delivered within a few hours, and a rider will call you to confirm your location.`;
+
+      // 1. Customer — in-app, SMS, email
+      sendNotification({
+        userId,
+        title: customerTitle,
+        body: customerBody,
+        type: 'ORDER',
+        referenceId: order.id,
+        email: user.email,
+        phone: user.phone || undefined,
+        emailSubject: '📦 Order Confirmation & Delivery Notice — FixMart',
+        emailHtml: `<p style="font-size:16px;color:#374151">Hi ${user.name || 'there'},</p>
+          <p>Thank you for shopping with <strong>FixMart</strong>! Your order has been placed successfully.</p>
+          <div style="background:#F3F4F6;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+            <p style="margin:0;font-size:15px;color:#065F46;font-weight:600">🚚 Delivery Update:</p>
+            <p style="margin:4px 0 0;font-size:14px;color:#1F2937">Your product will be delivered within a few hours. A rider will call you shortly to confirm your location.</p>
+          </div>
+          <p><strong>Items:</strong> ${itemsSummary}</p>
+          <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
+          <p><strong>Payment Method:</strong> ${isPOD ? 'Cash / Transfer on Delivery' : paymentProvider}</p>
+          <p><strong>Delivery Address:</strong> ${order.deliveryAddress || 'Not specified'}</p>`,
+      }).catch(() => {});
+
+      // 2. Admins — new order alert
+      const admins = await prisma.user.findMany({
+        where: { role: 'ADMIN' },
+        select: { id: true, email: true },
+      });
+      for (const admin of admins) {
+        sendNotification({
+          userId: admin.id,
+          title: `📦 New Order Placed: #${order.id.slice(-6).toUpperCase()}`,
+          body: `Customer ${user.name || user.email} placed an order (${itemsSummary}) totaling ₦${computedTotalAmount.toLocaleString()}. Delivery required within a few hours.`,
+          type: 'ORDER',
+          referenceId: order.id,
+          email: admin.email,
+          emailSubject: `📦 [Admin Alert] New Order #${order.id.slice(-6).toUpperCase()} Placed`,
+          emailHtml: `<p>A new order has been placed on FixMart.</p>
+            <p><strong>Order ID:</strong> ${order.id}</p>
+            <p><strong>Customer:</strong> ${user.name} (${user.email})</p>
+            <p><strong>Items:</strong> ${itemsSummary}</p>
+            <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
+            <p><strong>Payment:</strong> ${isPOD ? 'Pay on Delivery' : paymentProvider}</p>
+            <p><strong>Delivery Address:</strong> ${order.deliveryAddress || 'Not provided'}</p>
+            <p>A rider should be dispatched to deliver within a few hours.</p>`,
+        }).catch(() => {});
+      }
+
+      // 3. Assigned Rider notification
+      if (assignedRiderId) {
+        sendNotification({
+          userId: assignedRiderId,
+          title: '🛵 New Delivery Dispatch Assigned',
+          body: `You have been assigned to deliver order #${order.id.slice(-6).toUpperCase()} to ${user.name}. Please call customer to confirm location.`,
+          type: 'ORDER',
+          referenceId: order.id,
+          emailSubject: '🛵 Delivery Dispatch Assigned — FixMart',
+          emailHtml: `<p>You have a new delivery assignment.</p>
+            <p><strong>Customer:</strong> ${user.name} (${user.phone || 'Phone on file'})</p>
+            <p><strong>Destination:</strong> ${order.deliveryAddress || 'See in app'}</p>
+            <p>Please call the customer to confirm their location and deliver within a few hours.</p>`,
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.error('[guest-checkout] Notification error:', e);
+    }
+
     res.status(201).json({
       message: 'Guest order created successfully',
       order,
@@ -314,27 +391,82 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
 
     // ── Multi-channel notifications ──────────────────────────────────────
     try {
+      const customer = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true, phone: true },
+      });
+
       const itemsSummary = dbProducts.map(p => {
         const req = items.find((i: any) => i.productId === p.id);
         return `${req?.quantity || 1}× ${p.name}`;
       }).join(', ');
 
-      // 1. Customer — order confirmation
+      const isPOD = !paymentProvider || paymentProvider === 'NONE';
+      const customerTitle = isPOD ? '📦 Order Placed (Pay on Delivery)' : '🛒 Order Placed Successfully';
+      const customerBody = `Your order for ${itemsSummary} (₦${computedTotalAmount.toLocaleString()}) has been placed. Your product will be delivered within a few hours, and a rider will call you to confirm your location.`;
+
+      // 1. Customer — order confirmation and delivery notice
       sendNotification({
         userId,
-        title: '🛒 Order Placed Successfully',
-        body: `Your order for ${itemsSummary} (₦${computedTotalAmount.toLocaleString()}) has been received and is being processed.`,
+        title: customerTitle,
+        body: customerBody,
         type: 'ORDER',
         referenceId: order.id,
-        emailSubject: '✅ Order Confirmed — FixMart',
-        emailHtml: `<p style="font-size:16px;color:#374151">Hi there,</p>
-          <p>Your order has been placed successfully!</p>
+        emailSubject: '📦 Order Confirmation & Delivery Notice — FixMart',
+        emailHtml: `<p style="font-size:16px;color:#374151">Hi ${customer?.name || 'there'},</p>
+          <p>Thank you for shopping with <strong>FixMart</strong>! Your order has been placed successfully.</p>
+          <div style="background:#F3F4F6;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+            <p style="margin:0;font-size:15px;color:#065F46;font-weight:600">🚚 Delivery Update:</p>
+            <p style="margin:4px 0 0;font-size:14px;color:#1F2937">Your product will be delivered within a few hours. A rider will call you shortly to confirm your location.</p>
+          </div>
           <p><strong>Items:</strong> ${itemsSummary}</p>
           <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
-          <p>We'll notify you as soon as it ships. Thank you for shopping with <strong>FixMart</strong>!</p>`,
+          <p><strong>Payment Method:</strong> ${isPOD ? 'Cash / Transfer on Delivery' : paymentProvider}</p>
+          <p><strong>Delivery Address:</strong> ${order.deliveryAddress || 'Not specified'}</p>`,
       }).catch(() => {});
 
-      // 2. Each vendor — new sale alert
+      // 2. Admins — new order alert
+      const admins = await prisma.user.findMany({
+        where: { role: 'ADMIN' },
+        select: { id: true, email: true },
+      });
+      for (const admin of admins) {
+        sendNotification({
+          userId: admin.id,
+          title: `📦 New Order Placed: #${order.id.slice(-6).toUpperCase()}`,
+          body: `Order #${order.id.slice(-6).toUpperCase()} placed by ${customer?.name || customer?.email || 'Customer'} (${itemsSummary}) totaling ₦${computedTotalAmount.toLocaleString()}. Delivery required within a few hours.`,
+          type: 'ORDER',
+          referenceId: order.id,
+          email: admin.email,
+          emailSubject: `📦 [Admin Alert] New Order #${order.id.slice(-6).toUpperCase()} Placed`,
+          emailHtml: `<p>A new order has been placed on FixMart.</p>
+            <p><strong>Order ID:</strong> ${order.id}</p>
+            <p><strong>Customer:</strong> ${customer?.name || 'Customer'} (${customer?.email || 'N/A'})</p>
+            <p><strong>Items:</strong> ${itemsSummary}</p>
+            <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
+            <p><strong>Payment:</strong> ${isPOD ? 'Pay on Delivery' : paymentProvider}</p>
+            <p><strong>Delivery Address:</strong> ${order.deliveryAddress || 'Not provided'}</p>
+            <p>A rider should be dispatched to deliver within a few hours.</p>`,
+        }).catch(() => {});
+      }
+
+      // 3. Assigned Rider notification
+      if (assignedRiderId) {
+        sendNotification({
+          userId: assignedRiderId,
+          title: '🛵 New Delivery Dispatch Assigned',
+          body: `You have been assigned to deliver order #${order.id.slice(-6).toUpperCase()} to ${customer?.name || 'Customer'}. Please call customer to confirm location.`,
+          type: 'ORDER',
+          referenceId: order.id,
+          emailSubject: '🛵 Delivery Dispatch Assigned — FixMart',
+          emailHtml: `<p>You have a new delivery assignment.</p>
+            <p><strong>Customer:</strong> ${customer?.name || 'Customer'} (${customer?.phone || 'Phone on file'})</p>
+            <p><strong>Destination:</strong> ${order.deliveryAddress || 'See in app'}</p>
+            <p>Please call the customer to confirm their location and deliver within a few hours.</p>`,
+        }).catch(() => {});
+      }
+
+      // 4. Each vendor — new sale alert
       const vendorIds = new Set(dbProducts.map(p => p.vendorId).filter(Boolean));
       for (const vendorId of vendorIds) {
         const vendorItems = dbProducts.filter(p => p.vendorId === vendorId);
@@ -359,7 +491,7 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
       console.error('[orders] Failed to dispatch notifications:', e);
     }
 
-    res.status(201).json({ message: 'Order created successfully', order });
+    res.status(201).json({ message: 'Order created successfully', order, riderDistance });
   } catch (error) {
     next(error);
   }
