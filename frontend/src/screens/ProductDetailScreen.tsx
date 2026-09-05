@@ -275,6 +275,49 @@ export default function ProductDetailScreen({ route, navigation }: any) {
             {fmt(product.price)}
           </Text>
 
+          {/* Specs: Size, Weight & Stock */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 10, alignItems: 'center' }}>
+            {product.size ? (
+              <View style={[styles.detailSpecChip, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+                <Text style={[styles.detailSpecChipText, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
+                  📐 Size: <Text style={{ fontWeight: '800' }}>{product.size}</Text>
+                </Text>
+              </View>
+            ) : null}
+
+            {product.weight ? (
+              <View style={[styles.detailSpecChip, { backgroundColor: isDark ? '#1E293B' : '#F1F5F9', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+                <Text style={[styles.detailSpecChipText, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
+                  ⚖️ Weight: <Text style={{ fontWeight: '800' }}>{product.weight}</Text>
+                </Text>
+              </View>
+            ) : null}
+
+            {product.stock !== undefined && (
+              <View
+                style={[
+                  styles.detailSpecChip,
+                  {
+                    backgroundColor: product.stock === 0 ? '#FEE2E2' : product.stock <= 5 ? '#FEF3C7' : '#DCFCE7',
+                    borderColor: product.stock === 0 ? '#F87171' : product.stock <= 5 ? '#FBBF24' : '#86EFAC',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.detailSpecChipText,
+                    {
+                      color: product.stock === 0 ? '#991B1B' : product.stock <= 5 ? '#92400E' : '#166534',
+                      fontWeight: '800',
+                    },
+                  ]}
+                >
+                  {product.stock === 0 ? '❌ Out of Stock' : product.stock <= 5 ? `⚠️ Only ${product.stock} Left` : `✅ In Stock (${product.stock} available)`}
+                </Text>
+              </View>
+            )}
+          </View>
+
           <Text style={[styles.description, { color: isDark ? '#94A3B8' : '#475569' }]}>
             {product.description}
           </Text>
@@ -328,11 +371,17 @@ export default function ProductDetailScreen({ route, navigation }: any) {
           {/* Add to Cart button on desktop */}
           {isDesktop && (
             <TouchableOpacity
-              style={[styles.addToCartBtnInline, { backgroundColor: theme.primary }]}
-              onPress={handleAddToCart}
-              activeOpacity={0.85}
+              style={[
+                styles.addToCartBtnInline,
+                { backgroundColor: product.stock === 0 ? '#94A3B8' : theme.primary },
+              ]}
+              onPress={() => product.stock !== 0 && handleAddToCart()}
+              disabled={product.stock === 0}
+              activeOpacity={product.stock === 0 ? 1 : 0.85}
             >
-              <Text style={styles.addToCartBtnText}>🛒 Add to Cart — {fmt(product.price)}</Text>
+              <Text style={styles.addToCartBtnText}>
+                {product.stock === 0 ? '❌ Sold Out' : `🛒 Add to Cart — ${fmt(product.price)}`}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -449,11 +498,17 @@ export default function ProductDetailScreen({ route, navigation }: any) {
             <Text style={[styles.footerPriceVal, { color: theme.primary }]}>{fmt(product.price)}</Text>
           </View>
           <TouchableOpacity
-            style={[styles.addToCartBtn, { backgroundColor: theme.primary }]}
-            onPress={handleAddToCart}
-            activeOpacity={0.85}
+            style={[
+              styles.addToCartBtn,
+              { backgroundColor: product.stock === 0 ? '#94A3B8' : theme.primary },
+            ]}
+            onPress={() => product.stock !== 0 && handleAddToCart()}
+            disabled={product.stock === 0}
+            activeOpacity={product.stock === 0 ? 1 : 0.85}
           >
-            <Text style={styles.addToCartBtnText}>🛒 Add to Cart</Text>
+            <Text style={styles.addToCartBtnText}>
+              {product.stock === 0 ? '❌ Sold Out' : '🛒 Add to Cart'}
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -746,4 +801,13 @@ const styles = StyleSheet.create({
   chatInput: { flex: 1, height: 42, borderRadius: 21, paddingHorizontal: 16, fontSize: 14 },
   chatSendBtn: { height: 42, paddingHorizontal: 18, borderRadius: 21, justifyContent: 'center', alignItems: 'center' },
   chatSendBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
+  detailSpecChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  detailSpecChipText: {
+    fontSize: 12,
+  },
 });

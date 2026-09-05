@@ -70,6 +70,8 @@ export default function AdminScreen() {
   const [description, setDescription]       = useState('');
   const [price, setPrice]                   = useState('');
   const [stock, setStock]                   = useState('');
+  const [size, setSize]                     = useState('');
+  const [weight, setWeight]                 = useState('');
   const [category, setCategory]             = useState('');
   const [imageUrls, setImageUrls]           = useState<string[]>([]);  // up to 3 product image URLs
   const [pendingImageIndex, setPendingImageIndex] = useState<number>(0); // which slot is being uploaded
@@ -137,6 +139,7 @@ export default function AdminScreen() {
   const [paystackEnabled, setPaystackEnabled]         = useState(true);
   const [flutterwaveEnabled, setFlutterwaveEnabled]   = useState(true);
   const [opayEnabled, setOpayEnabled]                 = useState(true);
+  const [podEnabled, setPodEnabled]                   = useState(true);
 
   // Rider Delivery Pricing (Admin only)
   const [riderBaseFare, setRiderBaseFare]           = useState('1000');
@@ -762,6 +765,7 @@ export default function AdminScreen() {
       setPaystackEnabled(settings.paystack_enabled !== 'false');
       setFlutterwaveEnabled(settings.flutterwave_enabled !== 'false');
       setOpayEnabled(settings.opay_enabled !== 'false');
+      setPodEnabled(settings.pod_enabled !== 'false');
       // Rider pricing
       setRiderBaseFare(settings.rider_base_fare || '1000');
       setRiderPricePerKm(settings.rider_price_per_km || '200');
@@ -971,6 +975,8 @@ export default function AdminScreen() {
         description: description.trim(),
         price: parseFloat(price),
         stock: parseInt(stock, 10) || 0,
+        size: size.trim() || undefined,
+        weight: weight.trim() || undefined,
         category: category.trim(),
         imageUrls,
       };
@@ -998,6 +1004,8 @@ export default function AdminScreen() {
     setDescription(product.description || '');
     setPrice(product.price ? product.price.toString() : '');
     setStock(product.stock !== undefined ? product.stock.toString() : '0');
+    setSize(product.size || '');
+    setWeight(product.weight || '');
     setCategory(product.category || '');
     // Prefer the images[] relation if available (sorted by position), else fall back to imageUrl
     const existingUrls: string[] = Array.isArray(product.images) && product.images.length > 0
@@ -1126,6 +1134,8 @@ export default function AdminScreen() {
     setDescription('');
     setPrice('');
     setStock('');
+    setSize('');
+    setWeight('');
     setCategory('');
     setImageUrls([]);
     setPendingImageIndex(0);
@@ -1320,6 +1330,7 @@ export default function AdminScreen() {
         paystack_enabled:         paystackEnabled ? 'true' : 'false',
         flutterwave_enabled:      flutterwaveEnabled ? 'true' : 'false',
         opay_enabled:             opayEnabled ? 'true' : 'false',
+        pod_enabled:              podEnabled ? 'true' : 'false',
       };
       await updateSettings(updates);
       Alert.alert('Branding Updated', 'System configurations updated successfully across all client devices.');
@@ -2064,6 +2075,17 @@ export default function AdminScreen() {
                 </View>
               </View>
 
+              <View style={styles.row}>
+                <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+                  <Text style={styles.label}>Size (optional)</Text>
+                  <TextInput style={styles.input} value={size} onChangeText={setSize} placeholder="e.g. 42, XL, 10-inch" />
+                </View>
+                <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+                  <Text style={styles.label}>Weight (optional)</Text>
+                  <TextInput style={styles.input} value={weight} onChangeText={setWeight} placeholder="e.g. 1.5kg, 500g" />
+                </View>
+              </View>
+
               <View style={styles.formGroup}>
                 <Text style={styles.label}>Category</Text>
                 <TextInput style={styles.input} value={category} onChangeText={setCategory} placeholder="e.g. Tools, Hardware" />
@@ -2805,10 +2827,62 @@ export default function AdminScreen() {
                 <TextInput style={styles.input} value={footerTextInput} onChangeText={setFooterTextInput} placeholder="© 2026 Handyman..." />
               </View>
 
-              <Text style={styles.sectionHeading}>3. Active Payment Gateways Credentials</Text>
+              <Text style={styles.sectionHeading}>3. Active Payment Gateways & Checkout Methods</Text>
+
+              <View style={styles.subSettingsCard}>
+                <Text style={styles.subCardTitle}>💳 Checkout Payment Method Toggles</Text>
+                <Text style={styles.subCardNote}>Enable or disable individual payment channels available to customers during checkout.</Text>
+                
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                  <TouchableOpacity
+                    style={[styles.pickerPill, podEnabled && { backgroundColor: '#10B981', borderColor: '#10B981' }]}
+                    onPress={() => setPodEnabled(!podEnabled)}
+                  >
+                    <Text style={[styles.pickerPillText, podEnabled && { color: '#FFF' }]}>
+                      {podEnabled ? '✓' : '✕'} 💵 Pay on Delivery
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.pickerPill, stripeEnabled && { backgroundColor: '#635BFF', borderColor: '#635BFF' }]}
+                    onPress={() => setStripeEnabled(!stripeEnabled)}
+                  >
+                    <Text style={[styles.pickerPillText, stripeEnabled && { color: '#FFF' }]}>
+                      {stripeEnabled ? '✓' : '✕'} 💳 Stripe
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.pickerPill, paystackEnabled && { backgroundColor: '#0BA4DB', borderColor: '#0BA4DB' }]}
+                    onPress={() => setPaystackEnabled(!paystackEnabled)}
+                  >
+                    <Text style={[styles.pickerPillText, paystackEnabled && { color: '#FFF' }]}>
+                      {paystackEnabled ? '✓' : '✕'} 🏦 Paystack
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.pickerPill, flutterwaveEnabled && { backgroundColor: '#F5A623', borderColor: '#F5A623' }]}
+                    onPress={() => setFlutterwaveEnabled(!flutterwaveEnabled)}
+                  >
+                    <Text style={[styles.pickerPillText, flutterwaveEnabled && { color: '#FFF' }]}>
+                      {flutterwaveEnabled ? '✓' : '✕'} ⚡ Flutterwave
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.pickerPill, opayEnabled && { backgroundColor: '#03A9F4', borderColor: '#03A9F4' }]}
+                    onPress={() => setOpayEnabled(!opayEnabled)}
+                  >
+                    <Text style={[styles.pickerPillText, opayEnabled && { color: '#FFF' }]}>
+                      {opayEnabled ? '✓' : '✕'} 🔵 OPay
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
               <View style={styles.formGroup}>
-                <Text style={styles.label}>Select Active System Gateway</Text>
+                <Text style={styles.label}>Select Primary System Gateway</Text>
                 <View style={styles.pickerRow}>
                   {['NONE', 'STRIPE', 'PAYSTACK', 'FLUTTERWAVE', 'OPAY'].map(gw => (
                     <TouchableOpacity

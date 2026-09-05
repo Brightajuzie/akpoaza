@@ -120,9 +120,9 @@ const getBackendURL = (): string => {
     }
   }
 
-  // Fallback for production / non-dev builds if no env var was provided
-  const fallback = Platform.OS === 'android' ? 'http://10.0.2.2:5000/api' : 'http://localhost:5000/api';
-  console.log('[ApiClient] Using fallback baseURL:', fallback);
+  // Fallback for production / standalone app store builds if no env var was provided at build time
+  const fallback = 'https://akpoaza-3.onrender.com/api';
+  console.log('[ApiClient] Using production fallback baseURL:', fallback);
   return fallback;
 };
 
