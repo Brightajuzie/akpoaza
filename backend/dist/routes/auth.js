@@ -66,6 +66,7 @@ router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, functio
                 });
                 const token = jsonwebtoken_1.default.sign({ userId: updatedUser.id, role: updatedUser.role }, JWT_SECRET, { expiresIn: '7d' });
                 const { passwordHash: _ } = updatedUser, userResponse = __rest(updatedUser, ["passwordHash"]);
+                (0, notify_1.sendWelcomeNotification)(updatedUser).catch(() => { });
                 return res.status(200).json({
                     token,
                     user: Object.assign(Object.assign({}, userResponse), { requiresKYC: (updatedUser.role === 'VENDOR' || updatedUser.role === 'HANDYMAN' || updatedUser.role === 'RIDER') && updatedUser.verificationStatus === 'UNVERIFIED' }),
@@ -161,6 +162,8 @@ router.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, functio
                 console.error('Error creating admin KYC notifications during register:', notifErr);
             }
         }
+        // Send welcome notification to user on account creation
+        (0, notify_1.sendWelcomeNotification)(newUser).catch(() => { });
         const requiresKYC = (newUser.role === 'VENDOR' || newUser.role === 'HANDYMAN' || newUser.role === 'RIDER') && newUser.verificationStatus === 'UNVERIFIED';
         const { passwordHash: _ } = newUser, userResponse = __rest(newUser, ["passwordHash"]);
         res.status(201).json({
@@ -279,6 +282,7 @@ router.post('/google', (req, res) => __awaiter(void 0, void 0, void 0, function*
                     verificationStatus,
                 }
             });
+            (0, notify_1.sendWelcomeNotification)(user).catch(() => { });
         }
         const token = jsonwebtoken_1.default.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
         const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus !== 'VERIFIED';

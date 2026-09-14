@@ -323,47 +323,117 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
         totalPrice: service.basePrice,
         status,
       },
-      include: { handyman: true, service: true }
+      include: { handyman: true, service: true, customer: true }
     });
 
-    // ── Multi-channel notifications ──────────────────────────────────────
+    // ── Multi-channel notifications on service request ──────────────────────
     const scheduledStr = new Date(scheduledAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
-    const assignedText = handymanId ? 'A professional has been assigned to your job.' : 'We will assign a professional shortly.';
+    const custName = newBooking.customer?.name || 'Customer';
+    const hmName = newBooking.handyman?.name || null;
+    const assignedText = hmName
+      ? `Artisan ${hmName} has been assigned to your job.`
+      : 'We are matching a certified professional in your area.';
 
     // 1. Customer confirmation
     sendNotification({
       userId: customerId,
-      title: '📅 Booking Confirmed',
-      body: `Your booking for "${service.name}" on ${scheduledStr} at ${address} is confirmed. ${assignedText}`,
+      title: `📅 Service Requested: ${service.name}`,
+      body: `Your booking for "${service.name}" on ${scheduledStr} at ${address} has been placed. ${assignedText}`,
       type: 'BOOKING',
       referenceId: newBooking.id,
-      emailSubject: '✅ Booking Confirmed — FixMart',
-      emailHtml: `<p>Hi there,</p>
-        <p>Your service booking has been placed successfully!</p>
-        <p><strong>Service:</strong> ${service.name}</p>
-        <p><strong>Scheduled:</strong> ${scheduledStr}</p>
-        <p><strong>Address:</strong> ${address}</p>
-        <p>${assignedText}</p>
-        <p>Open the app to track your booking in real time.</p>`,
-    }).catch(() => {});
+      email: newBooking.customer?.email,
+      phone: newBooking.customer?.phone || undefined,
+      emailSubject: `✅ Service Booking Requested: ${service.name} — FixMart`,
+      emailHtml: `<p style="font-size:16px;color:#374151">Hi ${custName},</p>
+        <p>Your service request has been placed successfully on <strong>FixMart</strong>!</p>
+        <div style="background:#F0FDF4;border-left:4px solid #10B981;padding:14px 16px;margin:18px 0;border-radius:6px;">
+          <p style="margin:0;font-size:15px;color:#065F46;font-weight:700">🛠️ Booking Details (#${newBooking.id.slice(-6).toUpperCase()}):</p>
+          <p style="margin:6px 0 0;font-size:14px;color:#1F2937"><strong>Service:</strong> ${service.name}</p>
+          <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Scheduled For:</strong> ${scheduledStr}</p>
+          <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Service Address:</strong> ${address}</p>
+          <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Estimated Price:</strong> ₦${service.basePrice.toLocaleString()}</p>
+          <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Assigned Artisan:</strong> ${hmName || 'Matching nearby professional...'}</p>
+        </div>
+        <p>You can track the technician's arrival in real-time on your FixMart mobile app.</p>`,
+    }).catch((e) => console.error('[bookings] customer notification failed:', e));
 
-    // 2. Assigned handyman
-    if (handymanId && status === 'ACCEPTED') {
-      const distText = matchDistance !== null ? ` You are ${matchDistance} km away.` : '';
+    // 2. Assigned Handyman notification
+    if (handymanId) {
+      const distText = matchDistance !== null ? ` (approx. ${matchDistance} km away)` : '';
       sendNotification({
         userId: handymanId,
-        title: '💼 New Job Assigned',
-        body: `New job: ${service.name}. Address: ${address}.${distText} Scheduled: ${scheduledStr}.`,
+        title: `🛠️ New Job Request: ${service.name}`,
+        body: `New booking: ${service.name} from ${custName} at ${address}${distText}. Scheduled: ${scheduledStr}. Fee: ₦${service.basePrice.toLocaleString()}.`,
         type: 'BOOKING',
         referenceId: newBooking.id,
-        emailSubject: '🛠️ New Job Waiting for You — FixMart',
-        emailHtml: `<p>You have been assigned a new job!</p>
-          <p><strong>Service:</strong> ${service.name}</p>
-          <p><strong>Address:</strong> ${address}</p>
-          <p><strong>Scheduled:</strong> ${scheduledStr}</p>
-          ${distText ? `<p><strong>Distance from you:</strong> ${matchDistance} km</p>` : ''}
-          <p>Open the app to accept and begin live tracking.</p>`,
-      }).catch(() => {});
+        email: newBooking.handyman?.email,
+        phone: newBooking.handyman?.phone || undefined,
+        emailSubject: `🛠️ New Service Request: ${service.name} at ${address} — FixMart`,
+        emailHtml: `<p style="font-size:16px;color:#374151">Hi ${hmName || 'Professional'},</p>
+          <p>You have a new service request on <strong>FixMart</strong>!</p>
+          <div style="background:#EFF6FF;border-left:4px solid #3B82F6;padding:14px 16px;margin:18px 0;border-radius:6px;">
+            <p style="margin:0;font-size:15px;color:#1E40AF;font-weight:700">💼 Job Specifications (#${newBooking.id.slice(-6).toUpperCase()}):</p>
+            <p style="margin:6px 0 0;font-size:14px;color:#1F2937"><strong>Service:</strong> ${service.name} (${service.category || 'General'})</p>
+            <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Client:</strong> ${custName}</p>
+            <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Address:</strong> ${address}</p>
+            <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Scheduled Time:</strong> ${scheduledStr}</p>
+            <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Job Fee:</strong> ₦${service.basePrice.toLocaleString()}</p>
+            ${matchDistance !== null ? `<p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Distance:</strong> ~${matchDistance} km</p>` : ''}
+          </div>
+          <p>Open the FixMart app to accept this job, initiate contact, and start live GPS navigation.</p>`,
+      }).catch((e) => console.error('[bookings] handyman notification failed:', e));
+    } else {
+      // 3. If no specific handyman was assigned, broadcast to verified handymen matching the category
+      try {
+        const candidateHandymen = await prisma.user.findMany({
+          where: {
+            role: 'HANDYMAN',
+            verificationStatus: 'VERIFIED',
+            specialty: { contains: service.category || '', mode: 'insensitive' },
+          },
+          take: 10,
+          select: { id: true, name: true, email: true, phone: true },
+        });
+
+        for (const hm of candidateHandymen) {
+          sendNotification({
+            userId: hm.id,
+            title: `🔔 Job Available: ${service.name}`,
+            body: `A customer requested "${service.name}" at ${address} on ${scheduledStr}. Open FixMart to review and accept.`,
+            type: 'BOOKING',
+            referenceId: newBooking.id,
+            email: hm.email,
+            phone: hm.phone || undefined,
+            emailSubject: `🔔 New Service Booking Available: ${service.name} — FixMart`,
+            emailHtml: `<p style="font-size:16px;color:#374151">Hi ${hm.name},</p>
+              <p>A new customer booking is currently open for claim in your field (<strong>${service.name}</strong>).</p>
+              <div style="background:#FFFBEB;border-left:4px solid #F59E0B;padding:12px 16px;margin:16px 0;border-radius:4px;">
+                <p style="margin:0;font-size:14px;color:#1F2937"><strong>Scheduled:</strong> ${scheduledStr}</p>
+                <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Location:</strong> ${address}</p>
+                <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Estimated Price:</strong> ₦${service.basePrice.toLocaleString()}</p>
+              </div>
+              <p>Log in to the FixMart app now to claim and accept this job before other technicians do!</p>`,
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.error('[bookings] Error notifying candidate handymen:', err);
+      }
+
+      // 4. Also alert Admins
+      try {
+        const admins = await prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true, email: true } });
+        for (const a of admins) {
+          sendNotification({
+            userId: a.id,
+            title: `📋 New Unassigned Booking: #${newBooking.id.slice(-6).toUpperCase()}`,
+            body: `Customer ${custName} requested ${service.name} at ${address} for ${scheduledStr}. No handyman auto-assigned.`,
+            type: 'BOOKING',
+            referenceId: newBooking.id,
+            email: a.email,
+            emailSubject: `📋 [Admin Alert] Service Booking #${newBooking.id.slice(-6).toUpperCase()} Needs Artisan Assignment`,
+          }).catch(() => {});
+        }
+      } catch (e) {}
     }
 
     res.status(201).json({ ...newBooking, matchDistance });

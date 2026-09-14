@@ -298,3 +298,91 @@ export async function sendNotification(payload: NotifyPayload) {
 export async function notifyMany(payloads: NotifyPayload[]) {
   return Promise.allSettled(payloads.map(sendNotification));
 }
+
+/**
+ * sendWelcomeNotification — sends an in-app & email welcome notice to newly registered users.
+ */
+export async function sendWelcomeNotification(user: {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  phone?: string | null;
+  specialty?: string | null;
+  verificationStatus?: string | null;
+}) {
+  const roleLabels: Record<string, string> = {
+    CUSTOMER: 'Customer',
+    HANDYMAN: 'Service Professional (Handyman)',
+    VENDOR: 'Vendor & Merchant',
+    RIDER: 'Delivery Rider',
+    ADMIN: 'System Administrator',
+  };
+  const roleTitle = roleLabels[user.role] || user.role;
+
+  let body = '';
+  let customHtml = '';
+
+  if (user.role === 'CUSTOMER') {
+    body = `Welcome to FixMart, ${user.name}! Your account is active and ready. Explore verified handymen, genuine tools & hardware, and track your orders in real-time.`;
+    customHtml = `
+      <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
+      <p>Welcome to <strong>FixMart</strong> — your one-stop platform for verified home repair services, professional artisans, quality tools, and fast deliveries!</p>
+      <div style="background:#EFF6FF;border-left:4px solid #3B82F6;padding:14px 16px;margin:18px 0;border-radius:6px;">
+        <p style="margin:0;font-size:15px;color:#1E40AF;font-weight:700">🎉 Your Account is Ready!</p>
+        <p style="margin:6px 0 0;font-size:14px;color:#1F2937">You can now book trusted artisans (plumbers, electricians, carpenters), order hardware and building materials, and track orders right to your doorstep.</p>
+      </div>
+      <p>If you have questions or need assistance, our support team is always glad to help.</p>
+    `;
+  } else if (user.role === 'HANDYMAN') {
+    const isVerified = user.verificationStatus === 'VERIFIED';
+    body = `Welcome to FixMart, ${user.name}! Your Service Provider profile (${user.specialty || 'General'}) is set up. ${isVerified ? 'Your account is active and ready for jobs.' : 'Our team will review your verification details shortly to activate you for jobs.'}`;
+    customHtml = `
+      <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
+      <p>Welcome to <strong>FixMart</strong> as a registered <strong>Service Professional</strong>!</p>
+      <div style="background:#F0FDF4;border-left:4px solid #10B981;padding:14px 16px;margin:18px 0;border-radius:6px;">
+        <p style="margin:0;font-size:15px;color:#065F46;font-weight:700">🛠️ Partner Onboarding</p>
+        <p style="margin:6px 0 0;font-size:14px;color:#1F2937"><strong>Specialty:</strong> ${user.specialty || 'General Artisan'}</p>
+        <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Verification Status:</strong> ${isVerified ? '✅ Active & Verified' : '⏳ Pending Admin Review'}</p>
+      </div>
+      <p>Once your profile is active, you will receive real-time notifications whenever clients in your area request services matching your expertise.</p>
+    `;
+  } else if (user.role === 'VENDOR') {
+    const isVerified = user.verificationStatus === 'VERIFIED';
+    body = `Welcome to FixMart Marketplace, ${user.name}! Your merchant account has been created. ${isVerified ? 'You can now list and sell products on FixMart.' : 'Please complete your KYC verification to begin listing products.'}`;
+    customHtml = `
+      <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
+      <p>Welcome to <strong>FixMart Marketplace</strong> as a registered <strong>Vendor / Merchant</strong>!</p>
+      <div style="background:#FDF4FF;border-left:4px solid #A855F7;padding:14px 16px;margin:18px 0;border-radius:6px;">
+        <p style="margin:0;font-size:15px;color:#7E22CE;font-weight:700">🏪 Expand Your Sales on FixMart</p>
+        <p style="margin:6px 0 0;font-size:14px;color:#1F2937">Sell your tools, hardware, and building supplies directly to thousands of active buyers and technicians across the region.</p>
+        <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Status:</strong> ${isVerified ? '✅ Active Merchant' : '⏳ Pending Verification'}</p>
+      </div>
+      <p>Log in to your FixMart Dashboard to upload your products and receive orders.</p>
+    `;
+  } else if (user.role === 'RIDER') {
+    body = `Welcome to FixMart, ${user.name}! Your delivery partner account has been created. Our dispatch team will review your details to activate you for order deliveries.`;
+    customHtml = `
+      <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
+      <p>Thank you for signing up as a <strong>Delivery Partner</strong> on <strong>FixMart</strong>!</p>
+      <div style="background:#FFFBEB;border-left:4px solid #F59E0B;padding:14px 16px;margin:18px 0;border-radius:6px;">
+        <p style="margin:0;font-size:15px;color:#92400E;font-weight:700">🛵 Fast Logistics Network</p>
+        <p style="margin:6px 0 0;font-size:14px;color:#1F2937">Our logistics team will verify your vehicle and identification. Once approved, you can turn your status to Online and start fulfilling package dispatches.</p>
+      </div>
+    `;
+  } else {
+    body = `Welcome to FixMart, ${user.name}! Your ${roleTitle} account has been created successfully.`;
+    customHtml = `<p>Welcome to FixMart, ${user.name}! Your account is now active.</p>`;
+  }
+
+  return sendNotification({
+    userId: user.id,
+    title: `🎉 Welcome to FixMart, ${user.name}!`,
+    body,
+    type: 'GENERAL',
+    email: user.email,
+    phone: user.phone || undefined,
+    emailSubject: `🎉 Welcome to FixMart — Your ${roleTitle} Account is Ready!`,
+    emailHtml: customHtml,
+  }).catch((err) => console.error('[notify] sendWelcomeNotification failed:', err));
+}

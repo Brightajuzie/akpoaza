@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
-import { sendNotification } from '../lib/notify';
+import { sendNotification, sendWelcomeNotification } from '../lib/notify';
 import prisma from '../lib/prisma';
 import { OAuth2Client } from 'google-auth-library';
 
@@ -69,6 +69,7 @@ router.post('/register', async (req, res) => {
         );
 
         const { passwordHash: _, ...userResponse } = updatedUser;
+        sendWelcomeNotification(updatedUser).catch(() => {});
         return res.status(200).json({
           token,
           user: {
@@ -173,6 +174,9 @@ router.post('/register', async (req, res) => {
         console.error('Error creating admin KYC notifications during register:', notifErr);
       }
     }
+
+    // Send welcome notification to user on account creation
+    sendWelcomeNotification(newUser).catch(() => {});
 
     const requiresKYC = (newUser.role === 'VENDOR' || newUser.role === 'HANDYMAN' || newUser.role === 'RIDER') && newUser.verificationStatus === 'UNVERIFIED';
     
@@ -309,6 +313,8 @@ router.post('/google', async (req, res) => {
           verificationStatus,
         }
       });
+
+      sendWelcomeNotification(user).catch(() => {});
     }
 
     const token = jwt.sign(

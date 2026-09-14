@@ -80,6 +80,7 @@ router.get('/vendor', auth_1.authenticateToken, (req, res, next) => __awaiter(vo
 }));
 // Guest Checkout for unauthenticated users
 router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c;
     const { items, paymentProvider, guestEmail, guestName, guestPhone, deliveryAddress, latitude, longitude } = req.body;
     if (!guestEmail || !guestName) {
         return res.status(400).json({ error: 'Guest email and name are required for checkout' });
@@ -107,6 +108,7 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
         const productIds = items.map((i) => String(i.productId));
         const dbProducts = yield prisma_1.default.product.findMany({
             where: { id: { in: productIds } },
+            include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
         });
         const dbProductsMap = new Map(dbProducts.map((p) => [p.id, p]));
         let computedTotalAmount = 0;
@@ -253,6 +255,43 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
             <p>Please call the customer to confirm their location and deliver within a few hours.</p>`,
                 }).catch(() => { });
             }
+            // 4. Vendor notifications — alert each merchant whose items were bought
+            const vendorItemsMap = new Map();
+            for (const p of dbProducts) {
+                if (p.vendorId) {
+                    const req = items.find((i) => String(i.productId) === String(p.id));
+                    const qty = (req === null || req === void 0 ? void 0 : req.quantity) || 1;
+                    const subtotal = p.price * qty;
+                    if (!vendorItemsMap.has(p.vendorId)) {
+                        vendorItemsMap.set(p.vendorId, { vendor: p.vendor, items: [], subtotal: 0 });
+                    }
+                    const entry = vendorItemsMap.get(p.vendorId);
+                    entry.items.push({ name: p.name, quantity: qty, price: p.price });
+                    entry.subtotal += subtotal;
+                }
+            }
+            for (const [vId, vData] of vendorItemsMap) {
+                const vSummary = vData.items.map(i => `${i.quantity}× ${i.name}`).join(', ');
+                (0, notify_1.sendNotification)({
+                    userId: vId,
+                    title: `🛍️ New Order Received: #${order.id.slice(-6).toUpperCase()}`,
+                    body: `New sale: ${vSummary}. Subtotal: ₦${vData.subtotal.toLocaleString()}. Please prepare items for dispatch.`,
+                    type: 'ORDER',
+                    referenceId: order.id,
+                    email: (_a = vData.vendor) === null || _a === void 0 ? void 0 : _a.email,
+                    phone: ((_b = vData.vendor) === null || _b === void 0 ? void 0 : _b.phone) || undefined,
+                    emailSubject: `🛍️ New Order #${order.id.slice(-6).toUpperCase()} for Your Products — FixMart`,
+                    emailHtml: `<p style="font-size:16px;color:#374151">Hi ${((_c = vData.vendor) === null || _c === void 0 ? void 0 : _c.name) || 'Vendor'},</p>
+            <p>Great news! A customer has placed an order for item(s) from your store on <strong>FixMart</strong>.</p>
+            <div style="background:#F0FDF4;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+              <p style="margin:0;font-size:15px;color:#065F46;font-weight:700">📦 Order #${order.id.slice(-6).toUpperCase()}:</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Your Items:</strong> ${vSummary}</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Your Subtotal:</strong> ₦${vData.subtotal.toLocaleString()}</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Delivery Destination:</strong> ${order.deliveryAddress || 'Address on file'}</p>
+            </div>
+            <p>Please package the items and have them ready for rider pickup and dispatch.</p>`,
+                }).catch((e) => console.error('[guest-checkout] Vendor notification error:', e));
+            }
         }
         catch (e) {
             console.error('[guest-checkout] Notification error:', e);
@@ -271,7 +310,7 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
 }));
 // Create an order (Checkout with Stock Verification and Backend Price Calculation)
 router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b, _c, _d;
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
     const { items, paymentProvider, deliveryAddress, latitude, longitude } = req.body;
     if (!userId)
@@ -284,6 +323,7 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
         const productIds = items.map((i) => String(i.productId));
         const dbProducts = yield prisma_1.default.product.findMany({
             where: { id: { in: productIds } },
+            include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
         });
         const dbProductsMap = new Map(dbProducts.map(p => [p.id, p]));
         // 2. Validate stock and calculate true total amount based on DB prices
@@ -437,26 +477,43 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
             <p>Please call the customer to confirm their location and deliver within a few hours.</p>`,
                 }).catch(() => { });
             }
-            // 4. Each vendor — new sale alert
-            const vendorIds = new Set(dbProducts.map(p => p.vendorId).filter(Boolean));
-            for (const vendorId of vendorIds) {
-                const vendorItems = dbProducts.filter(p => p.vendorId === vendorId);
-                const vendorDesc = vendorItems.map(p => {
-                    const req = items.find((i) => i.productId === p.id);
-                    return `${(req === null || req === void 0 ? void 0 : req.quantity) || 1}× ${p.name}`;
-                }).join(', ');
+            // 4. Each vendor — new order alert with specific items and subtotal
+            const vendorItemsMap = new Map();
+            for (const p of dbProducts) {
+                if (p.vendorId) {
+                    const req = items.find((i) => String(i.productId) === String(p.id));
+                    const qty = (req === null || req === void 0 ? void 0 : req.quantity) || 1;
+                    const subtotal = p.price * qty;
+                    if (!vendorItemsMap.has(p.vendorId)) {
+                        vendorItemsMap.set(p.vendorId, { vendor: p.vendor, items: [], subtotal: 0 });
+                    }
+                    const entry = vendorItemsMap.get(p.vendorId);
+                    entry.items.push({ name: p.name, quantity: qty, price: p.price });
+                    entry.subtotal += subtotal;
+                }
+            }
+            for (const [vId, vData] of vendorItemsMap) {
+                const vSummary = vData.items.map(i => `${i.quantity}× ${i.name}`).join(', ');
                 (0, notify_1.sendNotification)({
-                    userId: vendorId,
-                    title: '📦 New Order Received',
-                    body: `New sale: ${vendorDesc}. Order total: ₦${computedTotalAmount.toLocaleString()}. Please prepare items for dispatch.`,
+                    userId: vId,
+                    title: `🛍️ New Order Received: #${order.id.slice(-6).toUpperCase()}`,
+                    body: `New sale: ${vSummary}. Subtotal: ₦${vData.subtotal.toLocaleString()}. Please prepare items for dispatch.`,
                     type: 'ORDER',
                     referenceId: order.id,
-                    emailSubject: '🛒 You Have a New Order — FixMart',
-                    emailHtml: `<p>A customer just placed a new order from your store.</p>
-            <p><strong>Items ordered:</strong> ${vendorDesc}</p>
-            <p><strong>Order Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
-            <p>Please log in to your dashboard to confirm and prepare the order.</p>`,
-                }).catch(() => { });
+                    email: (_b = vData.vendor) === null || _b === void 0 ? void 0 : _b.email,
+                    phone: ((_c = vData.vendor) === null || _c === void 0 ? void 0 : _c.phone) || undefined,
+                    emailSubject: `🛍️ New Order #${order.id.slice(-6).toUpperCase()} for Your Products — FixMart`,
+                    emailHtml: `<p style="font-size:16px;color:#374151">Hi ${((_d = vData.vendor) === null || _d === void 0 ? void 0 : _d.name) || 'Vendor'},</p>
+            <p>Great news! A customer has placed an order for item(s) from your store on <strong>FixMart</strong>.</p>
+            <div style="background:#F0FDF4;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+              <p style="margin:0;font-size:15px;color:#065F46;font-weight:700">📦 Order #${order.id.slice(-6).toUpperCase()}:</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Customer:</strong> ${(customer === null || customer === void 0 ? void 0 : customer.name) || 'Customer'}</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Your Items:</strong> ${vSummary}</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Your Subtotal:</strong> ₦${vData.subtotal.toLocaleString()}</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Delivery Destination:</strong> ${order.deliveryAddress || 'Address on file'}</p>
+            </div>
+            <p>Please package the items and keep them ready for rider pickup and delivery.</p>`,
+                }).catch((e) => console.error('[checkout] Vendor notification error:', e));
             }
         }
         catch (e) {

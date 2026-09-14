@@ -103,6 +103,7 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
     const productIds = items.map((i: any) => String(i.productId));
     const dbProducts = await prisma.product.findMany({
       where: { id: { in: productIds } },
+      include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
     });
 
     const dbProductsMap = new Map(dbProducts.map((p) => [p.id, p]));
@@ -264,6 +265,45 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
             <p>Please call the customer to confirm their location and deliver within a few hours.</p>`,
         }).catch(() => {});
       }
+
+      // 4. Vendor notifications — alert each merchant whose items were bought
+      const vendorItemsMap = new Map<string, { vendor: any; items: { name: string; quantity: number; price: number }[]; subtotal: number }>();
+      for (const p of dbProducts) {
+        if (p.vendorId) {
+          const req = items.find((i: any) => String(i.productId) === String(p.id));
+          const qty = req?.quantity || 1;
+          const subtotal = p.price * qty;
+          if (!vendorItemsMap.has(p.vendorId)) {
+            vendorItemsMap.set(p.vendorId, { vendor: (p as any).vendor, items: [], subtotal: 0 });
+          }
+          const entry = vendorItemsMap.get(p.vendorId)!;
+          entry.items.push({ name: p.name, quantity: qty, price: p.price });
+          entry.subtotal += subtotal;
+        }
+      }
+
+      for (const [vId, vData] of vendorItemsMap) {
+        const vSummary = vData.items.map(i => `${i.quantity}× ${i.name}`).join(', ');
+        sendNotification({
+          userId: vId,
+          title: `🛍️ New Order Received: #${order.id.slice(-6).toUpperCase()}`,
+          body: `New sale: ${vSummary}. Subtotal: ₦${vData.subtotal.toLocaleString()}. Please prepare items for dispatch.`,
+          type: 'ORDER',
+          referenceId: order.id,
+          email: vData.vendor?.email,
+          phone: vData.vendor?.phone || undefined,
+          emailSubject: `🛍️ New Order #${order.id.slice(-6).toUpperCase()} for Your Products — FixMart`,
+          emailHtml: `<p style="font-size:16px;color:#374151">Hi ${vData.vendor?.name || 'Vendor'},</p>
+            <p>Great news! A customer has placed an order for item(s) from your store on <strong>FixMart</strong>.</p>
+            <div style="background:#F0FDF4;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+              <p style="margin:0;font-size:15px;color:#065F46;font-weight:700">📦 Order #${order.id.slice(-6).toUpperCase()}:</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Your Items:</strong> ${vSummary}</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Your Subtotal:</strong> ₦${vData.subtotal.toLocaleString()}</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Delivery Destination:</strong> ${order.deliveryAddress || 'Address on file'}</p>
+            </div>
+            <p>Please package the items and have them ready for rider pickup and dispatch.</p>`,
+        }).catch((e) => console.error('[guest-checkout] Vendor notification error:', e));
+      }
     } catch (e) {
       console.error('[guest-checkout] Notification error:', e);
     }
@@ -295,6 +335,7 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
     const productIds = items.map((i: any) => String(i.productId));
     const dbProducts = await prisma.product.findMany({
       where: { id: { in: productIds } },
+      include: { vendor: { select: { id: true, name: true, email: true, phone: true } } },
     });
 
     const dbProductsMap = new Map(dbProducts.map(p => [p.id, p]));
@@ -466,26 +507,44 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
         }).catch(() => {});
       }
 
-      // 4. Each vendor — new sale alert
-      const vendorIds = new Set(dbProducts.map(p => p.vendorId).filter(Boolean));
-      for (const vendorId of vendorIds) {
-        const vendorItems = dbProducts.filter(p => p.vendorId === vendorId);
-        const vendorDesc = vendorItems.map(p => {
-          const req = items.find((i: any) => i.productId === p.id);
-          return `${req?.quantity || 1}× ${p.name}`;
-        }).join(', ');
+      // 4. Each vendor — new order alert with specific items and subtotal
+      const vendorItemsMap = new Map<string, { vendor: any; items: { name: string; quantity: number; price: number }[]; subtotal: number }>();
+      for (const p of dbProducts) {
+        if (p.vendorId) {
+          const req = items.find((i: any) => String(i.productId) === String(p.id));
+          const qty = req?.quantity || 1;
+          const subtotal = p.price * qty;
+          if (!vendorItemsMap.has(p.vendorId)) {
+            vendorItemsMap.set(p.vendorId, { vendor: (p as any).vendor, items: [], subtotal: 0 });
+          }
+          const entry = vendorItemsMap.get(p.vendorId)!;
+          entry.items.push({ name: p.name, quantity: qty, price: p.price });
+          entry.subtotal += subtotal;
+        }
+      }
+
+      for (const [vId, vData] of vendorItemsMap) {
+        const vSummary = vData.items.map(i => `${i.quantity}× ${i.name}`).join(', ');
         sendNotification({
-          userId: vendorId!,
-          title: '📦 New Order Received',
-          body: `New sale: ${vendorDesc}. Order total: ₦${computedTotalAmount.toLocaleString()}. Please prepare items for dispatch.`,
+          userId: vId,
+          title: `🛍️ New Order Received: #${order.id.slice(-6).toUpperCase()}`,
+          body: `New sale: ${vSummary}. Subtotal: ₦${vData.subtotal.toLocaleString()}. Please prepare items for dispatch.`,
           type: 'ORDER',
           referenceId: order.id,
-          emailSubject: '🛒 You Have a New Order — FixMart',
-          emailHtml: `<p>A customer just placed a new order from your store.</p>
-            <p><strong>Items ordered:</strong> ${vendorDesc}</p>
-            <p><strong>Order Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
-            <p>Please log in to your dashboard to confirm and prepare the order.</p>`,
-        }).catch(() => {});
+          email: vData.vendor?.email,
+          phone: vData.vendor?.phone || undefined,
+          emailSubject: `🛍️ New Order #${order.id.slice(-6).toUpperCase()} for Your Products — FixMart`,
+          emailHtml: `<p style="font-size:16px;color:#374151">Hi ${vData.vendor?.name || 'Vendor'},</p>
+            <p>Great news! A customer has placed an order for item(s) from your store on <strong>FixMart</strong>.</p>
+            <div style="background:#F0FDF4;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+              <p style="margin:0;font-size:15px;color:#065F46;font-weight:700">📦 Order #${order.id.slice(-6).toUpperCase()}:</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Customer:</strong> ${customer?.name || 'Customer'}</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Your Items:</strong> ${vSummary}</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Your Subtotal:</strong> ₦${vData.subtotal.toLocaleString()}</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Delivery Destination:</strong> ${order.deliveryAddress || 'Address on file'}</p>
+            </div>
+            <p>Please package the items and keep them ready for rider pickup and delivery.</p>`,
+        }).catch((e) => console.error('[checkout] Vendor notification error:', e));
       }
     } catch (e) {
       console.error('[orders] Failed to dispatch notifications:', e);

@@ -131,13 +131,66 @@ async function processPaymentVerification({
             <p>Please ensure dispatch is progressing within the next few hours.</p>`,
         }).catch(() => {});
       }
+
+      // 3. Vendor notifications on payment cleared
+      const orderWithVendors = await prisma.order.findUnique({
+        where: { id },
+        include: {
+          items: {
+            include: {
+              product: {
+                include: {
+                  vendor: { select: { id: true, name: true, email: true, phone: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (orderWithVendors?.items) {
+        const vMap = new Map<string, { vendor: any; items: string[]; subtotal: number }>();
+        for (const item of orderWithVendors.items) {
+          if (item.product?.vendorId && item.product.vendor) {
+            if (!vMap.has(item.product.vendorId)) {
+              vMap.set(item.product.vendorId, { vendor: item.product.vendor, items: [], subtotal: 0 });
+            }
+            const e = vMap.get(item.product.vendorId)!;
+            e.items.push(`${item.quantity}× ${item.product.name}`);
+            e.subtotal += item.price * item.quantity;
+          }
+        }
+        for (const [vId, vInfo] of vMap) {
+          sendNotification({
+            userId: vId,
+            title: `💰 Payment Confirmed: Order #${id.slice(-6).toUpperCase()}`,
+            body: `Payment confirmed for ${vInfo.items.join(', ')} (₦${vInfo.subtotal.toLocaleString()}). Please package items for dispatch.`,
+            type: 'ORDER',
+            referenceId: id,
+            email: vInfo.vendor.email,
+            phone: vInfo.vendor.phone || undefined,
+            emailSubject: `💰 Payment Confirmed for Your Products — Order #${id.slice(-6).toUpperCase()}`,
+            emailHtml: `<p style="font-size:16px;color:#374151">Hi ${vInfo.vendor.name || 'Vendor'},</p>
+              <p>Payment has been confirmed via ${provider} for items in Order #${id.slice(-6).toUpperCase()}!</p>
+              <div style="background:#F0FDF4;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+                <p style="margin:0;font-size:14px;color:#065F46;font-weight:700">📦 Your Sold Items:</p>
+                <p style="margin:4px 0 0;font-size:14px;color:#1F2937">${vInfo.items.join(', ')}</p>
+                <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Subtotal:</strong> ₦${vInfo.subtotal.toLocaleString()}</p>
+              </div>
+              <p>Please ensure these items are packed and ready for rider pickup.</p>`,
+          }).catch(() => {});
+        }
+      }
     } catch (err) {
       console.error('[payments] Failed to dispatch payment notifications for order:', err);
     }
 
     return { type: 'order', record: updatedOrder };
   } else if (checkoutType === 'booking') {
-    const booking = await prisma.booking.findUnique({ where: { id } });
+    const booking = await prisma.booking.findUnique({
+      where: { id },
+      include: { customer: true, handyman: true, service: true },
+    });
     if (!booking) throw new Error('Booking not found');
 
     const updatedBooking = await prisma.booking.update({
@@ -161,6 +214,62 @@ async function processPaymentVerification({
         );
       }
       await prisma.booking.update({ where: { id }, data: { status: 'COMPLETED' } });
+    }
+
+    // ── Dispatch notifications for paid service booking ─────────────────────
+    try {
+      const svcName = booking.service?.name || 'Service Booking';
+      const cName = booking.customer?.name || 'Customer';
+      const hName = booking.handyman?.name || 'Service Professional';
+
+      // 1. Notify Customer
+      if (booking.customerId) {
+        sendNotification({
+          userId: booking.customerId,
+          title: `💳 Payment Confirmed: ${svcName}`,
+          body: `Payment of ₦${chargedAmount.toLocaleString()} confirmed for "${svcName}". Your funds are protected in FixMart Escrow until the job is completed!`,
+          type: 'BOOKING',
+          referenceId: id,
+          email: booking.customer?.email,
+          phone: booking.customer?.phone || undefined,
+          emailSubject: `✅ Service Payment Confirmed: ${svcName} — FixMart`,
+          emailHtml: `<p style="font-size:16px;color:#374151">Hi ${cName},</p>
+            <p>Your payment of <strong>₦${chargedAmount.toLocaleString()}</strong> for <strong>${svcName}</strong> has been received and secured in FixMart Escrow.</p>
+            <div style="background:#F0FDF4;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+              <p style="margin:0;font-size:14px;color:#065F46;font-weight:700">🛡️ Protected by FixMart Escrow:</p>
+              <p style="margin:4px 0 0;font-size:13px;color:#1F2937">Your money is safely held until the artisan completes the service to your satisfaction.</p>
+            </div>
+            <p><strong>Service:</strong> ${svcName}</p>
+            <p><strong>Scheduled Time:</strong> ${new Date(booking.scheduledAt).toLocaleString()}</p>
+            <p><strong>Assigned Artisan:</strong> ${hName}</p>`,
+        }).catch(() => {});
+      }
+
+      // 2. Notify Handyman
+      if (booking.handymanId) {
+        sendNotification({
+          userId: booking.handymanId,
+          title: `💰 Payment Secured in Escrow: ${svcName}`,
+          body: `Client ${cName} has paid ₦${chargedAmount.toLocaleString()} into escrow for "${svcName}". You may proceed with the job at ${booking.address}.`,
+          type: 'BOOKING',
+          referenceId: id,
+          email: booking.handyman?.email,
+          phone: booking.handyman?.phone || undefined,
+          emailSubject: `💰 Client Payment Secured for Job: ${svcName} — FixMart`,
+          emailHtml: `<p style="font-size:16px;color:#374151">Hi ${hName},</p>
+            <p>Great news! Payment of <strong>₦${chargedAmount.toLocaleString()}</strong> has been deposited into escrow for your booking: <strong>${svcName}</strong>.</p>
+            <div style="background:#EFF6FF;border-left:4px solid #3B82F6;padding:12px 16px;margin:16px 0;border-radius:4px;">
+              <p style="margin:0;font-size:14px;color:#1E40AF;font-weight:700">💼 Ready to Start:</p>
+              <p style="margin:4px 0 0;font-size:13px;color:#1F2937"><strong>Client:</strong> ${cName}</p>
+              <p style="margin:4px 0 0;font-size:13px;color:#1F2937"><strong>Job Location:</strong> ${booking.address}</p>
+              <p style="margin:4px 0 0;font-size:13px;color:#1F2937"><strong>Scheduled:</strong> ${new Date(booking.scheduledAt).toLocaleString()}</p>
+              <p style="margin:4px 0 0;font-size:13px;color:#1F2937"><strong>Secured Fee:</strong> ₦${chargedAmount.toLocaleString()}</p>
+            </div>
+            <p>Please arrive punctually. Once you finish the job and client confirms, payment will be released to your wallet.</p>`,
+        }).catch(() => {});
+      }
+    } catch (notifErr) {
+      console.error('[payments] Failed to dispatch booking payment notifications:', notifErr);
     }
 
     return { type: 'booking', record: updatedBooking };
