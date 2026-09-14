@@ -17,6 +17,7 @@ const stripe_1 = __importDefault(require("stripe"));
 const axios_1 = __importDefault(require("axios"));
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const wallet_1 = require("../lib/wallet");
+const notify_1 = require("../lib/notify");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
 // Paystack generic configuration
@@ -72,6 +73,59 @@ function processPaymentVerification(_a) {
                     yield (0, wallet_1.releaseEscrow)(esc.id).catch(err => console.error(`[Escrow] Failed to release escrow on final split payment for order ${id}:`, err));
                 }
                 yield prisma_1.default.order.update({ where: { id }, data: { status: 'DELIVERED' } });
+            }
+            // ── Dispatch notifications for paid order ───────────────────────────
+            try {
+                const orderUser = yield prisma_1.default.user.findUnique({
+                    where: { id: updatedOrder.userId },
+                    select: { name: true, email: true, phone: true },
+                });
+                // 1. Customer notification: in-app, SMS, email
+                (0, notify_1.sendNotification)({
+                    userId: updatedOrder.userId,
+                    title: '💳 Payment Confirmed — Order in Dispatch',
+                    body: `Payment of ₦${chargedAmount.toLocaleString()} confirmed! Your product will be delivered within a few hours, and a rider will call you to confirm your location.`,
+                    type: 'ORDER',
+                    referenceId: id,
+                    email: orderUser === null || orderUser === void 0 ? void 0 : orderUser.email,
+                    phone: (orderUser === null || orderUser === void 0 ? void 0 : orderUser.phone) || undefined,
+                    emailSubject: '✅ Payment Confirmed & Delivery Notice — FixMart',
+                    emailHtml: `<p style="font-size:16px;color:#374151">Hi ${(orderUser === null || orderUser === void 0 ? void 0 : orderUser.name) || 'there'},</p>
+          <p>We've received your payment of <strong>₦${chargedAmount.toLocaleString()}</strong> for Order #${id.slice(-6).toUpperCase()} via ${provider}.</p>
+          <div style="background:#F0FDF4;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+            <p style="margin:0;font-size:15px;color:#065F46;font-weight:600">🚚 Delivery Update:</p>
+            <p style="margin:4px 0 0;font-size:14px;color:#1F2937">Your product will be delivered within a few hours. A rider will call you shortly to confirm your location.</p>
+          </div>
+          <p><strong>Order ID:</strong> ${id}</p>
+          <p><strong>Delivery Address:</strong> ${updatedOrder.deliveryAddress || 'On file'}</p>
+          <p>Thank you for shopping with <strong>FixMart</strong>!</p>`,
+                }).catch(() => { });
+                // 2. Admin notification
+                const admins = yield prisma_1.default.user.findMany({
+                    where: { role: 'ADMIN' },
+                    select: { id: true, email: true },
+                });
+                for (const admin of admins) {
+                    (0, notify_1.sendNotification)({
+                        userId: admin.id,
+                        title: `💰 Payment Received: Order #${id.slice(-6).toUpperCase()}`,
+                        body: `Payment of ₦${chargedAmount.toLocaleString()} verified via ${provider} for Order #${id.slice(-6).toUpperCase()} (${(orderUser === null || orderUser === void 0 ? void 0 : orderUser.name) || 'Customer'}). Delivery required within a few hours.`,
+                        type: 'ORDER',
+                        referenceId: id,
+                        email: admin.email,
+                        emailSubject: `💰 [Admin Alert] Order #${id.slice(-6).toUpperCase()} Paid & Ready for Fulfillment`,
+                        emailHtml: `<p>Payment has been confirmed for an order.</p>
+            <p><strong>Order ID:</strong> ${id}</p>
+            <p><strong>Customer:</strong> ${orderUser === null || orderUser === void 0 ? void 0 : orderUser.name} (${orderUser === null || orderUser === void 0 ? void 0 : orderUser.email})</p>
+            <p><strong>Amount Paid:</strong> ₦${chargedAmount.toLocaleString()}</p>
+            <p><strong>Provider:</strong> ${provider} (Ref: ${reference})</p>
+            <p><strong>Delivery Address:</strong> ${updatedOrder.deliveryAddress || 'Not specified'}</p>
+            <p>Please ensure dispatch is progressing within the next few hours.</p>`,
+                    }).catch(() => { });
+                }
+            }
+            catch (err) {
+                console.error('[payments] Failed to dispatch payment notifications for order:', err);
             }
             return { type: 'order', record: updatedOrder };
         }

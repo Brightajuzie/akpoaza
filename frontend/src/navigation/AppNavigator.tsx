@@ -124,8 +124,9 @@ function MainTabs() {
   const { theme } = useContext(SettingsContext);
   const { userToken } = useContext(AuthContext);
   const [unreadCount, setUnreadCount] = useState(0);
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isLargeScreen = width >= 768;
+  const isCompactHeight = height < 750;
 
   useEffect(() => {
     const fetchUnread = async () => {
@@ -160,6 +161,8 @@ function MainTabs() {
           alignSelf: 'center',
           width: '100%',
           display: isLargeScreen ? 'none' : 'flex',
+          height: isCompactHeight ? 52 : undefined,
+          paddingBottom: isCompactHeight ? 4 : undefined,
         },
       }}
     >

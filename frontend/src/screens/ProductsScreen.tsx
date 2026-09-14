@@ -38,11 +38,12 @@ export default function ProductsScreen({ navigation, route }: any) {
   const { cart, addToCart } = useContext(CartContext);
   const { theme, colorMode } = useContext(SettingsContext);
   const { fmt } = useCurrency();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
 
   const isDark = colorMode === 'dark';
+  const isCompactHeight = height < 750;
   const numColumns = width >= 1200 ? 4 : width >= 768 ? 3 : 2;
-  const imageH = width >= 1200 ? 160 : width >= 768 ? 140 : 120;
+  const imageH = width >= 1200 ? 160 : width >= 768 ? 140 : isCompactHeight ? 105 : 120;
 
   const totalCartCount = cart.reduce((s, i) => s + i.quantity, 0);
 

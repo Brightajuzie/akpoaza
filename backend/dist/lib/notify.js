@@ -23,36 +23,131 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.resetMailer = resetMailer;
+exports.sendTestEmail = sendTestEmail;
 exports.sendNotification = sendNotification;
 exports.notifyMany = notifyMany;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const twilio_1 = __importDefault(require("twilio"));
 const prisma_1 = __importDefault(require("./prisma"));
-// ─── Lazy singletons ──────────────────────────────────────────────────────────
+// ─── Lazy singletons & Dynamic SMTP Config ──────────────────────────────────
 let _mailer = null;
-function getMailer() {
-    // Skip email entirely during automated tests to prevent hangs on bad SMTP credentials
-    if (process.env.NODE_ENV === 'test')
-        return null;
-    if (_mailer)
-        return _mailer;
-    const host = process.env.SMTP_HOST;
-    if (!host)
-        return null;
-    _mailer = nodemailer_1.default.createTransport({
-        host,
-        port: parseInt(process.env.SMTP_PORT || '587'),
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: {
-            user: process.env.SMTP_USER,
-            pass: process.env.SMTP_PASS,
-        },
-        // Fail fast (10 s) rather than hanging on bad credentials
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000,
+let _cachedSettings = null;
+let _lastSettingsFetch = 0;
+function resetMailer() {
+    _mailer = null;
+    _cachedSettings = null;
+    _lastSettingsFetch = 0;
+}
+function getSmtpConfig() {
+    return __awaiter(this, void 0, void 0, function* () {
+        const now = Date.now();
+        if (!_cachedSettings || now - _lastSettingsFetch > 30000) {
+            try {
+                const keys = ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from'];
+                const dbSettings = yield prisma_1.default.appSetting.findMany({
+                    where: { key: { in: keys } },
+                });
+                _cachedSettings = dbSettings.reduce((acc, curr) => {
+                    acc[curr.key] = curr.value;
+                    return acc;
+                }, {});
+                _lastSettingsFetch = now;
+            }
+            catch (e) {
+                console.warn('[notify] Could not query AppSetting for SMTP:', e);
+                _cachedSettings = {};
+            }
+        }
+        const s = _cachedSettings || {};
+        const host = s['smtp_host'] || process.env.SMTP_HOST || undefined;
+        const port = parseInt(s['smtp_port'] || process.env.SMTP_PORT || '465', 10);
+        const secure = s['smtp_secure'] !== undefined ? s['smtp_secure'] === 'true' : (process.env.SMTP_SECURE === 'true' || port === 465);
+        const user = s['smtp_user'] || process.env.SMTP_USER || undefined;
+        const pass = s['smtp_pass'] || process.env.SMTP_PASS || undefined;
+        const from = s['smtp_from'] || process.env.SMTP_FROM || (user ? `FixMart <${user}>` : 'FixMart <noreply@fixmart.app>');
+        return { host, port, secure, user, pass, from };
     });
-    return _mailer;
+}
+function getMailer() {
+    return __awaiter(this, void 0, void 0, function* () {
+        // Skip email entirely during automated tests to prevent hangs on bad SMTP credentials
+        if (process.env.NODE_ENV === 'test')
+            return { mailer: null, from: '' };
+        const config = yield getSmtpConfig();
+        if (!config.host || !config.user || !config.pass) {
+            return { mailer: null, from: config.from };
+        }
+        if (_mailer)
+            return { mailer: _mailer, from: config.from };
+        _mailer = nodemailer_1.default.createTransport({
+            host: config.host,
+            port: config.port,
+            secure: config.secure,
+            auth: {
+                user: config.user,
+                pass: config.pass,
+            },
+            // Fail fast (10 s) rather than hanging on bad credentials
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
+            socketTimeout: 10000,
+        });
+        return { mailer: _mailer, from: config.from };
+    });
+}
+/**
+ * sendTestEmail — sends a verification email using the configured SMTP settings.
+ * Returns { success: true, message: string } or throws with error details.
+ */
+function sendTestEmail(recipientEmail) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const config = yield getSmtpConfig();
+        if (!config.host || !config.user || !config.pass) {
+            throw new Error('SMTP credentials are incomplete. Please configure Host, User Email, and Password/App Password.');
+        }
+        const transporter = nodemailer_1.default.createTransport({
+            host: config.host,
+            port: config.port,
+            secure: config.secure,
+            auth: {
+                user: config.user,
+                pass: config.pass,
+            },
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
+            socketTimeout: 10000,
+        });
+        // Verify connection first
+        yield transporter.verify();
+        const title = '🎉 FixMart SMTP Email Test — Connection Verified!';
+        const textBody = `Hello,\n\nThis is a test notification confirming that your FixMart SMTP Email setup is working properly!\n\nConfigured Sender: ${config.from}\nTimestamp: ${new Date().toLocaleString()}\n\nBest regards,\nFixMart Team`;
+        const htmlBody = `
+    <p style="font-size:16px;color:#374151;line-height:1.6">
+      Hello,<br><br>
+      This test notification confirms that your FixMart SMTP email server is active and properly connected!
+    </p>
+    <div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:8px;padding:16px;margin:20px 0">
+      <p style="margin:0 0 6px 0;font-size:14px;color:#166534"><strong>✅ Sender:</strong> ${config.from}</p>
+      <p style="margin:0 0 6px 0;font-size:14px;color:#166534"><strong>🌐 Host:</strong> ${config.host}:${config.port} (${config.secure ? 'SSL' : 'TLS'})</p>
+      <p style="margin:0;font-size:14px;color:#166534"><strong>🕒 Sent At:</strong> ${new Date().toLocaleString()}</p>
+    </div>
+    <p style="font-size:14px;color:#6B7280;line-height:1.5">
+      Customer bookings, order receipts, payment confirmations, and KYC notices will be dispatched through this email channel.
+    </p>
+  `;
+        yield transporter.sendMail({
+            from: config.from,
+            to: recipientEmail,
+            subject: title,
+            text: textBody,
+            html: buildEmailHtml(title, '', htmlBody),
+        });
+        return {
+            success: true,
+            message: `Test email dispatched successfully to ${recipientEmail}!`,
+        };
+    });
 }
 function getTwilio() {
     const sid = process.env.TWILIO_ACCOUNT_SID;
@@ -138,15 +233,18 @@ function sendNotification(payload) {
             return null;
         });
         // 3. Email (fire-and-forget — skipped in test mode)
-        const mailer = getMailer();
-        if (!isTest && mailer && userEmail) {
-            mailer.sendMail({
-                from: `"FixMart" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
-                to: userEmail,
-                subject: emailSubject || title,
-                text: body,
-                html: buildEmailHtml(title, body, emailHtml),
-            }).catch((e) => console.error('[notify] email send failed:', e));
+        if (!isTest && userEmail) {
+            getMailer().then(({ mailer, from }) => {
+                if (mailer) {
+                    mailer.sendMail({
+                        from,
+                        to: userEmail,
+                        subject: emailSubject || title,
+                        text: body,
+                        html: buildEmailHtml(title, body, emailHtml),
+                    }).catch((e) => console.error('[notify] email send failed:', e));
+                }
+            }).catch((e) => console.error('[notify] getMailer error:', e));
         }
         // 4. SMS (fire-and-forget — skipped in test mode)
         const twilioClient = getTwilio();

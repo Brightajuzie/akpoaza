@@ -7,7 +7,7 @@ dotenv.config();
 const prisma = new PrismaClient();
 
 async function main() {
-  const adminEmails = ['admin1@test.com', 'admin@test.com'];
+  const adminEmails = ['admin.fixmart@gmail.com', 'admin1@test.com', 'admin@test.com'];
   const password = 'password123';
   const salt = await bcrypt.genSalt(10);
   const passwordHash = await bcrypt.hash(password, salt);
@@ -22,10 +22,11 @@ async function main() {
       });
       console.log(`Updated existing user ${email} to ADMIN role.`);
     } else {
+      const name = email === 'admin.fixmart@gmail.com' ? 'FixMart Admin' : (email === 'admin1@test.com' ? 'Super Admin' : 'System Admin');
       await prisma.user.create({
         data: {
           email,
-          name: email === 'admin1@test.com' ? 'Super Admin' : 'System Admin',
+          name,
           passwordHash,
           role: 'ADMIN',
           verificationStatus: 'VERIFIED',

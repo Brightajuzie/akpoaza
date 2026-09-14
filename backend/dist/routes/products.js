@@ -118,7 +118,7 @@ router.post('/', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 
     if (role !== 'ADMIN' && role !== 'VENDOR') {
         return res.status(403).json({ error: 'Forbidden. Admin or Vendor access required.' });
     }
-    const { name, description, price, stock, category, imageUrls } = req.body;
+    const { name, description, price, stock, category, imageUrls, size, weight } = req.body;
     const imgError = validateImageUrls(imageUrls);
     if (imgError)
         return res.status(400).json({ error: imgError });
@@ -138,6 +138,8 @@ router.post('/', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 
                 stock: parseInt(stock, 10) || 0,
                 imageUrl: urls[0], // primary / cover mirrors images[0]
                 category,
+                size: size || null,
+                weight: weight || null,
                 vendorId: role === 'VENDOR' ? userId : null,
                 images: {
                     create: urls.map((url, idx) => ({ url, position: idx })),
@@ -163,7 +165,7 @@ router.put('/:id', auth_1.authenticateToken, (req, res) => __awaiter(void 0, voi
     if (role !== 'ADMIN' && role !== 'VENDOR') {
         return res.status(403).json({ error: 'Forbidden. Admin or Vendor access required.' });
     }
-    const { name, description, price, stock, category, imageUrls } = req.body;
+    const { name, description, price, stock, category, imageUrls, size, weight } = req.body;
     let urls;
     if (imageUrls !== undefined) {
         const imgError = validateImageUrls(imageUrls);
@@ -185,7 +187,7 @@ router.put('/:id', auth_1.authenticateToken, (req, res) => __awaiter(void 0, voi
                 return res.status(403).json({ error: 'Vendors must complete registration and be verified before modifying products.' });
             }
         }
-        const updateData = Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (name !== undefined && { name })), (description !== undefined && { description })), (price !== undefined && { price: parseFloat(price) })), (stock !== undefined && { stock: parseInt(stock, 10) })), (category !== undefined && { category }));
+        const updateData = Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign(Object.assign({}, (name !== undefined && { name })), (description !== undefined && { description })), (price !== undefined && { price: parseFloat(price) })), (stock !== undefined && { stock: parseInt(stock, 10) })), (category !== undefined && { category })), (size !== undefined && { size: size || null })), (weight !== undefined && { weight: weight || null }));
         if (urls) {
             updateData.imageUrl = urls[0];
             updateData.images = {

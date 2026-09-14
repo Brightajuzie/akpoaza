@@ -141,6 +141,17 @@ export default function AdminScreen() {
   const [opayEnabled, setOpayEnabled]                 = useState(true);
   const [podEnabled, setPodEnabled]                   = useState(true);
 
+  // Outgoing Email & SMTP Notification Server (Admin only)
+  const [smtpHost, setSmtpHost]                       = useState('smtp.gmail.com');
+  const [smtpPort, setSmtpPort]                       = useState('465');
+  const [smtpSecure, setSmtpSecure]                   = useState(true);
+  const [smtpUser, setSmtpUser]                       = useState('');
+  const [smtpPass, setSmtpPass]                       = useState('');
+  const [smtpFrom, setSmtpFrom]                       = useState('');
+  const [smtpShowPass, setSmtpShowPass]               = useState(false);
+  const [testEmailRecipient, setTestEmailRecipient]   = useState('');
+  const [testEmailSending, setTestEmailSending]       = useState(false);
+
   // Rider Delivery Pricing (Admin only)
   const [riderBaseFare, setRiderBaseFare]           = useState('1000');
   const [riderPricePerKm, setRiderPricePerKm]       = useState('200');
@@ -770,6 +781,16 @@ export default function AdminScreen() {
       setRiderBaseFare(settings.rider_base_fare || '1000');
       setRiderPricePerKm(settings.rider_price_per_km || '200');
       setRiderPlatformFee(settings.rider_platform_fee_pct || '10');
+      // Outgoing Email & SMTP
+      setSmtpHost(settings.smtp_host || 'smtp.gmail.com');
+      setSmtpPort(settings.smtp_port || '465');
+      setSmtpSecure(settings.smtp_secure !== undefined ? settings.smtp_secure === 'true' : true);
+      setSmtpUser(settings.smtp_user || '');
+      setSmtpPass(settings.smtp_pass || '');
+      setSmtpFrom(settings.smtp_from || '');
+      if (settings.smtp_user && !testEmailRecipient) {
+        setTestEmailRecipient(settings.smtp_user);
+      }
     }
   }, [settings]);
 
@@ -1331,13 +1352,71 @@ export default function AdminScreen() {
         flutterwave_enabled:      flutterwaveEnabled ? 'true' : 'false',
         opay_enabled:             opayEnabled ? 'true' : 'false',
         pod_enabled:              podEnabled ? 'true' : 'false',
+        // Outgoing Email & SMTP
+        smtp_host:                smtpHost.trim(),
+        smtp_port:                smtpPort.trim(),
+        smtp_secure:              smtpSecure ? 'true' : 'false',
+        smtp_user:                smtpUser.trim(),
+        smtp_pass:                smtpPass.trim(),
+        smtp_from:                smtpFrom.trim(),
       };
       await updateSettings(updates);
-      Alert.alert('Branding Updated', 'System configurations updated successfully across all client devices.');
+      Alert.alert('Settings Saved', 'System branding, gateways, and email configurations updated successfully.');
     } catch (e) {
       Alert.alert('Error', 'Failed to save system configurations.');
     } finally {
       setSettingsSaving(false);
+    }
+  };
+
+  const applyEmailPreset = (preset: 'gmail' | 'outlook' | 'custom') => {
+    if (preset === 'gmail') {
+      setSmtpHost('smtp.gmail.com');
+      setSmtpPort('465');
+      setSmtpSecure(true);
+      if (!smtpFrom && smtpUser) setSmtpFrom(`FixMart <${smtpUser}>`);
+    } else if (preset === 'outlook') {
+      setSmtpHost('smtp.office365.com');
+      setSmtpPort('587');
+      setSmtpSecure(false);
+      if (!smtpFrom && smtpUser) setSmtpFrom(`FixMart <${smtpUser}>`);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    const targetEmail = (testEmailRecipient || smtpUser || userInfo?.email || '').trim();
+    if (!targetEmail) {
+      Alert.alert('Recipient Missing', 'Please enter an email address to send the test verification email to.');
+      return;
+    }
+    if (!smtpUser || !smtpPass) {
+      Alert.alert('Incomplete SMTP Settings', 'Please enter your Sender Email and Password/App Password, then click Save Settings first.');
+      return;
+    }
+
+    setTestEmailSending(true);
+    try {
+      // First save current settings to ensure backend has the latest credentials
+      await updateSettings({
+        smtp_host:   smtpHost.trim(),
+        smtp_port:   smtpPort.trim(),
+        smtp_secure: smtpSecure ? 'true' : 'false',
+        smtp_user:   smtpUser.trim(),
+        smtp_pass:   smtpPass.trim(),
+        smtp_from:   smtpFrom.trim(),
+      });
+
+      const res = await apiClient.post('/settings/test-email', { recipientEmail: targetEmail });
+      Alert.alert(
+        '✅ Email Dispatched Successfully!',
+        res.data?.message || `A verification email was sent to ${targetEmail}. Please check your inbox (and spam folder).`
+      );
+    } catch (err: any) {
+      console.error('Test email error:', err);
+      const errMsg = err?.response?.data?.error || err?.message || 'Failed to send test email. Please check your SMTP settings.';
+      Alert.alert('❌ Test Email Failed', errMsg);
+    } finally {
+      setTestEmailSending(false);
     }
   };
 
@@ -3115,12 +3194,199 @@ export default function AdminScreen() {
                 </View>
               </View>
 
+              {/* 6. Outgoing Email & SMTP Notification Server */}
+              <Text style={styles.sectionHeading}>6. Outgoing Email & SMTP Notification Server</Text>
+              <View style={styles.subSettingsCard}>
+                <Text style={styles.subCardTitle}>📧 Email Notification Dispatcher</Text>
+                <Text style={styles.subCardNote}>
+                  Configure the outgoing email credentials used to automatically send order receipts, booking alerts, payout notifications, and KYC updates to customers, handymen, and riders.
+                </Text>
+
+                {/* Quick Presets */}
+                <Text style={[styles.label, { marginTop: 10 }]}>Quick Mail Server Presets</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  <TouchableOpacity
+                    style={[styles.pickerPill, smtpHost === 'smtp.gmail.com' && { backgroundColor: '#EA4335', borderColor: '#EA4335' }]}
+                    onPress={() => applyEmailPreset('gmail')}
+                  >
+                    <Text style={[styles.pickerPillText, smtpHost === 'smtp.gmail.com' && { color: '#FFF' }]}>
+                      🔴 Gmail / Workspace
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.pickerPill, smtpHost === 'smtp.office365.com' && { backgroundColor: '#0078D4', borderColor: '#0078D4' }]}
+                    onPress={() => applyEmailPreset('outlook')}
+                  >
+                    <Text style={[styles.pickerPillText, smtpHost === 'smtp.office365.com' && { color: '#FFF' }]}>
+                      🔵 Outlook / Office 365
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.pickerPill, (smtpHost !== 'smtp.gmail.com' && smtpHost !== 'smtp.office365.com') && { backgroundColor: theme.primary, borderColor: theme.primary }]}
+                    onPress={() => applyEmailPreset('custom')}
+                  >
+                    <Text style={[styles.pickerPillText, (smtpHost !== 'smtp.gmail.com' && smtpHost !== 'smtp.office365.com') && { color: '#FFF' }]}>
+                      ⚙️ Custom SMTP
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Sender Email Address */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Sender Email Account (SMTP User)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={smtpUser}
+                    onChangeText={setSmtpUser}
+                    placeholder="e.g. admin.fixmart@gmail.com"
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                  <Text style={{ fontSize: 11, color: subtextColor, marginTop: 3 }}>
+                    The email account used to authenticate with the SMTP server.
+                  </Text>
+                </View>
+
+                {/* Sender From / Display Name */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Sender Display Name & "From" Header</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={smtpFrom}
+                    onChangeText={setSmtpFrom}
+                    placeholder='e.g. FixMart <admin.fixmart@gmail.com>'
+                    autoCapitalize="none"
+                  />
+                  <Text style={{ fontSize: 11, color: subtextColor, marginTop: 3 }}>
+                    The friendly name and address displayed to customers and service men.
+                  </Text>
+                </View>
+
+                {/* SMTP Password / App Password */}
+                <View style={styles.formGroup}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <Text style={styles.label}>SMTP Password / Google App Password</Text>
+                    <TouchableOpacity onPress={() => setSmtpShowPass(!smtpShowPass)}>
+                      <Text style={{ fontSize: 12, color: theme.primary, fontWeight: '700' }}>
+                        {smtpShowPass ? '🙈 Hide' : '👁️ Show'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    value={smtpPass}
+                    onChangeText={setSmtpPass}
+                    placeholder={smtpHost === 'smtp.gmail.com' ? "16-character Google App Password (e.g. abcd efgh ijkl mnop)" : "SMTP password"}
+                    autoCapitalize="none"
+                    secureTextEntry={!smtpShowPass}
+                  />
+                  {smtpHost === 'smtp.gmail.com' && (
+                    <View style={{ backgroundColor: isDark ? '#1E293B' : '#FEF3C7', padding: 10, borderRadius: 8, marginTop: 6, borderWidth: 1, borderColor: isDark ? '#334155' : '#FDE68A' }}>
+                      <Text style={{ fontSize: 11, color: isDark ? '#FCD34D' : '#92400E', lineHeight: 16 }}>
+                        💡 Gmail Note: Standard account passwords are blocked by Google. You must generate a 16-character App Password with 2-Step Verification turned ON.
+                      </Text>
+                      <TouchableOpacity
+                        style={{ marginTop: 5 }}
+                        onPress={() => Linking.openURL('https://myaccount.google.com/apppasswords')}
+                      >
+                        <Text style={{ fontSize: 11, color: '#D97706', fontWeight: '800', textDecorationLine: 'underline' }}>
+                          👉 Click to Open Google App Passwords
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+
+                {/* Advanced Server Settings */}
+                <View style={styles.row}>
+                  <View style={[styles.formGroup, { flex: 2, marginRight: 6 }]}>
+                    <Text style={styles.label}>SMTP Host</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={smtpHost}
+                      onChangeText={setSmtpHost}
+                      placeholder="smtp.gmail.com"
+                      autoCapitalize="none"
+                    />
+                  </View>
+                  <View style={[styles.formGroup, { flex: 1, marginLeft: 6 }]}>
+                    <Text style={styles.label}>Port</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={smtpPort}
+                      onChangeText={setSmtpPort}
+                      placeholder="465"
+                      keyboardType="numeric"
+                    />
+                  </View>
+                </View>
+
+                {/* Secure SSL Toggle */}
+                <View style={[styles.formGroup, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 }]}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: textColor }}>SSL / TLS Encryption</Text>
+                    <Text style={{ fontSize: 11, color: subtextColor }}>
+                      {smtpSecure ? 'Enabled (Port 465 SSL for Gmail)' : 'Disabled / STARTTLS (Port 587)'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.pickerPill, { backgroundColor: smtpSecure ? '#10B981' : (isDark ? '#334155' : '#E2E8F0') }]}
+                    onPress={() => setSmtpSecure(!smtpSecure)}
+                  >
+                    <Text style={[styles.pickerPillText, { color: smtpSecure ? '#FFF' : textColor }]}>
+                      {smtpSecure ? '✓ SSL Active' : '✕ STARTTLS'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Live Test Email Tool */}
+                <View style={{ marginTop: 12, paddingTop: 14, borderTopWidth: 1, borderTopColor: borderColor }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: textColor, marginBottom: 4 }}>
+                    📨 Send Verification Test Email
+                  </Text>
+                  <Text style={{ fontSize: 11, color: subtextColor, marginBottom: 8 }}>
+                    Test your credentials in real-time. A test notification will be dispatched to this email address.
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TextInput
+                      style={[styles.input, { flex: 1 }]}
+                      value={testEmailRecipient}
+                      onChangeText={setTestEmailRecipient}
+                      placeholder="Enter recipient email (e.g. your email)"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                    />
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: '#10B981',
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        borderRadius: 8,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        opacity: testEmailSending ? 0.7 : 1,
+                      }}
+                      onPress={handleSendTestEmail}
+                      disabled={testEmailSending}
+                    >
+                      {testEmailSending ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Test Send</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
               <TouchableOpacity
                 style={[styles.saveSettingsBtn, { backgroundColor: theme.primary }]}
                 onPress={handleSaveSettings}
                 disabled={settingsSaving}
               >
-                {settingsSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveSettingsBtnText}>Apply System Branding & Google Optimization</Text>}
+                {settingsSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveSettingsBtnText}>💾 Save All System & Email Settings</Text>}
               </TouchableOpacity>
             </View>
           </View>

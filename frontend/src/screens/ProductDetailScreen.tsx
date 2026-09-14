@@ -44,11 +44,12 @@ export default function ProductDetailScreen({ route, navigation }: any) {
   const { fmt } = useCurrency();
   const isDark = colorMode === 'dark';
 
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isDesktop = width >= 1024;
   const isTablet = width >= 600 && width < 1024;
+  const isCompactHeight = height < 750;
   const contentMaxWidth = isDesktop ? 1200 : isTablet ? 800 : undefined;
-  const imageHeight = isDesktop ? 420 : isTablet ? 340 : 260;
+  const imageHeight = isDesktop ? 420 : isTablet ? 340 : isCompactHeight ? 200 : 260;
 
   const fetchProductAndReviews = async () => {
     try {

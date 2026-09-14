@@ -70,11 +70,12 @@ export default function HomeScreen({ navigation }: any) {
   const { theme, logoUrl, footerText, apkUrl, colorMode } = useContext(SettingsContext);
   const { addToCart } = useContext(CartContext);
   const { fmt } = useCurrency();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
 
   const isDesktop = width >= 1024;
   const isTablet = width >= 768 && width < 1024;
   const isMobile = width < 768;
+  const isCompactHeight = height < 750; // Devices with <= 5.6" screen height
   const isDark = colorMode === 'dark';
 
   // ── State ────────────────────────────────────────────────────────────────
@@ -252,7 +253,7 @@ export default function HomeScreen({ navigation }: any) {
 
   // ── Sub-renders ──────────────────────────────────────────────────────────
   const slideW = Math.min(width, 1200) - (isMobile ? 24 : 40);
-  const slideH = isDesktop ? 400 : isTablet ? 280 : (width < 380 ? 175 : 190);
+  const slideH = isDesktop ? 400 : isTablet ? 280 : isCompactHeight ? 145 : (width < 380 ? 175 : 190);
 
   const renderSlide = (slide: any) => {
     if (slide.imageUrl) {
@@ -287,16 +288,16 @@ export default function HomeScreen({ navigation }: any) {
           <View style={[styles.slideDecor1, { backgroundColor: (slide.accent || '#FFF') + '18', width: isDesktop ? 300 : 180, height: isDesktop ? 300 : 180, borderRadius: isDesktop ? 150 : 90 }]} />
           <View style={[styles.slideDecor2, { backgroundColor: (slide.accent || '#FFF') + '10', width: isDesktop ? 200 : 120, height: isDesktop ? 200 : 120, borderRadius: isDesktop ? 100 : 60 }]} />
           <View style={styles.promoSlideContent}>
-            <View style={[styles.promoSlideIconWrap, { backgroundColor: (slide.accent || '#FFF') + '22' }]}>
-              <Text style={styles.promoSlideIcon}>{slide.icon || '🛍️'}</Text>
+            <View style={[styles.promoSlideIconWrap, { backgroundColor: (slide.accent || '#FFF') + '22' }, isCompactHeight && { width: 38, height: 38, borderRadius: 10 }]}>
+              <Text style={[styles.promoSlideIcon, isCompactHeight && { fontSize: 20 }]}>{slide.icon || '🛍️'}</Text>
             </View>
-            <View style={{ flex: 1, marginLeft: 16 }}>
-              <Text style={styles.promoSlideTitle}>{slide.title}</Text>
-              <Text style={styles.promoSlideSub} numberOfLines={2}>{slide.subtitle}</Text>
+            <View style={{ flex: 1, marginLeft: isCompactHeight ? 10 : 16 }}>
+              <Text style={[styles.promoSlideTitle, isCompactHeight && { fontSize: 15, marginBottom: 2 }]}>{slide.title}</Text>
+              <Text style={[styles.promoSlideSub, isCompactHeight && { fontSize: 11, lineHeight: 15 }]} numberOfLines={2}>{slide.subtitle}</Text>
             </View>
-            <View style={[styles.promoSlideCtaBtn, { backgroundColor: slide.accent || '#FFF' }]}>
-              <Text style={[styles.promoSlideCtaText, { color: '#0F2027' }]}>{slide.cta || 'Explore'}</Text>
-              <Text style={[styles.promoSlideCtaArrow, { color: '#0F2027' }]}>›</Text>
+            <View style={[styles.promoSlideCtaBtn, { backgroundColor: slide.accent || '#FFF' }, isCompactHeight && { paddingHorizontal: 10, paddingVertical: 6 }]}>
+              <Text style={[styles.promoSlideCtaText, { color: '#0F2027' }, isCompactHeight && { fontSize: 11 }]}>{slide.cta || 'Explore'}</Text>
+              <Text style={[styles.promoSlideCtaArrow, { color: '#0F2027' }, isCompactHeight && { fontSize: 13 }]}>›</Text>
             </View>
           </View>
         </LinearGradient>
@@ -365,7 +366,7 @@ export default function HomeScreen({ navigation }: any) {
   );
 
   const renderMobileNavbar = () => (
-    <View style={[styles.mobileNavbar, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
+    <View style={[styles.mobileNavbar, { backgroundColor: theme.card, borderBottomColor: theme.border }, isCompactHeight && { paddingTop: 8, paddingBottom: 6 }]}>
       <View style={{ flex: 1, marginRight: 8 }}>
         <TouchableOpacity
           style={styles.navBrand}
@@ -377,7 +378,7 @@ export default function HomeScreen({ navigation }: any) {
             <Text style={[styles.navBrandMart, { color: theme.primary }]}>Mart</Text>
           </Text>
         </TouchableOpacity>
-        <Text style={[styles.mobileNavTagline, { color: isDark ? '#94A3B8' : '#64748B' }]} numberOfLines={1}>
+        <Text style={[styles.mobileNavTagline, { color: isDark ? '#94A3B8' : '#64748B' }, isCompactHeight && { fontSize: 9 }]} numberOfLines={1}>
           The smart way to shop, send items & fix everyday household problems
         </Text>
       </View>
@@ -385,18 +386,18 @@ export default function HomeScreen({ navigation }: any) {
       <View style={styles.mobileNavRight}>
         <ThemeToggle compact />
         <TouchableOpacity
-          style={[styles.navAvatar, { borderColor: theme.primary, backgroundColor: theme.primary + '18', marginLeft: 6 }]}
+          style={[styles.navAvatar, { borderColor: theme.primary, backgroundColor: theme.primary + '18', marginLeft: 6 }, isCompactHeight && { width: 32, height: 32, borderRadius: 16 }]}
           onPress={() => navigation.navigate('ProfileTab')}
         >
-          <Text style={[styles.navAvatarText, { color: theme.primary }]}>
+          <Text style={[styles.navAvatarText, { color: theme.primary }, isCompactHeight && { fontSize: 13 }]}>
             {userInfo?.name ? userInfo.name.charAt(0).toUpperCase() : 'G'}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.hamburger, { backgroundColor: theme.primary + '15', marginLeft: 6 }]}
+          style={[styles.hamburger, { backgroundColor: theme.primary + '15', marginLeft: 6 }, isCompactHeight && { paddingHorizontal: 10, paddingVertical: 6 }]}
           onPress={() => setMenuOpen(!menuOpen)}
         >
-          <Text style={[styles.hamburgerText, { color: theme.primary }]}>{menuOpen ? '✕' : '☰'}</Text>
+          <Text style={[styles.hamburgerText, { color: theme.primary }, isCompactHeight && { fontSize: 16 }]}>{menuOpen ? '✕' : '☰'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -455,7 +456,7 @@ export default function HomeScreen({ navigation }: any) {
     <Animated.View style={{ opacity: heroFadeAnim, transform: [{ translateY: heroSlideAnim }] }}>
       <LinearGradient
         colors={isDark ? ['#0F172A', '#1E293B'] : ['#F0FDF9', '#FFFFFF']}
-        style={[styles.heroSection, isDesktop && styles.heroSectionDesktop]}
+        style={[styles.heroSection, isDesktop && styles.heroSectionDesktop, isCompactHeight && styles.heroSectionCompact]}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
       >
         {/* Decorative background blobs */}
@@ -480,35 +481,35 @@ export default function HomeScreen({ navigation }: any) {
               </View>
             )}
 
-            <Text style={[styles.heroHeadline, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
+            <Text style={[styles.heroHeadline, { color: isDark ? '#F1F5F9' : '#0F172A' }, isCompactHeight && styles.heroHeadlineCompact]}>
               Everything you need.{'\n'}
               <Text style={{ color: theme.primary }}>One platform.</Text>
             </Text>
-            <Text style={[styles.heroSubline, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+            <Text style={[styles.heroSubline, { color: isDark ? '#94A3B8' : '#64748B' }, isCompactHeight && styles.heroSublineCompact]}>
               Shop products, book verified handymen, request delivery riders — all from one trusted marketplace.
             </Text>
 
             {/* Hero CTA Buttons */}
             <View style={[styles.heroCtaRow, isDesktop && { flexDirection: 'row', flexWrap: 'wrap' }]}>
               <TouchableOpacity
-                style={[styles.heroCtaPrimary, { backgroundColor: theme.primary }]}
+                style={[styles.heroCtaPrimary, { backgroundColor: theme.primary }, isCompactHeight && styles.heroCtaCompact]}
                 onPress={() => navigation.navigate('Products')}
                 activeOpacity={0.85}
               >
-                <Text style={styles.heroCtaPrimaryText}>🛍️ Shop Products</Text>
+                <Text style={[styles.heroCtaPrimaryText, isCompactHeight && styles.heroCtaTextCompact]}>🛍️ Shop Products</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.heroCtaSecondary, { borderColor: theme.primary + '50', backgroundColor: theme.primary + '10' }]}
+                style={[styles.heroCtaSecondary, { borderColor: theme.primary + '50', backgroundColor: theme.primary + '10' }, isCompactHeight && styles.heroCtaCompact]}
                 onPress={() => navigation.navigate('Services')}
                 activeOpacity={0.85}
               >
-                <Text style={[styles.heroCtaSecondaryText, { color: theme.primary }]}>⚡ Book Services</Text>
+                <Text style={[styles.heroCtaSecondaryText, { color: theme.primary }, isCompactHeight && styles.heroCtaTextCompact]}>⚡ Book Services</Text>
               </TouchableOpacity>
             </View>
           </View>
 
           {/* Right: Quick Action Tiles */}
-          <View style={[styles.heroRight, isDesktop && styles.heroRightDesktop]}>
+          <View style={[styles.heroRight, isDesktop && styles.heroRightDesktop, isCompactHeight && { marginTop: 14 }]}>
             <View style={[styles.quickActionsGrid, !isDesktop && styles.quickActionsGridMobile]}>
               {QUICK_ACTIONS.map((action) => (
                 <TouchableOpacity
@@ -516,17 +517,18 @@ export default function HomeScreen({ navigation }: any) {
                   style={[
                     styles.quickTile,
                     { backgroundColor: isDark ? theme.card : '#FFFFFF', borderColor: isDark ? theme.border : '#E2E8F0' },
-                    isDesktop && styles.quickTileDesktop
+                    isDesktop && styles.quickTileDesktop,
+                    isCompactHeight && styles.quickTileCompact
                   ]}
                   onPress={() => handleActionPress(action.screen)}
                   activeOpacity={0.82}
                 >
-                  <View style={[styles.quickTileIcon, { backgroundColor: isDark ? action.bgDark : action.bgLight }]}>
-                    <Text style={styles.quickTileEmoji}>{action.icon}</Text>
+                  <View style={[styles.quickTileIcon, { backgroundColor: isDark ? action.bgDark : action.bgLight }, isCompactHeight && styles.quickTileIconCompact]}>
+                    <Text style={[styles.quickTileEmoji, isCompactHeight && styles.quickTileEmojiCompact]}>{action.icon}</Text>
                   </View>
-                  <Text style={[styles.quickTileLabel, { color: isDark ? '#F1F5F9' : '#1E293B' }]}>{action.label}</Text>
-                  <View style={[styles.quickTileArrow, { backgroundColor: action.accent + '18' }]}>
-                    <Text style={[styles.quickTileArrowText, { color: action.accent }]}>→</Text>
+                  <Text style={[styles.quickTileLabel, { color: isDark ? '#F1F5F9' : '#1E293B' }, isCompactHeight && styles.quickTileLabelCompact]}>{action.label}</Text>
+                  <View style={[styles.quickTileArrow, { backgroundColor: action.accent + '18' }, isCompactHeight && styles.quickTileArrowCompact]}>
+                    <Text style={[styles.quickTileArrowText, { color: action.accent }, isCompactHeight && styles.quickTileArrowTextCompact]}>→</Text>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -538,7 +540,7 @@ export default function HomeScreen({ navigation }: any) {
   );
 
   const renderTrustBar = () => (
-    <View style={[styles.trustBar, { backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+    <View style={[styles.trustBar, { backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderColor: isDark ? '#334155' : '#E2E8F0' }, isCompactHeight && { paddingVertical: 8 }]}>
       {[
         { icon: '✅', val: '10K+', label: 'Orders Delivered' },
         { icon: '🛠️', val: '500+', label: 'Verified Handymen' },
@@ -547,18 +549,18 @@ export default function HomeScreen({ navigation }: any) {
       ].map((stat, i, arr) => (
         <React.Fragment key={stat.val}>
           <View style={styles.trustStat}>
-            <Text style={styles.trustStatIcon}>{stat.icon}</Text>
-            <Text style={[styles.trustStatVal, { color: theme.primary }]}>{stat.val}</Text>
-            <Text style={[styles.trustStatLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>{stat.label}</Text>
+            <Text style={[styles.trustStatIcon, isCompactHeight && { fontSize: 15, marginBottom: 1 }]}>{stat.icon}</Text>
+            <Text style={[styles.trustStatVal, { color: theme.primary }, isCompactHeight && { fontSize: 14 }]}>{stat.val}</Text>
+            <Text style={[styles.trustStatLabel, { color: isDark ? '#94A3B8' : '#64748B' }, isCompactHeight && { fontSize: 9 }]}>{stat.label}</Text>
           </View>
-          {i < arr.length - 1 && <View style={[styles.trustDivider, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]} />}
+          {i < arr.length - 1 && <View style={[styles.trustDivider, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }, isCompactHeight && { height: 26 }]} />}
         </React.Fragment>
       ))}
     </View>
   );
 
   const renderSearch = () => (
-    <View style={styles.searchSection}>
+    <View style={[styles.searchSection, isMobile && { paddingHorizontal: 16 }, isCompactHeight && { paddingTop: 10 }]}>
       <View style={[
         styles.searchBox,
         { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: searchFocused ? theme.primary : (isDark ? '#334155' : '#E2E8F0') },
@@ -727,8 +729,8 @@ export default function HomeScreen({ navigation }: any) {
         >
           {promotedProducts.map((product) => {
             const isFeatured = !!product.featured;
-            const cardWidth = isDesktop ? 220 : isTablet ? 190 : 165;
-            const imgHeight = isDesktop ? 150 : isTablet ? 135 : 120;
+            const cardWidth = isDesktop ? 220 : isTablet ? 190 : isCompactHeight ? 148 : 165;
+            const imgHeight = isDesktop ? 150 : isTablet ? 135 : isCompactHeight ? 105 : 120;
             const rawImgUrl = product.images?.[0]?.url || product.imageUrl;
             const imgUri = rawImgUrl ? (getImageUri(rawImgUrl) || rawImgUrl) : null;
 
@@ -861,7 +863,11 @@ export default function HomeScreen({ navigation }: any) {
             return (
               <TouchableOpacity
                 key={`${item.itemType}-${item.id}`}
-                style={[styles.spotCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}
+                style={[
+                  styles.spotCard,
+                  { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' },
+                  isCompactHeight && { width: 148 }
+                ]}
                 onPress={() => {
                   if (item.itemType === 'product') navigation.navigate('ProductDetail', { productId: item.id });
                   else navigation.navigate('Services');
@@ -869,9 +875,9 @@ export default function HomeScreen({ navigation }: any) {
                 activeOpacity={0.88}
               >
                 {spotImgUri ? (
-                  <Image source={{ uri: spotImgUri }} style={styles.spotImage} resizeMode="cover" />
+                  <Image source={{ uri: spotImgUri }} style={[styles.spotImage, isCompactHeight && { height: 105 }]} resizeMode="cover" />
                 ) : (
-                  <View style={[styles.spotPlaceholder, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }]}>
+                  <View style={[styles.spotPlaceholder, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }, isCompactHeight && { height: 105 }]}>
                     <Text style={styles.spotPlaceholderIcon}>{item.itemType === 'product' ? '📦' : '⚡'}</Text>
                   </View>
                 )}
@@ -1279,6 +1285,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 48,
     paddingVertical: 56,
   },
+  heroSectionCompact: {
+    paddingHorizontal: 14,
+    paddingVertical: 18,
+  },
   heroBlob1: {
     position: 'absolute',
     width: 300, height: 300,
@@ -1332,12 +1342,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     letterSpacing: -0.5,
   },
+  heroHeadlineCompact: {
+    fontSize: 22,
+    lineHeight: 28,
+    marginBottom: 8,
+  },
   heroSubline: {
     fontSize: 14,
     lineHeight: 22,
     fontWeight: '500',
     marginBottom: 24,
     maxWidth: 440,
+  },
+  heroSublineCompact: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginBottom: 14,
   },
 
   heroCtaRow: {
@@ -1369,6 +1389,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
+  heroCtaCompact: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+  },
+  heroCtaTextCompact: {
+    fontSize: 13,
+  },
 
   // ── Quick Action Tiles ─────────────────────────────────────────────────────
   quickActionsGrid: {
@@ -1391,6 +1419,12 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: 8,
   },
+  quickTileCompact: {
+    width: 136,
+    padding: 10,
+    borderRadius: 12,
+    gap: 4,
+  },
   quickTileDesktop: {
     flex: 1,
     width: 'auto' as any,
@@ -1400,14 +1434,27 @@ const styles = StyleSheet.create({
     width: 44, height: 44, borderRadius: 12,
     alignItems: 'center', justifyContent: 'center',
   },
+  quickTileIconCompact: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+  },
   quickTileEmoji: { fontSize: 22 },
+  quickTileEmojiCompact: { fontSize: 18 },
   quickTileLabel: { fontSize: 13, fontWeight: '800' },
+  quickTileLabelCompact: { fontSize: 12 },
   quickTileArrow: {
     alignSelf: 'flex-start',
     width: 28, height: 28, borderRadius: 8,
     alignItems: 'center', justifyContent: 'center',
   },
+  quickTileArrowCompact: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+  },
   quickTileArrowText: { fontSize: 14, fontWeight: '800' },
+  quickTileArrowTextCompact: { fontSize: 12 },
 
   // ── Trust Bar ────────────────────────────────────────────────────────────
   trustBar: {
