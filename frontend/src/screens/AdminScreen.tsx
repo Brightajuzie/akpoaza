@@ -12,6 +12,9 @@ import { useCurrency } from '../context/CurrencyContext';
 import MapComponent from '../components/MapComponent';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import ImageViewerModal from '../components/ImageViewerModal';
+import ReceiptModal, { ReceiptModalData } from '../components/ReceiptModal';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 
 // ─── AI Filter Configuration ────────────────────────────────────────────────
 const AI_FILTERS = [
@@ -43,9 +46,21 @@ export default function AdminScreen() {
   const subtextColor = isDark ? '#94A3B8' : '#64748B';
 
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders' | 'slides'>(
+  const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders' | 'slides' | 'transactions'>(
     route?.params?.activeTab || 'products'
   );
+
+  // ─── Transactions & Accounting State ──────────────────────────────────────
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [txFilterStatus, setTxFilterStatus] = useState<'ALL' | 'CREDITED' | 'PENDING' | 'CANCELED'>('ALL');
+  const [txFilterType, setTxFilterType] = useState<'ALL' | 'ORDER' | 'BOOKING' | 'PARCEL'>('ALL');
+  const [txSearch, setTxSearch] = useState('');
+  const [txSummary, setTxSummary] = useState<any>(null);
+  const [txReceiptModalVisible, setTxReceiptModalVisible] = useState(false);
+  const [txSelectedReceipt, setTxSelectedReceipt] = useState<ReceiptModalData | null>(null);
+  const [exportingCsv, setExportingCsv] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   // KYC Photo preview modal
   const [previewModalVisible, setPreviewModalVisible] = useState(false);
@@ -590,6 +605,118 @@ export default function AdminScreen() {
     }
   };
 
+  const fetchTransactions = async () => {
+    setTransactionsLoading(true);
+    try {
+      const params: any = {};
+      if (txFilterStatus !== 'ALL') params.status = txFilterStatus;
+      if (txFilterType !== 'ALL') params.type = txFilterType;
+      if (txSearch.trim()) params.search = txSearch.trim();
+      const res = await apiClient.get('/payments/admin/transactions', { params });
+      setTransactions(res.data?.transactions || []);
+      setTxSummary(res.data?.summary || null);
+    } catch (e: any) {
+      console.error('Failed to load transactions', e);
+      Alert.alert('Error', e?.response?.data?.error || 'Failed to load transaction history.');
+    } finally {
+      setTransactionsLoading(false);
+    }
+  };
+
+  const handleOpenReceipt = async (type: string, entityId: string) => {
+    try {
+      const res = await apiClient.get(`/payments/receipt/${type.toLowerCase()}/${entityId}`);
+      setTxSelectedReceipt(res.data);
+      setTxReceiptModalVisible(true);
+    } catch (e: any) {
+      Alert.alert('Receipt Error', e?.response?.data?.error || 'Unable to retrieve transaction receipt.');
+    }
+  };
+
+  const handleExportCsv = async () => {
+    setExportingCsv(true);
+    try {
+      const params: any = { format: 'csv' };
+      if (txFilterStatus !== 'ALL') params.status = txFilterStatus;
+      if (txFilterType !== 'ALL') params.type = txFilterType;
+      if (txSearch.trim()) params.search = txSearch.trim();
+
+      const res = await apiClient.get('/payments/admin/transactions/export', {
+        params,
+        responseType: 'text',
+      });
+
+      const csvData = res.data;
+      const fileName = `fixmart_transactions_${new Date().toISOString().slice(0, 10)}.csv`;
+
+      if (Platform.OS === 'web') {
+        const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        Alert.alert('Success', 'Transactions CSV downloaded successfully.');
+      } else {
+        const filePath = `${FileSystem.documentDirectory || FileSystem.cacheDirectory || ''}${fileName}`;
+        await FileSystem.writeAsStringAsync(filePath, csvData, { encoding: FileSystem.EncodingType.UTF8 });
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(filePath, { mimeType: 'text/csv', dialogTitle: 'Export FixMart Transactions' });
+        } else {
+          Alert.alert('Export Saved', `CSV file saved to device at: ${filePath}`);
+        }
+      }
+    } catch (err: any) {
+      console.error('Export CSV error:', err);
+      Alert.alert('Export Failed', err?.response?.data?.error || 'Failed to export CSV report.');
+    } finally {
+      setExportingCsv(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    setExportingPdf(true);
+    try {
+      const params: any = { format: 'pdf' };
+      if (txFilterStatus !== 'ALL') params.status = txFilterStatus;
+      if (txFilterType !== 'ALL') params.type = txFilterType;
+      if (txSearch.trim()) params.search = txSearch.trim();
+
+      const res = await apiClient.get('/payments/admin/transactions/export', {
+        params,
+        responseType: 'text',
+      });
+
+      if (Platform.OS === 'web') {
+        const printWin = window.open('', '_blank');
+        if (printWin) {
+          printWin.document.open();
+          printWin.document.write(res.data);
+          printWin.document.close();
+        } else {
+          Alert.alert('Pop-up Blocked', 'Please allow pop-ups to view and print the transaction statement.');
+        }
+      } else {
+        const fileName = `fixmart_statement_${Date.now()}.html`;
+        const filePath = `${FileSystem.cacheDirectory || ''}${fileName}`;
+        await FileSystem.writeAsStringAsync(filePath, res.data);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(filePath, { mimeType: 'text/html', dialogTitle: 'Transaction Statement PDF' });
+        } else {
+          Alert.alert('Report Saved', `Statement saved to: ${filePath}`);
+        }
+      }
+    } catch (err: any) {
+      console.error('Export PDF error:', err);
+      Alert.alert('Export Failed', err?.response?.data?.error || 'Failed to generate printable PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const handleSaveSlide = async () => {
     if (!slideImageUrl) {
       Alert.alert('Error', 'Slide image is required.');
@@ -736,7 +863,14 @@ export default function AdminScreen() {
     if (tabId === 'kyc')      fetchKycReviews();
     if (tabId === 'orders')   { fetchOrders(); fetchRiders(); }
     if (tabId === 'slides')    fetchSlides();
+    if (tabId === 'transactions') fetchTransactions();
   };
+
+  useEffect(() => {
+    if (activeTab === 'transactions' && isAdmin) {
+      fetchTransactions();
+    }
+  }, [activeTab, txFilterStatus, txFilterType]);
 
   useEffect(() => {
     if (settings) {
@@ -1930,6 +2064,7 @@ export default function AdminScreen() {
                     { id: 'bookings',  label: 'Bookings',   icon: '📋' },
                     { id: 'users',     label: 'Users',      icon: '👥' },
                     { id: 'orders',    label: 'Orders',     icon: '🛒' },
+                    { id: 'transactions', label: 'Transactions', icon: '💳' },
                     { id: 'settings',  label: 'Settings',   icon: '⚙️' },
                     { id: 'kyc',       label: 'KYC',        icon: '🔍' },
                     { id: 'slides',    label: 'Slides',     icon: '🖼️' },
@@ -1987,6 +2122,7 @@ export default function AdminScreen() {
                         { id: 'bookings',  label: 'Bookings',   icon: '📋' },
                         { id: 'users',     label: 'Users',      icon: '👥' },
                         { id: 'orders',    label: 'Orders',     icon: '🛒' },
+                        { id: 'transactions', label: 'Transactions', icon: '💳' },
                         { id: 'settings',  label: 'Settings',   icon: '⚙️' },
                         { id: 'kyc',       label: 'KYC Reviews',icon: '🔍' },
                         { id: 'slides',    label: 'Slides',     icon: '🖼️' },
@@ -1999,6 +2135,7 @@ export default function AdminScreen() {
                         { id: 'bookings',  label: 'Bookings',   icon: '📋' },
                         { id: 'users',     label: 'Users',      icon: '👥' },
                         { id: 'orders',    label: 'Orders',     icon: '🛒' },
+                        { id: 'transactions', label: 'Transactions', icon: '💳' },
                         { id: 'settings',  label: 'Settings',   icon: '⚙️' },
                         { id: 'kyc',       label: 'KYC Reviews',icon: '🔍' },
                         { id: 'slides',    label: 'Slides',     icon: '🖼️' },
@@ -2023,6 +2160,7 @@ export default function AdminScreen() {
                 { id: 'bookings',  label: 'Bookings',   icon: '📋' },
                 { id: 'users',     label: 'Users',      icon: '👥' },
                 { id: 'orders',    label: 'Orders',     icon: '🛒' },
+                { id: 'transactions', label: 'Transactions', icon: '💳' },
                 { id: 'settings',  label: 'Settings',   icon: '⚙️' },
                 { id: 'kyc',       label: 'KYC Reviews',icon: '🔍' },
                 { id: 'slides',    label: 'Slides',     icon: '🖼️' },
@@ -2100,6 +2238,7 @@ export default function AdminScreen() {
             { icon: '📋', label: 'Bookings', value: bookings.length, color: '#8B5CF6', tab: 'bookings' },
             { icon: '👥', label: 'Users', value: users.length, color: '#EC4899', tab: 'users' },
             { icon: '🛒', label: 'Orders', value: orders.length, color: '#F59E0B', tab: 'orders' },
+            { icon: '💳', label: 'Transactions', value: txSummary?.totalTransactions ?? '...', color: '#10B981', tab: 'transactions' },
             { icon: '🔍', label: 'KYC Reviews', value: kycReviews.length, color: '#EF4444', tab: 'kyc' },
           ] : [
             { icon: '📦', label: 'My Listed Products', value: products.length, color: theme.primary, tab: 'products' },
@@ -4437,6 +4576,320 @@ export default function AdminScreen() {
           </View>
         )}
 
+        {/* ── TRANSACTIONS & ACCOUNTING TAB ── */}
+        {activeTab === 'transactions' && isAdmin && (
+          <View>
+            <View style={{ marginBottom: 16 }}>
+              <Text style={styles.formTitle}>Financial Transactions & Accounting</Text>
+              <Text style={{ fontSize: 13, color: subtextColor, marginTop: -4 }}>
+                Monitor all platform checkouts, payments credited, pending authorizations, cancellations, and export statement reports.
+              </Text>
+            </View>
+
+            {/* KPI Metrics Row */}
+            <View style={styles.txKpiGrid}>
+              {/* Credited Volume */}
+              <View style={[styles.txKpiCard, { backgroundColor: cardBg, borderColor }]}>
+                <View style={styles.txKpiIconRow}>
+                  <Text style={[styles.txKpiLabel, { color: subtextColor }]}>Credited Volume</Text>
+                  <View style={[styles.txKpiIconBox, { backgroundColor: '#16A34A18' }]}>
+                    <Text style={{ fontSize: 18 }}>💳</Text>
+                  </View>
+                </View>
+                <Text style={[styles.txKpiValue, { color: '#16A34A' }]}>
+                  {fmt(txSummary?.creditedAmount || 0)}
+                </Text>
+                <Text style={[styles.txKpiSubtext, { color: subtextColor }]}>
+                  {txSummary?.creditedCount || 0} successful payments
+                </Text>
+              </View>
+
+              {/* Pending Volume */}
+              <View style={[styles.txKpiCard, { backgroundColor: cardBg, borderColor }]}>
+                <View style={styles.txKpiIconRow}>
+                  <Text style={[styles.txKpiLabel, { color: subtextColor }]}>Pending Volume</Text>
+                  <View style={[styles.txKpiIconBox, { backgroundColor: '#D9770618' }]}>
+                    <Text style={{ fontSize: 18 }}>⏳</Text>
+                  </View>
+                </View>
+                <Text style={[styles.txKpiValue, { color: '#D97706' }]}>
+                  {fmt(txSummary?.pendingAmount || 0)}
+                </Text>
+                <Text style={[styles.txKpiSubtext, { color: subtextColor }]}>
+                  {txSummary?.pendingCount || 0} awaiting clearance
+                </Text>
+              </View>
+
+              {/* Canceled Volume */}
+              <View style={[styles.txKpiCard, { backgroundColor: cardBg, borderColor }]}>
+                <View style={styles.txKpiIconRow}>
+                  <Text style={[styles.txKpiLabel, { color: subtextColor }]}>Canceled / Failed</Text>
+                  <View style={[styles.txKpiIconBox, { backgroundColor: '#DC262618' }]}>
+                    <Text style={{ fontSize: 18 }}>🚫</Text>
+                  </View>
+                </View>
+                <Text style={[styles.txKpiValue, { color: '#DC2626' }]}>
+                  {fmt(txSummary?.canceledAmount || 0)}
+                </Text>
+                <Text style={[styles.txKpiSubtext, { color: subtextColor }]}>
+                  {txSummary?.canceledCount || 0} void / declined
+                </Text>
+              </View>
+
+              {/* Total Transactions */}
+              <View style={[styles.txKpiCard, { backgroundColor: cardBg, borderColor }]}>
+                <View style={styles.txKpiIconRow}>
+                  <Text style={[styles.txKpiLabel, { color: subtextColor }]}>Total Transactions</Text>
+                  <View style={[styles.txKpiIconBox, { backgroundColor: '#2563EB18' }]}>
+                    <Text style={{ fontSize: 18 }}>📊</Text>
+                  </View>
+                </View>
+                <Text style={[styles.txKpiValue, { color: '#2563EB' }]}>
+                  {txSummary?.totalTransactions || 0}
+                </Text>
+                <Text style={[styles.txKpiSubtext, { color: subtextColor }]}>
+                  Across orders, services & parcels
+                </Text>
+              </View>
+            </View>
+
+            {/* Action Bar: Export Buttons */}
+            <View style={styles.txActionToolbar}>
+              <TouchableOpacity
+                style={[styles.txExportBtn, { backgroundColor: '#10B98115', borderColor: '#10B981' }]}
+                onPress={handleExportCsv}
+                disabled={exportingCsv}
+                activeOpacity={0.8}
+              >
+                {exportingCsv ? (
+                  <ActivityIndicator size="small" color="#10B981" />
+                ) : (
+                  <Text style={{ fontSize: 16 }}>📊</Text>
+                )}
+                <Text style={[styles.txExportBtnText, { color: '#10B981' }]}>
+                  {exportingCsv ? 'Exporting...' : 'Export to Excel (.CSV)'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.txExportBtn, { backgroundColor: '#DC262615', borderColor: '#DC2626' }]}
+                onPress={handleExportPdf}
+                disabled={exportingPdf}
+                activeOpacity={0.8}
+              >
+                {exportingPdf ? (
+                  <ActivityIndicator size="small" color="#DC2626" />
+                ) : (
+                  <Text style={{ fontSize: 16 }}>📄</Text>
+                )}
+                <Text style={[styles.txExportBtnText, { color: '#DC2626' }]}>
+                  {exportingPdf ? 'Generating...' : 'Export PDF Statement'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.txExportBtn, { backgroundColor: theme.primary + '15', borderColor: theme.primary }]}
+                onPress={fetchTransactions}
+                disabled={transactionsLoading}
+                activeOpacity={0.8}
+              >
+                {transactionsLoading ? (
+                  <ActivityIndicator size="small" color={theme.primary} />
+                ) : (
+                  <Text style={{ fontSize: 16 }}>🔄</Text>
+                )}
+                <Text style={[styles.txExportBtnText, { color: theme.primary }]}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Filter & Search Bar */}
+            <View style={[styles.txFiltersCard, { backgroundColor: cardBg, borderColor }]}>
+              {/* Search Bar */}
+              <View style={styles.txSearchRow}>
+                <TextInput
+                  style={[styles.txSearchInput, { backgroundColor: inputBg, borderColor, color: textColor }]}
+                  placeholder="Search customer, email, phone, reference..."
+                  placeholderTextColor={subtextColor}
+                  value={txSearch}
+                  onChangeText={setTxSearch}
+                  onSubmitEditing={fetchTransactions}
+                  returnKeyType="search"
+                />
+                <TouchableOpacity
+                  style={[styles.txSearchBtn, { backgroundColor: theme.primary }]}
+                  onPress={fetchTransactions}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.txSearchBtnText}>Search</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Status Filter Pills */}
+              <View style={styles.txFilterSection}>
+                <Text style={[styles.txFilterSectionLabel, { color: subtextColor }]}>Payment Status</Text>
+                <View style={styles.txPillsRow}>
+                  {[
+                    { key: 'ALL', label: 'All Statuses' },
+                    { key: 'CREDITED', label: '🟢 Credited' },
+                    { key: 'PENDING', label: '🟡 Pending' },
+                    { key: 'CANCELED', label: '🔴 Canceled / Failed' },
+                  ].map(s => {
+                    const isSelected = txFilterStatus === s.key;
+                    return (
+                      <TouchableOpacity
+                        key={s.key}
+                        style={[
+                          styles.txPill,
+                          { borderColor: isSelected ? theme.primary : borderColor, backgroundColor: isSelected ? theme.primary + '20' : cardBg }
+                        ]}
+                        onPress={() => setTxFilterStatus(s.key as any)}
+                      >
+                        <Text style={[styles.txPillText, { color: isSelected ? theme.primary : subtextColor }]}>
+                          {s.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Type Filter Pills */}
+              <View style={styles.txFilterSection}>
+                <Text style={[styles.txFilterSectionLabel, { color: subtextColor }]}>Transaction Type</Text>
+                <View style={styles.txPillsRow}>
+                  {[
+                    { key: 'ALL', label: 'All Types' },
+                    { key: 'ORDER', label: '🛒 Orders' },
+                    { key: 'BOOKING', label: '⚡ Bookings' },
+                    { key: 'PARCEL', label: '📦 Parcels' },
+                  ].map(t => {
+                    const isSelected = txFilterType === t.key;
+                    return (
+                      <TouchableOpacity
+                        key={t.key}
+                        style={[
+                          styles.txPill,
+                          { borderColor: isSelected ? theme.primary : borderColor, backgroundColor: isSelected ? theme.primary + '20' : cardBg }
+                        ]}
+                        onPress={() => setTxFilterType(t.key as any)}
+                      >
+                        <Text style={[styles.txPillText, { color: isSelected ? theme.primary : subtextColor }]}>
+                          {t.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+
+            {/* Transactions List */}
+            {transactionsLoading ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={theme.primary} />
+                <Text style={{ marginTop: 12, color: subtextColor }}>Loading financial logs...</Text>
+              </View>
+            ) : transactions.length === 0 ? (
+              <View style={{ paddingVertical: 40, alignItems: 'center', backgroundColor: cardBg, borderRadius: 12, borderWidth: 1, borderColor }}>
+                <Text style={{ fontSize: 36, marginBottom: 10 }}>💳</Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: textColor }}>No Transactions Found</Text>
+                <Text style={{ fontSize: 13, color: subtextColor, marginTop: 4 }}>
+                  Try changing your search query or status/type filters.
+                </Text>
+              </View>
+            ) : (
+              transactions.map(tx => {
+                const statusBg =
+                  tx.statusCategory === 'CREDITED' ? '#16A34A18' :
+                  tx.statusCategory === 'PENDING' ? '#D9770618' : '#DC262618';
+                const statusColor =
+                  tx.statusCategory === 'CREDITED' ? '#16A34A' :
+                  tx.statusCategory === 'PENDING' ? '#D97706' : '#DC2626';
+
+                const typeColor =
+                  tx.type === 'ORDER' ? '#2563EB' :
+                  tx.type === 'BOOKING' ? '#7C3AED' : '#059669';
+
+                return (
+                  <View key={tx.id} style={[styles.txCard, { backgroundColor: cardBg, borderColor }]}>
+                    {/* Header */}
+                    <View style={styles.txCardHeader}>
+                      <View style={styles.txCardHeaderLeft}>
+                        <View style={[styles.txTypePill, { backgroundColor: typeColor + '18' }]}>
+                          <Text style={[styles.txTypePillText, { color: typeColor }]}>
+                            {tx.type === 'ORDER' ? '🛒 Order' : tx.type === 'BOOKING' ? '⚡ Booking' : '📦 Parcel'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.txRefText, { color: textColor }]}>#{tx.reference}</Text>
+                      </View>
+                      <View style={[styles.txStatusBadge, { backgroundColor: statusBg }]}>
+                        <Text style={[styles.txStatusBadgeText, { color: statusColor }]}>
+                          {tx.statusCategory}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Amount & Provider */}
+                    <View style={[styles.txAmountRow, { borderColor }]}>
+                      <View>
+                        <Text style={[styles.txAmountText, { color: textColor }]}>{fmt(tx.amount)}</Text>
+                        <Text style={{ fontSize: 11, color: subtextColor }}>
+                          Raw Status: {tx.paymentStatus}
+                        </Text>
+                      </View>
+                      <View style={styles.txProviderBadge}>
+                        <Text style={[styles.txProviderText, { color: textColor }]}>
+                          💳 {tx.paymentProvider}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Details: Customer, Recipient, Items */}
+                    <View style={{ gap: 4, marginVertical: 4 }}>
+                      <View style={styles.txDetailRow}>
+                        <Text style={[styles.txDetailLabel, { color: subtextColor }]}>Customer:</Text>
+                        <Text style={[styles.txDetailValue, { color: textColor }]}>
+                          {tx.customer?.name || 'Guest'} {tx.customer?.email ? `(${tx.customer.email})` : ''} {tx.customer?.phone ? `• 📞 ${tx.customer.phone}` : ''}
+                        </Text>
+                      </View>
+
+                      {tx.recipient?.name || tx.recipient?.address ? (
+                        <View style={styles.txDetailRow}>
+                          <Text style={[styles.txDetailLabel, { color: subtextColor }]}>Delivery:</Text>
+                          <Text style={[styles.txDetailValue, { color: textColor }]}>
+                            {tx.recipient?.address || 'N/A'} {tx.recipient?.phone ? `• 📞 ${tx.recipient.phone}` : ''}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      <View style={styles.txDetailRow}>
+                        <Text style={[styles.txDetailLabel, { color: subtextColor }]}>Summary:</Text>
+                        <Text style={[styles.txDetailValue, { color: textColor }]}>
+                          {tx.itemSummary} ({tx.itemCount} {tx.itemCount === 1 ? 'item' : 'items'})
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Footer */}
+                    <View style={[styles.txCardFooter, { borderColor }]}>
+                      <Text style={[styles.txDateText, { color: subtextColor }]}>
+                        {tx.paidAt ? `Paid ${new Date(tx.paidAt).toLocaleDateString()} at ${new Date(tx.paidAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : `Created ${new Date(tx.createdAt).toLocaleDateString()}`}
+                      </Text>
+                      <TouchableOpacity
+                        style={[styles.txReceiptBtn, { borderColor: theme.primary, backgroundColor: theme.primary + '10' }]}
+                        onPress={() => handleOpenReceipt(tx.type, tx.entityId)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.txReceiptBtnText, { color: theme.primary }]}>🧾 View Receipt</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        )}
+
         {/* ── REASSIGN MODAL ── */}
         <Modal
           visible={showReassignModal}
@@ -4555,6 +5008,13 @@ export default function AdminScreen() {
         title={previewImageTitle}
         subtitle={previewImageSubtitle}
         onClose={() => setPreviewModalVisible(false)}
+      />
+
+      {/* Itemized Transaction Receipt Modal */}
+      <ReceiptModal
+        visible={txReceiptModalVisible}
+        receipt={txSelectedReceipt}
+        onClose={() => setTxReceiptModalVisible(false)}
       />
     </View>
   );
@@ -5308,6 +5768,226 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
     lineHeight: 14,
+  },
+  txKpiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 20,
+  },
+  txKpiCard: {
+    flex: 1,
+    minWidth: 160,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  txKpiIconRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  txKpiIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  txKpiLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  txKpiValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginVertical: 4,
+  },
+  txKpiSubtext: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  txActionToolbar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 16,
+  },
+  txExportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  txExportBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  txFiltersCard: {
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+  txSearchRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  txSearchInput: {
+    flex: 1,
+    height: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    fontSize: 14,
+  },
+  txSearchBtn: {
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  txSearchBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  txFilterSection: {
+    marginBottom: 10,
+  },
+  txFilterSectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  txPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  txPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  txPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  txCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 14,
+  },
+  txCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  txCardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    flex: 1,
+  },
+  txTypePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  txTypePillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  txRefText: {
+    fontSize: 13,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  txStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  txStatusBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  txAmountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    marginVertical: 10,
+  },
+  txAmountText: {
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  txProviderBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+  },
+  txProviderText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  txDetailRow: {
+    marginVertical: 2,
+    flexDirection: 'row',
+  },
+  txDetailLabel: {
+    fontSize: 12,
+    width: 80,
+    fontWeight: '600',
+  },
+  txDetailValue: {
+    fontSize: 12,
+    flex: 1,
+    fontWeight: '500',
+  },
+  txCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+  },
+  txDateText: {
+    fontSize: 11,
+  },
+  txReceiptBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  txReceiptBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
 

@@ -5,6 +5,7 @@ import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
 import MapComponent from '../components/MapComponent';
+import ReceiptModal, { ReceiptModalData } from '../components/ReceiptModal';
 
 export default function HistoryScreen({ route, navigation }: any) {
   const { userInfo, userToken } = useContext(AuthContext);
@@ -61,6 +62,24 @@ export default function HistoryScreen({ route, navigation }: any) {
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
   const [riderStatus, setRiderStatus] = useState<string>(userInfo?.riderStatus || 'ONLINE');
+
+  // Receipt modal states
+  const [receiptModalVisible, setReceiptModalVisible] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptModalData | null>(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+
+  const handleOpenReceipt = async (receiptType: 'order' | 'booking' | 'parcel', id: string) => {
+    setReceiptLoading(true);
+    try {
+      const res = await apiClient.get(`/payments/receipt/${receiptType}/${id}`);
+      setSelectedReceipt(res.data);
+      setReceiptModalVisible(true);
+    } catch (e: any) {
+      Alert.alert('Receipt Error', e?.response?.data?.error || 'Unable to retrieve transaction receipt.');
+    } finally {
+      setReceiptLoading(false);
+    }
+  };
 
   const handleToggleRiderStatus = async () => {
     const newStatus = riderStatus === 'ONLINE' ? 'OFFLINE' : 'ONLINE';
@@ -511,6 +530,15 @@ export default function HistoryScreen({ route, navigation }: any) {
               )
             )}
             
+            {(item.status === 'PAID' || item.status === 'DELIVERED' || item.status === 'SHIPPED' || item.amountPaid > 0) && (
+              <TouchableOpacity
+                style={[styles.receiptBtn, { borderColor: theme.primary, backgroundColor: theme.primary + '10' }]}
+                onPress={() => handleOpenReceipt('order', item.id)}
+              >
+                <Text style={[styles.receiptBtnText, { color: theme.primary }]}>🧾 Receipt</Text>
+              </TouchableOpacity>
+            )}
+
             {(item.status === 'PAID' || item.status === 'DELIVERED') && !isEscrowHeld && (
               isReviewed ? (
                 <View style={styles.reviewedBadge}>
@@ -567,9 +595,19 @@ export default function HistoryScreen({ route, navigation }: any) {
         </Text>
         <Text style={styles.buyerText}>Buyer: {item.order?.user?.name || 'Anonymous'}</Text>
         <Text style={styles.date}>{new Date(item.order.createdAt).toLocaleDateString()}</Text>
-        <Text style={[styles.amount, { color: theme.primary }]}>
-          Earnings: ${(item.price * item.quantity).toFixed(2)}
-        </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+          <Text style={[styles.amount, { color: theme.primary }]}>
+            Earnings: ${(item.price * item.quantity).toFixed(2)}
+          </Text>
+          {(item.order?.status === 'PAID' || item.order?.status === 'DELIVERED') && (
+            <TouchableOpacity
+              style={[styles.receiptBtn, { borderColor: theme.primary, backgroundColor: theme.primary + '10' }]}
+              onPress={() => handleOpenReceipt('order', item.order.id)}
+            >
+              <Text style={[styles.receiptBtnText, { color: theme.primary }]}>🧾 Receipt</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     );
   };
@@ -810,6 +848,16 @@ export default function HistoryScreen({ route, navigation }: any) {
                   <Text style={styles.completeBtnText}>Confirm Job Completed</Text>
                 </TouchableOpacity>
               )
+            )}
+
+            {/* View Receipt Button */}
+            {(item.status === 'ACCEPTED' || item.status === 'COMPLETED' || (item.amountPaid && item.amountPaid > 0)) && (
+              <TouchableOpacity
+                style={[styles.receiptBtn, { borderColor: theme.primary, backgroundColor: theme.primary + '10' }]}
+                onPress={() => handleOpenReceipt('booking', item.id)}
+              >
+                <Text style={[styles.receiptBtnText, { color: theme.primary }]}>🧾 Receipt</Text>
+              </TouchableOpacity>
             )}
 
             {/* Customer — Rate completed job (once escrow is released) */}
@@ -1260,6 +1308,16 @@ export default function HistoryScreen({ route, navigation }: any) {
                     </TouchableOpacity>
                   )}
 
+                  {/* View Parcel Receipt */}
+                  {(parcel.status === 'DELIVERED' || parcel.status === 'SHIPPED' || parcel.status === 'PAID') && (
+                    <TouchableOpacity
+                      style={[styles.actionBtn, { backgroundColor: '#0F172A' }]}
+                      onPress={() => handleOpenReceipt('parcel', parcel.id)}
+                    >
+                      <Text style={styles.actionBtnText}>🧾 Receipt</Text>
+                    </TouchableOpacity>
+                  )}
+
                   {/* Customer: Cancel */}
                   {userInfo?.role !== 'RIDER' && parcel.status === 'PENDING' && (
                     <TouchableOpacity
@@ -1358,6 +1416,13 @@ export default function HistoryScreen({ route, navigation }: any) {
           </View>
         </View>
       </Modal>
+
+      {/* Receipt Preview Modal */}
+      <ReceiptModal
+        visible={receiptModalVisible}
+        receipt={selectedReceipt}
+        onClose={() => setReceiptModalVisible(false)}
+      />
     </View>
   );
 }
@@ -1981,5 +2046,19 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '800',
     fontSize: 14,
+  },
+  receiptBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginRight: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

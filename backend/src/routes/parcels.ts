@@ -3,6 +3,7 @@ import { PaymentProvider, OrderStatus } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { sendNotification } from '../lib/notify';
 import prisma from '../lib/prisma';
+import { sanitizePaymentProvider } from './orders';
 import { triggerSplitWebhook } from '../lib/wallet';
 import { calculateRiderDeliveryPrice, calculateAccurateDistance, haversineDistanceKm } from '../lib/location';
 
@@ -117,7 +118,7 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
         dropoffLng: dLng,
         parcelDescription,
         totalAmount: computedTotalAmount,
-        paymentProvider: (paymentProvider as PaymentProvider) || 'NONE',
+        paymentProvider: sanitizePaymentProvider(paymentProvider),
         status: 'PENDING',
       },
       include: { rider: true },
@@ -202,7 +203,7 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
         dropoffLng: dLng,
         parcelDescription,
         totalAmount: computedTotalAmount,
-        paymentProvider: (paymentProvider as PaymentProvider) || 'NONE',
+        paymentProvider: sanitizePaymentProvider(paymentProvider),
         status: 'PENDING',
       },
       include: { rider: true },

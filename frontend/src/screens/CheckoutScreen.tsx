@@ -79,7 +79,17 @@ export default function CheckoutScreen({ route, navigation }: any) {
   }, [settings, userToken]);
 
   const ensureRecordCreated = async (provider: string): Promise<string | null> => {
-    if (activeRecordId) return activeRecordId;
+    if (activeRecordId) {
+      if (checkoutType === 'order' && guestAddress.trim()) {
+        await apiClient.patch(`/orders/${activeRecordId}/checkout-details`, {
+          deliveryAddress: guestAddress.trim(),
+          paymentProvider: provider,
+          guestName: guestName.trim() || undefined,
+          guestPhone: guestPhone.trim() || undefined,
+        }).catch(() => {});
+      }
+      return activeRecordId;
+    }
     if (!userToken && (!guestName.trim() || !guestEmail.trim())) {
       Alert.alert('Details Required', 'Please enter your Full Name and Email Address to continue.');
       return null;
@@ -144,7 +154,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
     } else if (checkoutType === 'booking') {
       Alert.alert(
         '🎉 Booking Confirmed & Paid!',
-        refMessage || 'Your handyman service booking has been confirmed and paid successfully.',
+        refMessage || 'Your handyman service booking has been confirmed and paid successfully. A receipt has been dispatched to your email.',
         [
           {
             text: '📋 View My Bookings',
@@ -159,7 +169,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
     } else if (checkoutType === 'parcel') {
       Alert.alert(
         '🎉 Parcel Delivery Confirmed & Paid!',
-        refMessage || 'Your parcel dispatch has been assigned and paid successfully. A rider will call you to confirm your location.',
+        refMessage || 'Your parcel dispatch has been assigned and paid successfully. A receipt has been dispatched to your email. A rider will call you to confirm your location.',
         [
           {
             text: '📦 View Deliveries',
@@ -174,10 +184,10 @@ export default function CheckoutScreen({ route, navigation }: any) {
     } else {
       Alert.alert(
         '🎉 Order Placed Successfully!',
-        refMessage || 'Your order has been placed! Your product will be delivered within a few hours. A rider will call you to confirm your location.',
+        refMessage || 'Your order has been placed! An official receipt has been sent to your email. Your product will be delivered within a few hours. A rider will call you to confirm your location.',
         [
           {
-            text: '🛒 View My Orders',
+            text: '🛒 View Orders & Receipt',
             onPress: () => navigation.navigate('History', { type: 'orders', tab: 'orders', role: 'CUSTOMER' }),
           },
           {
@@ -195,8 +205,17 @@ export default function CheckoutScreen({ route, navigation }: any) {
       const recId = await ensureRecordCreated('NONE');
       if (!recId) { setLoadingProvider(null); return; }
 
+      if (checkoutType === 'order') {
+        await apiClient.patch(`/orders/${recId}/checkout-details`, {
+          deliveryAddress: guestAddress.trim() || undefined,
+          paymentProvider: 'POD',
+          guestName: guestName.trim() || undefined,
+          guestPhone: guestPhone.trim() || undefined,
+        }).catch((err) => console.warn('[Checkout] POD details update:', err));
+      }
+
       handlePaymentCompleted(
-        'Your order has been placed! Your product will be delivered within a few hours. A rider will call you to confirm your location.'
+        'Your Pay on Delivery order has been placed! An official receipt has been dispatched to your email. Your product will be delivered within a few hours. A rider will call you to confirm your location.'
       );
     } catch (error: any) {
       Alert.alert('Order Failed', error.response?.data?.error || 'Could not place order for pay on delivery.');
@@ -270,6 +289,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
       const response = await apiClient.post('/payments/checkout', {
         checkoutType, id: recId, provider: 'STRIPE',
         isSplit: isRemainingPayment ? true : isSplit, currency, localAmount,
+        deliveryAddress: guestAddress.trim() || undefined,
       });
       const { clientSecret, authorizationUrl } = response.data;
 
@@ -299,7 +319,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
       if (presentSheet.error) {
         if (presentSheet.error.code !== 'Canceled') Alert.alert('Payment Error', presentSheet.error.message);
       } else {
-        handlePaymentCompleted('Your Stripe payment was completed successfully!');
+        handlePaymentCompleted('Your Stripe payment was completed successfully! An official receipt has been dispatched to your email.');
       }
     } catch (error: any) {
       Alert.alert('Stripe Unavailable', error.response?.data?.error || 'Could not initialise Stripe. Please try another payment method.');
@@ -317,6 +337,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
       const response = await apiClient.post('/payments/checkout', {
         checkoutType, id: recId, provider,
         isSplit: isRemainingPayment ? true : isSplit, currency, localAmount,
+        deliveryAddress: guestAddress.trim() || undefined,
       });
 
       let redirectUrl: string | null = null;
