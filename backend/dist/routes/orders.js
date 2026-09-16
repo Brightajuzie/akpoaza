@@ -12,13 +12,30 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.sanitizePaymentProvider = sanitizePaymentProvider;
 const express_1 = require("express");
+const client_1 = require("@prisma/client");
 const auth_1 = require("../middleware/auth");
 const notify_1 = require("../lib/notify");
+const receipt_1 = require("../lib/receipt");
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const wallet_1 = require("../lib/wallet");
 const location_1 = require("../lib/location");
 const router = (0, express_1.Router)();
+function sanitizePaymentProvider(val) {
+    if (!val)
+        return client_1.PaymentProvider.NONE;
+    const upper = String(val).toUpperCase();
+    if (upper === 'STRIPE')
+        return client_1.PaymentProvider.STRIPE;
+    if (upper === 'PAYSTACK')
+        return client_1.PaymentProvider.PAYSTACK;
+    if (upper === 'FLUTTERWAVE')
+        return client_1.PaymentProvider.FLUTTERWAVE;
+    if (upper === 'OPAY')
+        return client_1.PaymentProvider.OPAY;
+    return client_1.PaymentProvider.NONE;
+}
 function getDistanceKm(lat1, lon1, lat2, lon2) {
     return (0, location_1.haversineDistanceKm)(lat1, lon1, lat2, lon2);
 }
@@ -171,13 +188,15 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
                     },
                 });
             }
+            const isPOD = paymentProvider === 'POD' || !paymentProvider || paymentProvider === 'NONE';
             return tx.order.create({
                 data: {
                     userId,
                     riderId: assignedRiderId,
                     deliveryAddress: deliveryAddress || (user === null || user === void 0 ? void 0 : user.address) || null,
                     totalAmount: computedTotalAmount,
-                    paymentProvider: paymentProvider || 'NONE',
+                    paymentProvider: sanitizePaymentProvider(paymentProvider),
+                    paymentRef: isPOD ? `POD_${user.id.slice(0, 6)}_${Date.now()}` : undefined,
                     status: 'PENDING',
                     items: {
                         create: checkoutItems,
@@ -192,30 +211,36 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
                 const req = items.find((i) => i.productId === p.id);
                 return `${(req === null || req === void 0 ? void 0 : req.quantity) || 1}× ${p.name}`;
             }).join(', ');
-            const isPOD = !paymentProvider || paymentProvider === 'NONE';
+            const isPOD = !paymentProvider || paymentProvider === 'NONE' || paymentProvider === 'POD';
             const customerTitle = isPOD ? '📦 Order Placed (Pay on Delivery)' : '🛒 Order Placed Successfully';
             const customerBody = `Your order for ${itemsSummary} (₦${computedTotalAmount.toLocaleString()}) has been placed. Your product will be delivered within a few hours, and a rider will call you to confirm your location.`;
-            // 1. Customer — in-app, SMS, email
-            (0, notify_1.sendNotification)({
-                userId,
-                title: customerTitle,
-                body: customerBody,
-                type: 'ORDER',
-                referenceId: order.id,
-                email: user.email,
-                phone: user.phone || undefined,
-                emailSubject: '📦 Order Confirmation & Delivery Notice — FixMart',
-                emailHtml: `<p style="font-size:16px;color:#374151">Hi ${user.name || 'there'},</p>
-          <p>Thank you for shopping with <strong>FixMart</strong>! Your order has been placed successfully.</p>
-          <div style="background:#F3F4F6;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
-            <p style="margin:0;font-size:15px;color:#065F46;font-weight:600">🚚 Delivery Update:</p>
-            <p style="margin:4px 0 0;font-size:14px;color:#1F2937">Your product will be delivered within a few hours. A rider will call you shortly to confirm your location.</p>
-          </div>
-          <p><strong>Items:</strong> ${itemsSummary}</p>
-          <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
-          <p><strong>Payment Method:</strong> ${isPOD ? 'Cash / Transfer on Delivery' : paymentProvider}</p>
-          <p><strong>Delivery Address:</strong> ${order.deliveryAddress || 'Not specified'}</p>`,
-            }).catch(() => { });
+            // Dispatch full itemized receipt for POD orders
+            if (isPOD) {
+                (0, receipt_1.dispatchReceiptNotification)('order', order.id, customerTitle).catch((err) => console.error('[guest-checkout] Failed to dispatch receipt:', err));
+            }
+            else {
+                // 1. Customer — in-app, SMS, email
+                (0, notify_1.sendNotification)({
+                    userId,
+                    title: customerTitle,
+                    body: customerBody,
+                    type: 'ORDER',
+                    referenceId: order.id,
+                    email: user.email,
+                    phone: user.phone || undefined,
+                    emailSubject: '📦 Order Confirmation & Delivery Notice — FixMart',
+                    emailHtml: `<p style="font-size:16px;color:#374151">Hi ${user.name || 'there'},</p>
+            <p>Thank you for shopping with <strong>FixMart</strong>! Your order has been placed successfully.</p>
+            <div style="background:#F3F4F6;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+              <p style="margin:0;font-size:15px;color:#065F46;font-weight:600">🚚 Delivery Update:</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937">Your product will be delivered within a few hours. A rider will call you shortly to confirm your location.</p>
+            </div>
+            <p><strong>Items:</strong> ${itemsSummary}</p>
+            <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
+            <p><strong>Payment Method:</strong> ${paymentProvider || 'Online'}</p>
+            <p><strong>Delivery Address:</strong> ${order.deliveryAddress || 'Not specified'}</p>`,
+                }).catch(() => { });
+            }
             // 2. Admins — new order alert
             const admins = yield prisma_1.default.user.findMany({
                 where: { role: 'ADMIN' },
@@ -391,13 +416,15 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
                 });
             }
             // Create order
+            const isPOD = paymentProvider === 'POD' || !paymentProvider || paymentProvider === 'NONE';
             return tx.order.create({
                 data: {
                     userId,
                     riderId: assignedRiderId,
                     deliveryAddress: deliveryAddress || null,
                     totalAmount: computedTotalAmount,
-                    paymentProvider: paymentProvider || 'NONE',
+                    paymentProvider: sanitizePaymentProvider(paymentProvider),
+                    paymentRef: isPOD ? `POD_${userId.slice(0, 6)}_${Date.now()}` : undefined,
                     status: 'PENDING',
                     items: {
                         create: checkoutItems,
@@ -416,28 +443,34 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
                 const req = items.find((i) => i.productId === p.id);
                 return `${(req === null || req === void 0 ? void 0 : req.quantity) || 1}× ${p.name}`;
             }).join(', ');
-            const isPOD = !paymentProvider || paymentProvider === 'NONE';
+            const isPOD = !paymentProvider || paymentProvider === 'NONE' || paymentProvider === 'POD';
             const customerTitle = isPOD ? '📦 Order Placed (Pay on Delivery)' : '🛒 Order Placed Successfully';
             const customerBody = `Your order for ${itemsSummary} (₦${computedTotalAmount.toLocaleString()}) has been placed. Your product will be delivered within a few hours, and a rider will call you to confirm your location.`;
-            // 1. Customer — order confirmation and delivery notice
-            (0, notify_1.sendNotification)({
-                userId,
-                title: customerTitle,
-                body: customerBody,
-                type: 'ORDER',
-                referenceId: order.id,
-                emailSubject: '📦 Order Confirmation & Delivery Notice — FixMart',
-                emailHtml: `<p style="font-size:16px;color:#374151">Hi ${(customer === null || customer === void 0 ? void 0 : customer.name) || 'there'},</p>
-          <p>Thank you for shopping with <strong>FixMart</strong>! Your order has been placed successfully.</p>
-          <div style="background:#F3F4F6;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
-            <p style="margin:0;font-size:15px;color:#065F46;font-weight:600">🚚 Delivery Update:</p>
-            <p style="margin:4px 0 0;font-size:14px;color:#1F2937">Your product will be delivered within a few hours. A rider will call you shortly to confirm your location.</p>
-          </div>
-          <p><strong>Items:</strong> ${itemsSummary}</p>
-          <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
-          <p><strong>Payment Method:</strong> ${isPOD ? 'Cash / Transfer on Delivery' : paymentProvider}</p>
-          <p><strong>Delivery Address:</strong> ${order.deliveryAddress || 'Not specified'}</p>`,
-            }).catch(() => { });
+            // Dispatch full itemized receipt for POD orders
+            if (isPOD) {
+                (0, receipt_1.dispatchReceiptNotification)('order', order.id, customerTitle).catch((err) => console.error('[checkout] Failed to dispatch receipt:', err));
+            }
+            else {
+                // 1. Customer — order confirmation and delivery notice
+                (0, notify_1.sendNotification)({
+                    userId,
+                    title: customerTitle,
+                    body: customerBody,
+                    type: 'ORDER',
+                    referenceId: order.id,
+                    emailSubject: '📦 Order Confirmation & Delivery Notice — FixMart',
+                    emailHtml: `<p style="font-size:16px;color:#374151">Hi ${(customer === null || customer === void 0 ? void 0 : customer.name) || 'there'},</p>
+            <p>Thank you for shopping with <strong>FixMart</strong>! Your order has been placed successfully.</p>
+            <div style="background:#F3F4F6;border-left:4px solid #10B981;padding:12px 16px;margin:16px 0;border-radius:4px;">
+              <p style="margin:0;font-size:15px;color:#065F46;font-weight:600">🚚 Delivery Update:</p>
+              <p style="margin:4px 0 0;font-size:14px;color:#1F2937">Your product will be delivered within a few hours. A rider will call you shortly to confirm your location.</p>
+            </div>
+            <p><strong>Items:</strong> ${itemsSummary}</p>
+            <p><strong>Total:</strong> ₦${computedTotalAmount.toLocaleString()}</p>
+            <p><strong>Payment Method:</strong> ${isPOD ? 'Cash / Transfer on Delivery' : paymentProvider}</p>
+            <p><strong>Delivery Address:</strong> ${order.deliveryAddress || 'Not specified'}</p>`,
+                }).catch(() => { });
+            }
             // 2. Admins — new order alert
             const admins = yield prisma_1.default.user.findMany({
                 where: { role: 'ADMIN' },
@@ -520,6 +553,50 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
             console.error('[orders] Failed to dispatch notifications:', e);
         }
         res.status(201).json({ message: 'Order created successfully', order, riderDistance });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+// Update checkout details (delivery address, contact info, payment provider) for an existing order
+router.patch('/:id/checkout-details', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { id } = req.params;
+    const { deliveryAddress, guestName, guestEmail, guestPhone, paymentProvider } = req.body;
+    try {
+        const order = yield prisma_1.default.order.findUnique({
+            where: { id },
+            include: { user: true },
+        });
+        if (!order)
+            return res.status(404).json({ error: 'Order not found' });
+        const updatedData = {};
+        if (deliveryAddress !== undefined && deliveryAddress !== null) {
+            updatedData.deliveryAddress = String(deliveryAddress).trim();
+        }
+        if (paymentProvider !== undefined) {
+            const isPOD = paymentProvider === 'POD' || paymentProvider === 'NONE';
+            updatedData.paymentProvider = sanitizePaymentProvider(paymentProvider);
+            if (isPOD && (!order.paymentRef || !order.paymentRef.startsWith('POD_'))) {
+                updatedData.paymentRef = `POD_${order.id.slice(-6).toUpperCase()}_${Date.now()}`;
+            }
+        }
+        const updatedOrder = yield prisma_1.default.order.update({
+            where: { id },
+            data: updatedData,
+            include: { user: true, items: { include: { product: true } } },
+        });
+        // Update customer contact info if provided
+        if (guestName || guestPhone || deliveryAddress) {
+            yield prisma_1.default.user.update({
+                where: { id: order.userId },
+                data: Object.assign(Object.assign(Object.assign({}, (guestName ? { name: String(guestName).trim() } : {})), (guestPhone ? { phone: String(guestPhone).trim() } : {})), (deliveryAddress ? { address: String(deliveryAddress).trim() } : {})),
+            }).catch(() => { });
+        }
+        // If marked as POD, dispatch receipt notification
+        if (paymentProvider === 'POD') {
+            (0, receipt_1.dispatchReceiptNotification)('order', id, '📦 Order Placed — Pay on Delivery').catch((err) => console.error('[checkout-details] Failed to dispatch receipt:', err));
+        }
+        res.json({ message: 'Order details updated successfully', order: updatedOrder });
     }
     catch (error) {
         next(error);

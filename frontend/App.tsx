@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useCallback, useContext, useEffect } from 'react';
-import { ActivityIndicator, View, StyleSheet, Platform } from 'react-native';
+import { ActivityIndicator, View, StyleSheet, Platform, Text, TextInput } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppNavigator from './src/navigation/AppNavigator';
 import { AuthProvider, AuthContext } from './src/context/AuthContext';
@@ -13,6 +13,17 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Font from 'expo-font';
 import ToastProvider from './src/components/ToastProvider';
 import { StatusBar } from 'expo-status-bar';
+
+// Global text overflow protection for compact devices (e.g. 5.6" screens)
+if ((Text as any).defaultProps == null) {
+  (Text as any).defaultProps = {};
+}
+(Text as any).defaultProps.maxFontSizeMultiplier = 1.2;
+
+if ((TextInput as any).defaultProps == null) {
+  (TextInput as any).defaultProps = {};
+}
+(TextInput as any).defaultProps.maxFontSizeMultiplier = 1.2;
 
 // ── Platform-safe imports ─────────────────────────────────────────────────────
 // On web, @stripe/stripe-react-native crashes at import time because it

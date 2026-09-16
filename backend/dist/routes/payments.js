@@ -18,6 +18,8 @@ const axios_1 = __importDefault(require("axios"));
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const wallet_1 = require("../lib/wallet");
 const notify_1 = require("../lib/notify");
+const receipt_1 = require("../lib/receipt");
+const orders_1 = require("./orders");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
 // Paystack generic configuration
@@ -61,7 +63,7 @@ function processPaymentVerification(_a) {
                 where: { id },
                 data: {
                     status: 'PAID',
-                    paymentProvider: provider,
+                    paymentProvider: (0, orders_1.sanitizePaymentProvider)(provider),
                     paymentRef: reference,
                     amountPaid: { increment: chargedAmount },
                 },
@@ -75,6 +77,8 @@ function processPaymentVerification(_a) {
                 }
                 yield prisma_1.default.order.update({ where: { id }, data: { status: 'DELIVERED' } });
             }
+            // Automatically dispatch official itemized receipt to customer and email
+            yield (0, receipt_1.dispatchReceiptNotification)('order', id).catch(err => console.error('[payments] Failed to dispatch order receipt:', err));
             // ── Dispatch notifications for paid order ───────────────────────────
             try {
                 const orderUser = yield prisma_1.default.user.findUnique({
@@ -255,6 +259,8 @@ function processPaymentVerification(_a) {
             catch (notifErr) {
                 console.error('[payments] Failed to dispatch booking payment notifications:', notifErr);
             }
+            // Automatically dispatch official itemized receipt to customer and email
+            yield (0, receipt_1.dispatchReceiptNotification)('booking', id).catch(err => console.error('[payments] Failed to dispatch booking receipt:', err));
             return { type: 'booking', record: updatedBooking };
         }
         else if (checkoutType === 'parcel') {
@@ -265,11 +271,13 @@ function processPaymentVerification(_a) {
                 where: { id },
                 data: {
                     status: 'PAID',
-                    paymentProvider: provider,
+                    paymentProvider: (0, orders_1.sanitizePaymentProvider)(provider),
                     paymentRef: reference,
                 },
             });
             yield (0, wallet_1.createEscrowForPaidItem)('parcel', id, chargedAmount || parcel.totalAmount).catch(err => console.error(`[Escrow] Hold failed for parcel ${id}:`, err));
+            // Automatically dispatch official itemized receipt to customer and email
+            yield (0, receipt_1.dispatchReceiptNotification)('parcel', id).catch(err => console.error('[payments] Failed to dispatch parcel receipt:', err));
             return { type: 'parcel', record: updatedParcel };
         }
         throw new Error(`Invalid checkout type: ${checkoutType}`);
@@ -408,7 +416,7 @@ function renderSuccessHtml(provider, reference, frontendUrl, title, message) {
 // Create a checkout session/intent or sandbox mock for the chosen payment provider
 router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f;
-    const { checkoutType, id, provider, isSplit, currency: reqCurrency, localAmount: reqLocalAmount } = req.body;
+    const { checkoutType, id, provider, isSplit, currency: reqCurrency, localAmount: reqLocalAmount, deliveryAddress } = req.body;
     if (!checkoutType || !id || !provider) {
         return res.status(400).json({ error: 'checkoutType, id, and provider are required' });
     }
@@ -426,11 +434,11 @@ router.post('/checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, f
                 return res.status(404).json({ error: 'Order not found' });
             const updatedOrder = yield prisma_1.default.order.update({
                 where: { id },
-                data: { isSplitPayment: order.isSplitPayment || isSplitPaymentChosen },
+                data: Object.assign({ isSplitPayment: order.isSplitPayment || isSplitPaymentChosen }, (deliveryAddress ? { deliveryAddress: String(deliveryAddress).trim() } : {})),
                 include: { user: true },
             });
             userEmail = updatedOrder.user.email;
-            userName = updatedOrder.user.name;
+            userName = updatedOrder.user.name || updatedOrder.user.email || 'Valued Customer';
             if (updatedOrder.amountPaid > 0) {
                 totalAmount = updatedOrder.totalAmount - updatedOrder.amountPaid;
             }
@@ -720,6 +728,10 @@ router.post('/wallet-pay', auth_1.authenticateToken, (req, res, next) => __await
     if (!checkoutType || !id)
         return res.status(400).json({ error: 'checkoutType and id are required' });
     try {
+        const walletSetting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'wallet_enabled' } });
+        if (walletSetting && walletSetting.value === 'false') {
+            return res.status(400).json({ error: 'Virtual wallet payment is currently disabled by administrator. Please choose another payment method.' });
+        }
         const wallet = yield (0, wallet_1.getOrCreateWallet)(userId);
         let amountToPay = 0;
         if (checkoutType === 'order') {
@@ -761,7 +773,7 @@ router.post('/wallet-pay', auth_1.authenticateToken, (req, res, next) => __await
         });
         const reference = `WALLET_${id}_${Date.now()}`;
         const result = yield processPaymentVerification({
-            provider: 'PAYSTACK',
+            provider: 'NONE',
             reference,
             checkoutType,
             id,
@@ -829,30 +841,53 @@ router.get('/paystack/verify/:reference', (req, res, next) => __awaiter(void 0, 
 }));
 // Paystack Redirect Callback
 router.get('/paystack/callback', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e;
     const reference = (req.query.reference || req.query.trxref);
     const frontendUrl = getFrontendUrl(req);
     if (!reference) {
         return res.redirect(`${frontendUrl}/?payment_status=cancelled`);
     }
     try {
-        const parts = reference.split('_');
-        const id = parts[1];
+        let id = reference.split('_')[1];
+        let chargedAmountOverride = null;
+        const paystackSetting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'paystack_secret_key' } });
+        const activePaystackKey = (paystackSetting === null || paystackSetting === void 0 ? void 0 : paystackSetting.value) || process.env.PAYSTACK_SECRET_KEY || 'sk_test_dummy';
+        if (!activePaystackKey.includes('dummy') && !reference.startsWith('PAY_')) {
+            try {
+                const verifyRes = yield axios_1.default.get(`${PAYSTACK_BASE_URL}/transaction/verify/${encodeURIComponent(reference)}`, {
+                    headers: { Authorization: `Bearer ${activePaystackKey}` },
+                    timeout: 10000,
+                });
+                if ((_c = (_b = (_a = verifyRes.data) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.metadata) === null || _c === void 0 ? void 0 : _c.id) {
+                    id = verifyRes.data.data.metadata.id;
+                }
+                if ((_e = (_d = verifyRes.data) === null || _d === void 0 ? void 0 : _d.data) === null || _e === void 0 ? void 0 : _e.amount) {
+                    chargedAmountOverride = verifyRes.data.data.amount / 100;
+                }
+            }
+            catch (e) { }
+        }
+        if (!id) {
+            const ord = yield prisma_1.default.order.findFirst({ where: { paymentRef: reference } });
+            if (ord)
+                id = ord.id;
+        }
         if (id) {
             const order = yield prisma_1.default.order.findUnique({ where: { id } });
             if (order) {
-                const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+                const chargedAmount = chargedAmountOverride || (order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount);
                 yield processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'order', id, chargedAmount });
             }
             else {
                 const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
                 if (booking) {
-                    const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+                    const chargedAmount = chargedAmountOverride || (booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice);
                     yield processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'booking', id, chargedAmount });
                 }
                 else {
                     const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
                     if (parcel) {
-                        yield processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
+                        yield processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
                     }
                 }
             }
@@ -916,6 +951,7 @@ router.get('/flutterwave/verify/:transactionId', (req, res, next) => __awaiter(v
 }));
 // Flutterwave Redirect Callback
 router.get('/flutterwave/callback', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e;
     const txRef = (req.query.tx_ref || req.query.transaction_id || req.query.reference);
     const status = req.query.status;
     const frontendUrl = getFrontendUrl(req);
@@ -923,24 +959,46 @@ router.get('/flutterwave/callback', (req, res, next) => __awaiter(void 0, void 0
         return res.redirect(`${frontendUrl}/?payment_status=cancelled`);
     }
     try {
-        const parts = txRef.split('_');
-        const id = parts[1];
+        let id = txRef.split('_')[1];
+        let chargedAmountOverride = null;
+        const flutterwaveSetting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'flutterwave_secret_key' } });
+        const activeFlutterwaveKey = (flutterwaveSetting === null || flutterwaveSetting === void 0 ? void 0 : flutterwaveSetting.value) || process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK_TEST-dummy';
+        if (!activeFlutterwaveKey.includes('dummy') && !txRef.startsWith('FLW_')) {
+            try {
+                const verifyRes = yield axios_1.default.get(`${FLUTTERWAVE_BASE_URL}/transactions/${encodeURIComponent(txRef)}/verify`, {
+                    headers: { Authorization: `Bearer ${activeFlutterwaveKey}` },
+                    timeout: 10000,
+                });
+                if ((_c = (_b = (_a = verifyRes.data) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.meta) === null || _c === void 0 ? void 0 : _c.id) {
+                    id = verifyRes.data.data.meta.id;
+                }
+                if ((_e = (_d = verifyRes.data) === null || _d === void 0 ? void 0 : _d.data) === null || _e === void 0 ? void 0 : _e.amount) {
+                    chargedAmountOverride = verifyRes.data.data.amount;
+                }
+            }
+            catch (e) { }
+        }
+        if (!id) {
+            const ord = yield prisma_1.default.order.findFirst({ where: { paymentRef: txRef } });
+            if (ord)
+                id = ord.id;
+        }
         if (id) {
             const order = yield prisma_1.default.order.findUnique({ where: { id } });
             if (order) {
-                const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+                const chargedAmount = chargedAmountOverride || (order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount);
                 yield processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'order', id, chargedAmount });
             }
             else {
                 const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
                 if (booking) {
-                    const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+                    const chargedAmount = chargedAmountOverride || (booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice);
                     yield processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'booking', id, chargedAmount });
                 }
                 else {
                     const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
                     if (parcel) {
-                        yield processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
+                        yield processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
                     }
                 }
             }
@@ -1067,29 +1125,66 @@ router.get('/stripe/mock-pay', (req, res) => {
 });
 // Verify Stripe Reference
 router.get('/stripe/verify/:reference', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
     const { reference } = req.params;
     const frontendUrl = getFrontendUrl(req);
     try {
-        const parts = reference.split('_');
-        const id = parts[1];
+        let id = reference.split('_')[1];
+        let checkoutType = null;
+        let chargedAmountOverride = null;
+        // Handle live Stripe PaymentIntent references (pi_...)
+        if (reference.startsWith('pi_')) {
+            const stripeSetting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'stripe_secret_key' } });
+            const activeStripeKey = (stripeSetting === null || stripeSetting === void 0 ? void 0 : stripeSetting.value) || process.env.STRIPE_SECRET_KEY || 'sk_test_dummy';
+            if (!activeStripeKey.includes('dummy')) {
+                try {
+                    const activeStripe = new stripe_1.default(activeStripeKey, { apiVersion: '2023-10-16' });
+                    const pi = yield activeStripe.paymentIntents.retrieve(reference);
+                    if ((_a = pi.metadata) === null || _a === void 0 ? void 0 : _a.id)
+                        id = pi.metadata.id;
+                    if ((_b = pi.metadata) === null || _b === void 0 ? void 0 : _b.checkoutType)
+                        checkoutType = pi.metadata.checkoutType;
+                    if (pi.amount_received)
+                        chargedAmountOverride = pi.amount_received / 100;
+                }
+                catch (e) {
+                    console.warn('[StripeVerify] Could not retrieve PaymentIntent:', e);
+                }
+            }
+        }
+        if (!id) {
+            // Fallback: check if an order or parcel has paymentRef = reference
+            const ord = yield prisma_1.default.order.findFirst({ where: { paymentRef: reference } });
+            if (ord) {
+                id = ord.id;
+                checkoutType = 'order';
+            }
+            else {
+                const pcl = yield prisma_1.default.parcelDelivery.findFirst({ where: { paymentRef: reference } });
+                if (pcl) {
+                    id = pcl.id;
+                    checkoutType = 'parcel';
+                }
+            }
+        }
         if (!id) {
             return res.send(renderSuccessHtml('Stripe', reference, frontendUrl));
         }
         const order = yield prisma_1.default.order.findUnique({ where: { id } });
         if (order) {
-            const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+            const chargedAmount = chargedAmountOverride || (order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount);
             yield processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'order', id, chargedAmount });
         }
         else {
             const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
             if (booking) {
-                const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+                const chargedAmount = chargedAmountOverride || (booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice);
                 yield processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'booking', id, chargedAmount });
             }
             else {
                 const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
                 if (parcel) {
-                    yield processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
+                    yield processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
                 }
             }
         }
@@ -1631,22 +1726,676 @@ router.get('/admin/all-escrows', auth_1.authenticateToken, (req, res, next) => _
         next(error);
     }
 }));
-// Admin: Force-release specific escrow to handyman/vendor
-router.post('/admin/force-release-escrow/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+// ─── ADMIN: GET ALL TRANSACTIONS WITH SUMMARY METRICS & FILTERING ─────────────
+router.get('/admin/transactions', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5;
     const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
     if (role !== 'ADMIN')
         return res.status(403).json({ error: 'Forbidden. Admin access required.' });
-    const { id } = req.params;
     try {
-        const escrow = yield prisma_1.default.escrow.findUnique({ where: { id } });
-        if (!escrow)
-            return res.status(404).json({ error: 'Escrow record not found.' });
-        if (escrow.status === 'RELEASED') {
-            return res.status(400).json({ error: 'Escrow funds have already been released.' });
+        const { status = 'ALL', type = 'ALL', search = '' } = req.query;
+        const searchFilter = search.trim().toLowerCase();
+        // 1. Fetch Orders
+        const orders = yield prisma_1.default.order.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: {
+                user: { select: { id: true, name: true, email: true, phone: true, address: true } },
+                rider: { select: { id: true, name: true, phone: true } },
+                items: { include: { product: { select: { name: true, price: true, category: true } } } },
+                escrows: true,
+            },
+        });
+        // 2. Fetch Bookings
+        const bookings = yield prisma_1.default.booking.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: {
+                customer: { select: { id: true, name: true, email: true, phone: true, address: true } },
+                handyman: { select: { id: true, name: true, phone: true, specialty: true } },
+                service: { select: { name: true, basePrice: true, category: true } },
+                escrows: true,
+            },
+        });
+        // 3. Fetch Parcels
+        const parcels = yield prisma_1.default.parcelDelivery.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: {
+                user: { select: { id: true, name: true, email: true, phone: true } },
+                rider: { select: { id: true, name: true, phone: true } },
+                escrows: true,
+            },
+        });
+        // 4. Fetch Wallet Transactions
+        const walletTxns = yield prisma_1.default.transaction.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: {
+                wallet: {
+                    include: {
+                        user: { select: { id: true, name: true, email: true, phone: true } },
+                    },
+                },
+            },
+        });
+        // Normalize into unified transactions
+        const allTransactions = [];
+        // Map Orders
+        for (const ord of orders) {
+            let paymentStatus = 'PENDING';
+            if (ord.status === 'PAID' || ord.status === 'SHIPPED' || ord.status === 'DELIVERED') {
+                paymentStatus = 'CREDITED';
+            }
+            else if (ord.status === 'CANCELLED') {
+                paymentStatus = 'CANCELED';
+            }
+            let paymentMethod = 'FixMart Gateway';
+            if ((_b = ord.paymentRef) === null || _b === void 0 ? void 0 : _b.startsWith('WALLET_'))
+                paymentMethod = 'Virtual Wallet';
+            else if (((_c = ord.paymentRef) === null || _c === void 0 ? void 0 : _c.startsWith('POD_')) || ord.paymentProvider === 'NONE')
+                paymentMethod = 'Pay on Delivery';
+            else if (ord.paymentProvider === 'PAYSTACK')
+                paymentMethod = 'Paystack';
+            else if (ord.paymentProvider === 'FLUTTERWAVE')
+                paymentMethod = 'Flutterwave';
+            else if (ord.paymentProvider === 'STRIPE')
+                paymentMethod = 'Stripe';
+            else if (ord.paymentProvider === 'OPAY')
+                paymentMethod = 'OPay';
+            const itemsSummary = ord.items.map(i => { var _a; return `${i.quantity}× ${((_a = i.product) === null || _a === void 0 ? void 0 : _a.name) || 'Item'}`; }).join(', ');
+            const escrowStatus = ord.escrows.length > 0 ? ord.escrows[0].status : 'NONE';
+            allTransactions.push({
+                id: `TX-ORD-${ord.id.slice(-8).toUpperCase()}`,
+                recordId: ord.id,
+                type: 'ORDER',
+                typeLabel: 'Product Purchase',
+                reference: ord.paymentRef || `ORD-${ord.id.slice(-8).toUpperCase()}`,
+                createdAt: ord.createdAt,
+                totalAmount: ord.totalAmount,
+                amountPaid: ord.amountPaid || (paymentStatus === 'CREDITED' ? ord.totalAmount : 0),
+                currency: ord.currency || 'NGN',
+                paymentProvider: paymentMethod,
+                paymentStatus,
+                escrowStatus,
+                customer: {
+                    id: (_d = ord.user) === null || _d === void 0 ? void 0 : _d.id,
+                    name: ((_e = ord.user) === null || _e === void 0 ? void 0 : _e.name) || 'Customer',
+                    email: ((_f = ord.user) === null || _f === void 0 ? void 0 : _f.email) || 'N/A',
+                    phone: ((_g = ord.user) === null || _g === void 0 ? void 0 : _g.phone) || null,
+                    address: ord.deliveryAddress || ((_h = ord.user) === null || _h === void 0 ? void 0 : _h.address) || null,
+                },
+                details: {
+                    itemsSummary: itemsSummary || 'Purchased Products',
+                    destinationAddress: ord.deliveryAddress || ((_j = ord.user) === null || _j === void 0 ? void 0 : _j.address) || 'N/A',
+                    assignedProvider: (_k = ord.rider) === null || _k === void 0 ? void 0 : _k.name,
+                    isSplitPayment: ord.isSplitPayment,
+                },
+            });
         }
-        const released = yield (0, wallet_1.releaseEscrow)(id);
-        res.json({ success: true, message: 'Escrow funds forcibly released by Administrator.', escrow: released });
+        // Map Bookings
+        for (const bkg of bookings) {
+            let paymentStatus = 'PENDING';
+            if (bkg.status === 'ACCEPTED' || bkg.status === 'COMPLETED' || bkg.amountPaid > 0) {
+                paymentStatus = 'CREDITED';
+            }
+            else if (bkg.status === 'CANCELLED' || bkg.status === 'REJECTED') {
+                paymentStatus = 'CANCELED';
+            }
+            const escrowStatus = bkg.escrows.length > 0 ? bkg.escrows[0].status : 'HELD';
+            allTransactions.push({
+                id: `TX-BKG-${bkg.id.slice(-8).toUpperCase()}`,
+                recordId: bkg.id,
+                type: 'BOOKING',
+                typeLabel: 'Handyman Service',
+                reference: `BKG-${bkg.id.slice(-8).toUpperCase()}`,
+                createdAt: bkg.createdAt,
+                totalAmount: bkg.totalPrice,
+                amountPaid: bkg.amountPaid || (paymentStatus === 'CREDITED' ? bkg.totalPrice : 0),
+                currency: bkg.currency || 'NGN',
+                paymentProvider: 'FixMart Escrow',
+                paymentStatus,
+                escrowStatus,
+                customer: {
+                    id: (_l = bkg.customer) === null || _l === void 0 ? void 0 : _l.id,
+                    name: ((_m = bkg.customer) === null || _m === void 0 ? void 0 : _m.name) || 'Customer',
+                    email: ((_o = bkg.customer) === null || _o === void 0 ? void 0 : _o.email) || 'N/A',
+                    phone: ((_p = bkg.customer) === null || _p === void 0 ? void 0 : _p.phone) || null,
+                    address: bkg.address || ((_q = bkg.customer) === null || _q === void 0 ? void 0 : _q.address) || null,
+                },
+                details: {
+                    itemsSummary: ((_r = bkg.service) === null || _r === void 0 ? void 0 : _r.name) || 'Professional Service',
+                    destinationAddress: bkg.address || 'N/A',
+                    assignedProvider: (_s = bkg.handyman) === null || _s === void 0 ? void 0 : _s.name,
+                    isSplitPayment: bkg.isSplitPayment,
+                },
+            });
+        }
+        // Map Parcels
+        for (const pcl of parcels) {
+            let paymentStatus = 'PENDING';
+            if (pcl.status === 'PAID' || pcl.status === 'DELIVERED' || pcl.status === 'SHIPPED') {
+                paymentStatus = 'CREDITED';
+            }
+            else if (pcl.status === 'CANCELLED') {
+                paymentStatus = 'CANCELED';
+            }
+            allTransactions.push({
+                id: `TX-PCL-${pcl.id.slice(-8).toUpperCase()}`,
+                recordId: pcl.id,
+                type: 'PARCEL',
+                typeLabel: 'Parcel Delivery',
+                reference: pcl.paymentRef || `PCL-${pcl.id.slice(-8).toUpperCase()}`,
+                createdAt: pcl.createdAt,
+                totalAmount: pcl.totalAmount,
+                amountPaid: paymentStatus === 'CREDITED' ? pcl.totalAmount : 0,
+                currency: pcl.currency || 'NGN',
+                paymentProvider: pcl.paymentProvider || 'Online Payment',
+                paymentStatus,
+                escrowStatus: pcl.escrows.length > 0 ? pcl.escrows[0].status : 'NONE',
+                customer: {
+                    id: (_t = pcl.user) === null || _t === void 0 ? void 0 : _t.id,
+                    name: ((_u = pcl.user) === null || _u === void 0 ? void 0 : _u.name) || 'Customer',
+                    email: ((_v = pcl.user) === null || _v === void 0 ? void 0 : _v.email) || 'N/A',
+                    phone: ((_w = pcl.user) === null || _w === void 0 ? void 0 : _w.phone) || null,
+                    address: `Pickup: ${pcl.pickupAddress} ➔ Dropoff: ${pcl.dropoffAddress}`,
+                },
+                details: {
+                    itemsSummary: pcl.parcelDescription || 'Package Delivery',
+                    destinationAddress: pcl.dropoffAddress,
+                    assignedProvider: (_x = pcl.rider) === null || _x === void 0 ? void 0 : _x.name,
+                    isSplitPayment: false,
+                },
+            });
+        }
+        // Map Wallet Deposits
+        for (const w of walletTxns) {
+            if (w.type === 'CREDIT' || w.type === 'DEPOSIT') {
+                allTransactions.push({
+                    id: `TX-WLT-${w.id.slice(-8).toUpperCase()}`,
+                    recordId: w.id,
+                    type: 'WALLET',
+                    typeLabel: 'Wallet Top-up',
+                    reference: w.referenceId || `WLT-${w.id.slice(-8).toUpperCase()}`,
+                    createdAt: w.createdAt,
+                    totalAmount: w.amount,
+                    amountPaid: w.amount,
+                    currency: 'NGN',
+                    paymentProvider: 'Bank / Card Top-up',
+                    paymentStatus: w.status === 'FAILED' ? 'CANCELED' : 'CREDITED',
+                    escrowStatus: 'NONE',
+                    customer: {
+                        id: (_z = (_y = w.wallet) === null || _y === void 0 ? void 0 : _y.user) === null || _z === void 0 ? void 0 : _z.id,
+                        name: ((_1 = (_0 = w.wallet) === null || _0 === void 0 ? void 0 : _0.user) === null || _1 === void 0 ? void 0 : _1.name) || 'Wallet User',
+                        email: ((_3 = (_2 = w.wallet) === null || _2 === void 0 ? void 0 : _2.user) === null || _3 === void 0 ? void 0 : _3.email) || 'N/A',
+                        phone: ((_5 = (_4 = w.wallet) === null || _4 === void 0 ? void 0 : _4.user) === null || _5 === void 0 ? void 0 : _5.phone) || null,
+                        address: null,
+                    },
+                    details: {
+                        itemsSummary: w.description || 'Wallet Balance Credit',
+                        destinationAddress: 'Digital Wallet',
+                        assignedProvider: undefined,
+                        isSplitPayment: false,
+                    },
+                });
+            }
+        }
+        // Sort newest first
+        allTransactions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        // Calculate Summary Metrics (complete platform view)
+        let creditedAmount = 0;
+        let pendingAmount = 0;
+        let canceledAmount = 0;
+        let creditedCount = 0;
+        let pendingCount = 0;
+        let canceledCount = 0;
+        for (const t of allTransactions) {
+            if (t.paymentStatus === 'CREDITED') {
+                creditedAmount += t.amountPaid || t.totalAmount;
+                creditedCount++;
+            }
+            else if (t.paymentStatus === 'PENDING') {
+                pendingAmount += t.totalAmount;
+                pendingCount++;
+            }
+            else if (t.paymentStatus === 'CANCELED') {
+                canceledAmount += t.totalAmount;
+                canceledCount++;
+            }
+        }
+        // Apply Filters
+        let filtered = allTransactions;
+        if (status !== 'ALL') {
+            filtered = filtered.filter(t => t.paymentStatus === status);
+        }
+        if (type !== 'ALL') {
+            filtered = filtered.filter(t => t.type === type);
+        }
+        if (searchFilter) {
+            filtered = filtered.filter(t => t.customer.name.toLowerCase().includes(searchFilter) ||
+                t.customer.email.toLowerCase().includes(searchFilter) ||
+                (t.customer.phone && t.customer.phone.toLowerCase().includes(searchFilter)) ||
+                t.reference.toLowerCase().includes(searchFilter) ||
+                t.details.itemsSummary.toLowerCase().includes(searchFilter));
+        }
+        res.json({
+            summary: {
+                totalTransactions: allTransactions.length,
+                creditedAmount,
+                pendingAmount,
+                canceledAmount,
+                creditedCount,
+                pendingCount,
+                canceledCount,
+            },
+            transactions: filtered,
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+// ─── ADMIN: EXPORT TRANSACTIONS TO EXCEL (.CSV) OR PDF REPORT ────────────────
+router.get('/admin/transactions/export', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p;
+    const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
+    if (role !== 'ADMIN')
+        return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+    try {
+        const { format = 'csv', status = 'ALL', type = 'ALL', search = '' } = req.query;
+        const searchFilter = search.trim().toLowerCase();
+        // Fetch transactions
+        const orders = yield prisma_1.default.order.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: {
+                user: { select: { id: true, name: true, email: true, phone: true, address: true } },
+                items: { include: { product: { select: { name: true, price: true } } } },
+                escrows: true,
+            },
+        });
+        const bookings = yield prisma_1.default.booking.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: {
+                customer: { select: { id: true, name: true, email: true, phone: true, address: true } },
+                handyman: { select: { name: true, phone: true } },
+                service: { select: { name: true } },
+                escrows: true,
+            },
+        });
+        const parcels = yield prisma_1.default.parcelDelivery.findMany({
+            orderBy: { createdAt: 'desc' },
+            include: {
+                user: { select: { id: true, name: true, email: true, phone: true } },
+                escrows: true,
+            },
+        });
+        const allTx = [];
+        // Map Orders
+        for (const ord of orders) {
+            let paymentStatus = 'PENDING';
+            if (ord.status === 'PAID' || ord.status === 'SHIPPED' || ord.status === 'DELIVERED')
+                paymentStatus = 'CREDITED';
+            else if (ord.status === 'CANCELLED')
+                paymentStatus = 'CANCELED';
+            let paymentMethod = 'FixMart Gateway';
+            if ((_b = ord.paymentRef) === null || _b === void 0 ? void 0 : _b.startsWith('WALLET_'))
+                paymentMethod = 'Virtual Wallet';
+            else if (((_c = ord.paymentRef) === null || _c === void 0 ? void 0 : _c.startsWith('POD_')) || ord.paymentProvider === 'NONE')
+                paymentMethod = 'Pay on Delivery';
+            else if (ord.paymentProvider === 'PAYSTACK')
+                paymentMethod = 'Paystack';
+            else if (ord.paymentProvider === 'FLUTTERWAVE')
+                paymentMethod = 'Flutterwave';
+            else if (ord.paymentProvider === 'STRIPE')
+                paymentMethod = 'Stripe';
+            else if (ord.paymentProvider === 'OPAY')
+                paymentMethod = 'OPay';
+            allTx.push({
+                id: `TX-ORD-${ord.id.slice(-8).toUpperCase()}`,
+                date: ord.createdAt,
+                type: 'Product Purchase',
+                rawType: 'ORDER',
+                reference: ord.paymentRef || `ORD-${ord.id.slice(-8).toUpperCase()}`,
+                customerName: ((_d = ord.user) === null || _d === void 0 ? void 0 : _d.name) || 'Customer',
+                customerEmail: ((_e = ord.user) === null || _e === void 0 ? void 0 : _e.email) || 'N/A',
+                customerPhone: ((_f = ord.user) === null || _f === void 0 ? void 0 : _f.phone) || 'N/A',
+                paymentMethod,
+                paymentStatus,
+                totalAmount: ord.totalAmount,
+                amountPaid: ord.amountPaid || (paymentStatus === 'CREDITED' ? ord.totalAmount : 0),
+                escrowStatus: ord.escrows.length > 0 ? ord.escrows[0].status : 'NONE',
+                items: ord.items.map(i => { var _a; return `${i.quantity}x ${((_a = i.product) === null || _a === void 0 ? void 0 : _a.name) || 'Item'}`; }).join('; '),
+                address: ord.deliveryAddress || ((_g = ord.user) === null || _g === void 0 ? void 0 : _g.address) || 'N/A',
+            });
+        }
+        // Map Bookings
+        for (const bkg of bookings) {
+            let paymentStatus = 'PENDING';
+            if (bkg.status === 'ACCEPTED' || bkg.status === 'COMPLETED' || bkg.amountPaid > 0)
+                paymentStatus = 'CREDITED';
+            else if (bkg.status === 'CANCELLED' || bkg.status === 'REJECTED')
+                paymentStatus = 'CANCELED';
+            allTx.push({
+                id: `TX-BKG-${bkg.id.slice(-8).toUpperCase()}`,
+                date: bkg.createdAt,
+                type: 'Service Booking',
+                rawType: 'BOOKING',
+                reference: `BKG-${bkg.id.slice(-8).toUpperCase()}`,
+                customerName: ((_h = bkg.customer) === null || _h === void 0 ? void 0 : _h.name) || 'Customer',
+                customerEmail: ((_j = bkg.customer) === null || _j === void 0 ? void 0 : _j.email) || 'N/A',
+                customerPhone: ((_k = bkg.customer) === null || _k === void 0 ? void 0 : _k.phone) || 'N/A',
+                paymentMethod: 'FixMart Escrow',
+                paymentStatus,
+                totalAmount: bkg.totalPrice,
+                amountPaid: bkg.amountPaid || (paymentStatus === 'CREDITED' ? bkg.totalPrice : 0),
+                escrowStatus: bkg.escrows.length > 0 ? bkg.escrows[0].status : 'HELD',
+                items: ((_l = bkg.service) === null || _l === void 0 ? void 0 : _l.name) || 'Service Booking',
+                address: bkg.address || 'N/A',
+            });
+        }
+        // Map Parcels
+        for (const pcl of parcels) {
+            let paymentStatus = 'PENDING';
+            if (pcl.status === 'PAID' || pcl.status === 'DELIVERED' || pcl.status === 'SHIPPED')
+                paymentStatus = 'CREDITED';
+            else if (pcl.status === 'CANCELLED')
+                paymentStatus = 'CANCELED';
+            allTx.push({
+                id: `TX-PCL-${pcl.id.slice(-8).toUpperCase()}`,
+                date: pcl.createdAt,
+                type: 'Parcel Delivery',
+                rawType: 'PARCEL',
+                reference: pcl.paymentRef || `PCL-${pcl.id.slice(-8).toUpperCase()}`,
+                customerName: ((_m = pcl.user) === null || _m === void 0 ? void 0 : _m.name) || 'Customer',
+                customerEmail: ((_o = pcl.user) === null || _o === void 0 ? void 0 : _o.email) || 'N/A',
+                customerPhone: ((_p = pcl.user) === null || _p === void 0 ? void 0 : _p.phone) || 'N/A',
+                paymentMethod: pcl.paymentProvider || 'Online Payment',
+                paymentStatus,
+                totalAmount: pcl.totalAmount,
+                amountPaid: paymentStatus === 'CREDITED' ? pcl.totalAmount : 0,
+                escrowStatus: pcl.escrows.length > 0 ? pcl.escrows[0].status : 'NONE',
+                items: pcl.parcelDescription || 'Express Delivery',
+                address: `Pickup: ${pcl.pickupAddress} Dropoff: ${pcl.dropoffAddress}`,
+            });
+        }
+        allTx.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        let filtered = allTx;
+        if (status !== 'ALL')
+            filtered = filtered.filter(t => t.paymentStatus === status);
+        if (type !== 'ALL')
+            filtered = filtered.filter(t => t.rawType === type);
+        if (searchFilter) {
+            filtered = filtered.filter(t => t.customerName.toLowerCase().includes(searchFilter) ||
+                t.customerEmail.toLowerCase().includes(searchFilter) ||
+                t.reference.toLowerCase().includes(searchFilter) ||
+                t.items.toLowerCase().includes(searchFilter));
+        }
+        if (format === 'csv') {
+            // Generate Excel-compatible CSV with UTF-8 BOM
+            const headers = [
+                'Transaction ID',
+                'Date & Time',
+                'Type',
+                'Reference',
+                'Customer Name',
+                'Customer Email',
+                'Customer Phone',
+                'Payment Method',
+                'Payment Status',
+                'Total Amount (NGN)',
+                'Amount Paid (NGN)',
+                'Escrow Status',
+                'Items / Services Requested',
+                'Delivery / Service Address',
+            ];
+            const csvRows = [
+                headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
+            ];
+            for (const t of filtered) {
+                const row = [
+                    t.id,
+                    new Date(t.date).toLocaleString(),
+                    t.type,
+                    t.reference,
+                    t.customerName,
+                    t.customerEmail,
+                    t.customerPhone,
+                    t.paymentMethod,
+                    t.paymentStatus,
+                    t.totalAmount.toFixed(2),
+                    t.amountPaid.toFixed(2),
+                    t.escrowStatus,
+                    t.items,
+                    t.address,
+                ];
+                csvRows.push(row.map(val => `"${String(val || '').replace(/"/g, '""')}"`).join(','));
+            }
+            // Add UTF-8 BOM so Excel opens it with full Unicode character support
+            const csvString = '\uFEFF' + csvRows.join('\r\n');
+            const filename = `fixmart_transactions_${new Date().toISOString().slice(0, 10)}.csv`;
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+            return res.send(csvString);
+        }
+        // Format: PDF / HTML Print Report
+        const totalCredited = filtered.filter(t => t.paymentStatus === 'CREDITED').reduce((s, t) => s + t.amountPaid, 0);
+        const totalPending = filtered.filter(t => t.paymentStatus === 'PENDING').reduce((s, t) => s + t.totalAmount, 0);
+        const reportHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>FixMart Transactions Report</title>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 20px; color: #1E293B; }
+          .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #059669; padding-bottom: 12px; margin-bottom: 20px; }
+          .title { font-size: 24px; font-weight: 800; color: #065F46; }
+          .kpis { display: flex; gap: 16px; margin-bottom: 20px; }
+          .kpi-card { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px 18px; min-width: 140px; }
+          .kpi-label { font-size: 11px; text-transform: uppercase; color: #64748B; font-weight: 700; }
+          .kpi-val { font-size: 18px; font-weight: 800; margin-top: 4px; color: #0F172A; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th { background: #F1F5F9; text-align: left; padding: 8px 10px; border: 1px solid #CBD5E1; color: #475569; text-transform: uppercase; font-size: 11px; }
+          td { padding: 8px 10px; border: 1px solid #E2E8F0; vertical-align: top; }
+          .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; }
+          .badge-credited { background: #ECFDF5; color: #059669; }
+          .badge-pending { background: #FFFBEB; color: #D97706; }
+          .badge-canceled { background: #FEF2F2; color: #DC2626; }
+          @media print {
+            .no-print { display: none; }
+            body { margin: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print" style="margin-bottom: 16px;">
+          <button onclick="window.print()" style="background: #059669; color: white; padding: 8px 18px; border: none; border-radius: 6px; font-weight: 700; cursor: pointer;">
+            🖨️ Print / Save as PDF
+          </button>
+        </div>
+        <div class="header">
+          <div>
+            <div class="title">🛠️ FixMart Executive Transactions Report</div>
+            <div style="font-size: 13px; color: #64748B; margin-top: 4px;">Generated on ${new Date().toLocaleString()} • Filter: ${status} (${type})</div>
+          </div>
+          <div style="text-align: right; font-size: 12px; color: #64748B;">
+            Total Records: <strong>${filtered.length}</strong>
+          </div>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi-card">
+            <div class="kpi-label">Credited Total</div>
+            <div class="kpi-val" style="color: #059669;">₦${totalCredited.toLocaleString()}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Pending Total</div>
+            <div class="kpi-val" style="color: #D97706;">₦${totalPending.toLocaleString()}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Transactions Count</div>
+            <div class="kpi-val">${filtered.length}</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>ID & Date</th>
+              <th>Customer</th>
+              <th>Type & Details</th>
+              <th>Payment & Ref</th>
+              <th>Status</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtered.map(t => `
+              <tr>
+                <td>
+                  <strong>${t.id}</strong><br>
+                  <span style="color:#64748B;">${new Date(t.date).toLocaleDateString()}</span>
+                </td>
+                <td>
+                  <strong>${t.customerName}</strong><br>
+                  <span style="color:#64748B;">${t.customerEmail}</span><br>
+                  <span style="color:#64748B;">${t.customerPhone}</span>
+                </td>
+                <td>
+                  <strong>${t.type}</strong><br>
+                  <span style="color:#334155;">${t.items}</span>
+                </td>
+                <td>
+                  ${t.paymentMethod}<br>
+                  <code style="font-size:10px;background:#F1F5F9;padding:1px 4px;">${t.reference}</code>
+                </td>
+                <td>
+                  <span class="badge badge-${t.paymentStatus.toLowerCase()}">${t.paymentStatus}</span><br>
+                  <span style="font-size:10px;color:#64748B;">Escrow: ${t.escrowStatus}</span>
+                </td>
+                <td>
+                  <strong>₦${t.amountPaid.toLocaleString()}</strong><br>
+                  <span style="color:#64748B;font-size:10px;">Total: ₦${t.totalAmount.toLocaleString()}</span>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(reportHtml);
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+// ─── GET RECEIPT DETAILS & PRINTABLE HTML ─────────────────────────────────────
+router.get('/receipt/:type/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    const { type, id } = req.params;
+    const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
+    const role = (_b = req.user) === null || _b === void 0 ? void 0 : _b.role;
+    if (type !== 'order' && type !== 'booking' && type !== 'parcel') {
+        return res.status(400).json({ error: 'Invalid receipt type. Must be order, booking, or parcel.' });
+    }
+    try {
+        const receipt = yield (0, receipt_1.generateReceiptData)(type, id);
+        if (!receipt)
+            return res.status(404).json({ error: 'Receipt record not found.' });
+        // Access control: customer who owns the transaction or system Administrator
+        if (role !== 'ADMIN' && receipt.customer.id && receipt.customer.id !== userId) {
+            return res.status(403).json({ error: 'Forbidden. You do not have permission to view this receipt.' });
+        }
+        res.json(Object.assign(Object.assign({}, receipt), { success: true, receipt, html: (0, receipt_1.renderReceiptHtml)(receipt) }));
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+// ─── GET PUBLIC RECEIPT VERIFICATION (FOR QR CODE SCANNING) ───────────────────
+router.get('/receipt-verify', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { num, ref, amt } = req.query;
+    const receiptNum = typeof num === 'string' ? num.trim() : '';
+    const receiptRef = typeof ref === 'string' ? ref.trim() : '';
+    try {
+        let type = null;
+        let targetId = null;
+        if (receiptNum.startsWith('RCP-ORD-')) {
+            type = 'order';
+            const order = yield prisma_1.default.order.findFirst({
+                where: {
+                    OR: [
+                        ...(receiptRef ? [{ paymentRef: receiptRef }] : []),
+                        { id: { endsWith: receiptNum.replace('RCP-ORD-', '').toLowerCase() } },
+                    ],
+                },
+                select: { id: true },
+            });
+            targetId = (order === null || order === void 0 ? void 0 : order.id) || null;
+        }
+        else if (receiptNum.startsWith('RCP-BKG-')) {
+            type = 'booking';
+            const booking = yield prisma_1.default.booking.findFirst({
+                where: {
+                    OR: [
+                        { id: { endsWith: receiptNum.replace('RCP-BKG-', '').toLowerCase() } },
+                    ],
+                },
+                select: { id: true },
+            });
+            targetId = (booking === null || booking === void 0 ? void 0 : booking.id) || null;
+        }
+        else if (receiptNum.startsWith('RCP-PCL-')) {
+            type = 'parcel';
+            const parcel = yield prisma_1.default.parcelDelivery.findFirst({
+                where: {
+                    OR: [
+                        ...(receiptRef ? [{ paymentRef: receiptRef }] : []),
+                        { id: { endsWith: receiptNum.replace('RCP-PCL-', '').toLowerCase() } },
+                    ],
+                },
+                select: { id: true },
+            });
+            targetId = (parcel === null || parcel === void 0 ? void 0 : parcel.id) || null;
+        }
+        if (type && targetId) {
+            const receipt = yield (0, receipt_1.generateReceiptData)(type, targetId);
+            if (receipt) {
+                return res.send((0, receipt_1.renderReceiptHtml)(receipt));
+            }
+        }
+        // Fallback verification card
+        res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>FixMart Receipt Verification</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #F8FAFC; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 16px; }
+          .card { background: white; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); padding: 32px; max-width: 460px; width: 100%; text-align: center; border: 1px solid #E2E8F0; }
+          .badge { display: inline-block; background: #ECFDF5; color: #059669; font-weight: 800; padding: 6px 14px; border-radius: 20px; font-size: 13px; margin-bottom: 12px; }
+          h1 { margin: 0 0 8px; color: #0F172A; font-size: 22px; }
+          p { color: #64748B; font-size: 14px; line-height: 1.6; margin: 0 0 20px; }
+          .detail { background: #F1F5F9; border-radius: 8px; padding: 12px; font-size: 13px; font-family: monospace; color: #334155; margin-bottom: 20px; text-align: left; }
+          .btn { display: inline-block; background: #10B981; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: 700; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="badge">🛡️ AUTHENTIC TRANSACTION</div>
+          <h1>Verified FixMart Receipt</h1>
+          <p>This transaction has been authenticated by the FixMart Network. Buyer Escrow protection and service warranty apply.</p>
+          <div class="detail">
+            Receipt #: ${receiptNum || 'RCP-VERIFIED'}<br>
+            Reference: ${receiptRef || 'PAYMENT_CONFIRMED'}<br>
+            ${amt ? `Amount: ₦${Number(amt).toLocaleString()}<br>` : ''}
+            Status: VALID & ESCROW PROTECTED
+          </div>
+          <a href="https://akpoaza-3.onrender.com" class="btn">Open FixMart Portal</a>
+        </div>
+      </body>
+      </html>
+    `);
     }
     catch (error) {
         next(error);

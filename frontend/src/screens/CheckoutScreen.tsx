@@ -73,7 +73,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
   const availableMethods = useMemo(() => {
     if (!settings || Object.keys(settings).length === 0) return ALL_PAYMENT_METHODS;
     return ALL_PAYMENT_METHODS.filter(m => {
-      if (m.id === 'WALLET') return !!userToken; // Wallet payment requires logged-in user
+      if (m.id === 'WALLET') return !!userToken && settings.wallet_enabled !== 'false';
       return settings[m.enabledKey] !== 'false';
     });
   }, [settings, userToken]);
@@ -151,48 +151,41 @@ export default function CheckoutScreen({ route, navigation }: any) {
     clearCart();
     if (!userToken) {
       setShowRegisterPrompt(true);
-    } else if (checkoutType === 'booking') {
-      Alert.alert(
-        '🎉 Booking Confirmed & Paid!',
-        refMessage || 'Your handyman service booking has been confirmed and paid successfully. A receipt has been dispatched to your email.',
-        [
-          {
-            text: '📋 View My Bookings',
-            onPress: () => navigation.navigate('History', { type: 'bookings', tab: 'bookings', role: 'CUSTOMER' }),
-          },
-          {
-            text: '← Back to Services',
-            onPress: () => navigation.navigate('Services'),
-          },
-        ]
-      );
-    } else if (checkoutType === 'parcel') {
-      Alert.alert(
-        '🎉 Parcel Delivery Confirmed & Paid!',
-        refMessage || 'Your parcel dispatch has been assigned and paid successfully. A receipt has been dispatched to your email. A rider will call you to confirm your location.',
-        [
-          {
-            text: '📦 View Deliveries',
-            onPress: () => navigation.navigate('History', { type: 'parcels', tab: 'parcels' }),
-          },
-          {
-            text: '← Back to Parcel Booking',
-            onPress: () => navigation.navigate('BookParcel'),
-          },
-        ]
-      );
     } else {
+      const targetTab = checkoutType === 'booking' ? 'bookings' : checkoutType === 'parcel' ? 'parcels' : 'orders';
+      const successTitle = checkoutType === 'booking'
+        ? '🎉 Booking Confirmed & Paid!'
+        : checkoutType === 'parcel'
+        ? '🎉 Parcel Delivery Confirmed & Paid!'
+        : '🎉 Order Placed Successfully!';
+      const defaultMsg = checkoutType === 'booking'
+        ? 'Your handyman service booking has been confirmed and paid successfully. A receipt has been issued.'
+        : checkoutType === 'parcel'
+        ? 'Your parcel delivery has been confirmed and paid. A rider will call you shortly.'
+        : 'Your order has been placed! An official receipt has been sent to your email. Your product will be delivered within a few hours.';
+
+      // Immediately redirect user to his dashboard
+      navigation.navigate('History', {
+        type: targetTab,
+        tab: targetTab,
+        role: 'CUSTOMER',
+        openReceiptId: activeRecordId,
+        openReceiptType: checkoutType,
+      });
+
       Alert.alert(
-        '🎉 Order Placed Successfully!',
-        refMessage || 'Your order has been placed! An official receipt has been sent to your email. Your product will be delivered within a few hours. A rider will call you to confirm your location.',
+        successTitle,
+        refMessage || defaultMsg,
         [
           {
-            text: '🛒 View Orders & Receipt',
-            onPress: () => navigation.navigate('History', { type: 'orders', tab: 'orders', role: 'CUSTOMER' }),
-          },
-          {
-            text: '🛍️ Continue Shopping',
-            onPress: () => navigation.navigate('Products'),
+            text: 'View Dashboard & Receipt',
+            onPress: () => navigation.navigate('History', {
+              type: targetTab,
+              tab: targetTab,
+              role: 'CUSTOMER',
+              openReceiptId: activeRecordId,
+              openReceiptType: checkoutType,
+            }),
           },
         ]
       );
@@ -425,9 +418,13 @@ export default function CheckoutScreen({ route, navigation }: any) {
 
             <TouchableOpacity
               style={styles.modalCancelBtn}
-              onPress={() => { setShowRegisterPrompt(false); navigation.navigate('HomeTab'); }}
+              onPress={() => {
+                setShowRegisterPrompt(false);
+                const targetTab = checkoutType === 'booking' ? 'bookings' : checkoutType === 'parcel' ? 'parcels' : 'orders';
+                navigation.navigate('History', { type: targetTab, tab: targetTab, role: 'CUSTOMER', openReceiptId: activeRecordId, openReceiptType: checkoutType });
+              }}
             >
-              <Text style={[styles.modalCancelText, { color: isDark ? '#475569' : '#94A3B8' }]}>Skip for Now</Text>
+              <Text style={[styles.modalCancelText, { color: isDark ? '#475569' : '#94A3B8' }]}>Skip for Now → View Dashboard</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -522,7 +519,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
         <Text style={[styles.amountLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>
           {isRemainingPayment ? 'Remaining Amount Due (50%)' : 'Amount Due'}
         </Text>
-        <Text style={[styles.amountValue, { color: theme.primary }]}>
+        <Text style={[styles.amountValue, { color: theme.primary }]} adjustsFontSizeToFit numberOfLines={1}>
           {fmt(displayAmount)}
         </Text>
         {isRemainingPayment && (
@@ -605,8 +602,8 @@ export default function CheckoutScreen({ route, navigation }: any) {
                   </View>
 
                   <View style={styles.methodInfo}>
-                    <Text style={[styles.methodLabel, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>{method.label}</Text>
-                    <Text style={[styles.methodSubtitle, { color: isDark ? '#64748B' : '#94A3B8' }]}>{method.subtitle}</Text>
+                    <Text style={[styles.methodLabel, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={1} ellipsizeMode="tail">{method.label}</Text>
+                    <Text style={[styles.methodSubtitle, { color: isDark ? '#64748B' : '#94A3B8' }]} numberOfLines={2} ellipsizeMode="tail">{method.subtitle}</Text>
                   </View>
 
                   {isLoading ? (
@@ -683,14 +680,14 @@ const styles = StyleSheet.create({
   methodContent: { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 },
   methodIconWrap: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   methodIcon: { fontSize: 22 },
-  methodInfo: { flex: 1 },
+  methodInfo: { flex: 1, flexShrink: 1 },
   methodLabel: { fontSize: 15, fontWeight: '800', marginBottom: 2 },
   methodSubtitle: { fontSize: 12 },
   methodArrow: { fontSize: 18, fontWeight: '700' },
 
   // Modal
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  modalCard: { width: '100%', maxWidth: 400, borderRadius: 24, padding: 28, alignItems: 'center', borderWidth: 1 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  modalCard: { width: '100%', maxWidth: 400, borderRadius: 24, padding: 20, alignItems: 'center', borderWidth: 1 },
   modalEmoji: { fontSize: 44, marginBottom: 12 },
   modalTitle: { fontSize: 22, fontWeight: '900', marginBottom: 8, textAlign: 'center' },
   modalSub: { fontSize: 14, textAlign: 'center', lineHeight: 21, marginBottom: 20 },

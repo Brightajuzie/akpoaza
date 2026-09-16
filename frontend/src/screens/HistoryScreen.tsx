@@ -72,7 +72,7 @@ export default function HistoryScreen({ route, navigation }: any) {
     setReceiptLoading(true);
     try {
       const res = await apiClient.get(`/payments/receipt/${receiptType}/${id}`);
-      setSelectedReceipt(res.data);
+      setSelectedReceipt(res.data?.receipt || res.data);
       setReceiptModalVisible(true);
     } catch (e: any) {
       Alert.alert('Receipt Error', e?.response?.data?.error || 'Unable to retrieve transaction receipt.');
@@ -80,6 +80,12 @@ export default function HistoryScreen({ route, navigation }: any) {
       setReceiptLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (route.params?.openReceiptId && route.params?.openReceiptType) {
+      handleOpenReceipt(route.params.openReceiptType, route.params.openReceiptId);
+    }
+  }, [route.params?.openReceiptId, route.params?.openReceiptType]);
 
   const handleToggleRiderStatus = async () => {
     const newStatus = riderStatus === 'ONLINE' ? 'OFFLINE' : 'ONLINE';

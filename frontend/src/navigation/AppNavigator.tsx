@@ -11,6 +11,8 @@ import ThemeToggle from '../components/ThemeToggle';
 function FixMartHeader() {
   const navigation = useNavigation<any>();
   const { logoUrl, theme } = useContext(SettingsContext);
+  const { width, height } = useWindowDimensions();
+  const isCompact = width < 380 || height < 700;
 
   const handleGoHome = () => {
     try {
@@ -29,15 +31,15 @@ function FixMartHeader() {
       >
         <SafeLogo
           logoUrl={logoUrl}
-          style={headerStyles.logo}
+          style={[headerStyles.logo, isCompact && { width: 32, height: 32 }]}
           resizeMode="contain"
         />
         <View style={headerStyles.textBlock}>
-          <Text style={headerStyles.title}>
+          <Text style={[headerStyles.title, isCompact && { fontSize: 18, lineHeight: 20 }]}>
             <Text style={headerStyles.fix}>Fix</Text>
             <Text style={[headerStyles.mart, { color: theme?.primary || '#22A45D' }]}>Mart</Text>
           </Text>
-          <Text style={headerStyles.tagline} numberOfLines={1} ellipsizeMode="tail">
+          <Text style={[headerStyles.tagline, isCompact && { fontSize: 9 }]} numberOfLines={1} ellipsizeMode="tail">
             The smart way to shop, send items & fix everyday household problems
           </Text>
         </View>
@@ -126,7 +128,8 @@ function MainTabs() {
   const [unreadCount, setUnreadCount] = useState(0);
   const { width, height } = useWindowDimensions();
   const isLargeScreen = width >= 768;
-  const isCompactHeight = height < 750;
+  const isCompactHeight = height < 760;
+  const isVeryCompact = height < 700;
 
   useEffect(() => {
     const fetchUnread = async () => {
@@ -161,9 +164,10 @@ function MainTabs() {
           alignSelf: 'center',
           width: '100%',
           display: isLargeScreen ? 'none' : 'flex',
-          height: isCompactHeight ? 52 : undefined,
-          paddingBottom: isCompactHeight ? 4 : undefined,
+          height: isVeryCompact ? 46 : (isCompactHeight ? 52 : undefined),
+          paddingBottom: isVeryCompact ? 2 : (isCompactHeight ? 4 : undefined),
         },
+        tabBarLabelStyle: isVeryCompact ? { fontSize: 10, marginBottom: 1 } : undefined,
       }}
     >
       <Tab.Screen 
@@ -173,7 +177,7 @@ function MainTabs() {
           headerShown: false,
           tabBarLabel: 'Home',
           tabBarIcon: ({ focused }: any) => (
-            <Text style={{ fontSize: 20 }}>{focused ? '🏠' : '🏡'}</Text>
+            <Text style={{ fontSize: isVeryCompact ? 16 : 20 }}>{focused ? '🏠' : '🏡'}</Text>
           ),
         }} 
       />
@@ -194,10 +198,10 @@ function MainTabs() {
           tabBarLabel: 'Alerts',
           tabBarIcon: ({ color }: any) => (
             <View>
-              <Text style={{ fontSize: 20 }}>🔔</Text>
+              <Text style={{ fontSize: isVeryCompact ? 16 : 20 }}>🔔</Text>
               {unreadCount > 0 && (
-                <View style={[navStyles.badge, { backgroundColor: theme.primary }]}>
-                  <Text style={navStyles.badgeText}>
+                <View style={[navStyles.badge, { backgroundColor: theme.primary }, isVeryCompact && { top: -2, right: -6, minWidth: 14, height: 14, borderRadius: 7 }]}>
+                  <Text style={[navStyles.badgeText, isVeryCompact && { fontSize: 8 }]}>
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </Text>
                 </View>
@@ -213,7 +217,7 @@ function MainTabs() {
           title: 'Profile', 
           tabBarLabel: 'Profile',
           tabBarIcon: ({ focused }: any) => (
-            <Text style={{ fontSize: 20 }}>{focused ? '👤' : '🧑'}</Text>
+            <Text style={{ fontSize: isVeryCompact ? 16 : 20 }}>{focused ? '👤' : '🧑'}</Text>
           ),
         }} 
       />

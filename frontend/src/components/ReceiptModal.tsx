@@ -8,6 +8,8 @@ import {
   ScrollView,
   Platform,
   Alert,
+  Image,
+  useWindowDimensions,
 } from 'react-native';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -60,6 +62,10 @@ interface ReceiptModalProps {
 
 export default function ReceiptModal({ visible, receipt, onClose }: ReceiptModalProps) {
   if (!receipt) return null;
+
+  const { width } = useWindowDimensions();
+  const isCompact = width < 380;
+  const qrData = `https://akpoaza-3.onrender.com/api/payments/receipt-verify?num=${encodeURIComponent(receipt.receiptNumber || '')}&ref=${encodeURIComponent(receipt.reference || '')}&amt=${encodeURIComponent(String(receipt.amountPaid || 0))}`;
 
   const cur = receipt.currency === 'USD' ? '$' : '₦';
   const formatMoney = (val: number) => `${cur}${(val || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -227,6 +233,29 @@ Balance: ${formatMoney(receipt.balanceDue)}
                   </Text>
                 </View>
               )}
+            </View>
+
+            {/* Official QR Code Verification Section */}
+            <View style={[styles.qrSection, isCompact && { flexDirection: 'column', alignItems: 'center' }]}>
+              <View style={styles.qrImageContainer}>
+                <Image
+                  source={{ uri: `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrData)}` }}
+                  style={styles.qrImage}
+                  resizeMode="contain"
+                />
+              </View>
+              <View style={[styles.qrInfo, isCompact && { alignItems: 'center', marginTop: 10 }]}>
+                <View style={styles.qrBadge}>
+                  <Text style={styles.qrBadgeText}>🛡️ VERIFIED RECEIPT</Text>
+                </View>
+                <Text style={[styles.qrTitle, isCompact && { textAlign: 'center' }]}>Scan to Verify Authenticity</Text>
+                <Text style={[styles.qrSubtitle, isCompact && { textAlign: 'center' }]}>
+                  Scan using any phone camera to verify official FixMart purchase record, delivery route, and buyer guarantee.
+                </Text>
+                <Text style={styles.qrHash} numberOfLines={1} ellipsizeMode="middle">
+                  VERIFY: #{receipt.receiptNumber}
+                </Text>
+              </View>
             </View>
 
             {receipt.notes ? (
@@ -504,5 +533,71 @@ const styles = StyleSheet.create({
     color: '#334155',
     fontWeight: '700',
     fontSize: 13,
+  },
+  // QR Section Styles
+  qrSection: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: '#10B98130',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  qrImageContainer: {
+    backgroundColor: '#FFFFFF',
+    padding: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  qrImage: {
+    width: 100,
+    height: 100,
+  },
+  qrInfo: {
+    flex: 1,
+    flexShrink: 1,
+  },
+  qrBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#10B98140',
+  },
+  qrBadgeText: {
+    color: '#059669',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  qrTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  qrSubtitle: {
+    fontSize: 11.5,
+    color: '#64748B',
+    lineHeight: 16,
+    marginBottom: 6,
+  },
+  qrHash: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
 });

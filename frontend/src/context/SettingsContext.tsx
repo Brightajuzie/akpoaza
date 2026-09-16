@@ -26,6 +26,7 @@ interface SettingsContextType {
   footerText: string;
   apkUrl: string;
   aabUrl: string;
+  playstoreUrl: string;
   loading: boolean;
   refreshSettings: () => Promise<void>;
   updateSettings: (updates: Record<string, string>) => Promise<void>;
@@ -163,6 +164,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
   const footerText   = settings.footer_text   || '© 2026 FixMart. All rights reserved.';
   const apkUrl       = settings.apk_url       || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk';
   const aabUrl       = settings.aab_url       || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.aab';
+  const playstoreUrl = settings.playstore_url || 'https://play.google.com/store/apps/details?id=com.akpoaza.kachlinks&pcampaignid=web_share&pli=1';
 
   return (
     <SettingsContext.Provider
@@ -177,6 +179,7 @@ export const SettingsProvider = ({ children }: { children: React.ReactNode }) =>
         footerText,
         apkUrl,
         aabUrl,
+        playstoreUrl,
         loading,
         refreshSettings,
         updateSettings,

@@ -429,6 +429,33 @@ export function renderReceiptHtml(data: ReceiptData): string {
               </td>
             </tr>
 
+            <!-- QR Code Authenticity Section -->
+            <tr>
+              <td style="padding: 0 32px 24px;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #F0FDF4; border: 1.5px solid #10B98140; border-radius: 12px; padding: 16px;">
+                  <tr>
+                    <td width="130" align="center" valign="middle">
+                      <div style="background-color: #FFFFFF; padding: 8px; border-radius: 10px; border: 1px solid #E2E8F0; display: inline-block;">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(`https://akpoaza-3.onrender.com/api/payments/receipt-verify?num=${data.receiptNumber}&ref=${data.reference}&amt=${data.amountPaid}`)}" alt="Official Receipt QR Code" width="110" height="110" style="display: block; border: 0;" />
+                      </div>
+                    </td>
+                    <td valign="middle" style="padding-left: 18px;">
+                      <div style="background-color: #10B981; color: #FFFFFF; display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;">
+                        ✓ Official Digital Receipt
+                      </div>
+                      <div style="font-size: 15px; font-weight: 800; color: #065F46; margin-top: 6px;">Scan to Verify Transaction Authenticity</div>
+                      <div style="font-size: 12px; color: #374151; margin-top: 4px; line-height: 1.5;">
+                        Scan this QR code with any smartphone camera to view live escrow verification, logistics status, and warranty validity on the FixMart Network.
+                      </div>
+                      <div style="font-size: 11px; font-family: monospace; color: #059669; font-weight: 700; margin-top: 6px;">
+                        HASH: #${data.receiptNumber} • REF: ${data.reference}
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
             <!-- FixMart Trust & Security Badge -->
             <tr>
               <td style="padding: 0 32px 30px;">

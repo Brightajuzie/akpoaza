@@ -29,7 +29,7 @@ const AI_FILTERS = [
 export default function AdminScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const { userInfo } = useContext(AuthContext);
-  const { theme, settings, updateSettings, colorMode, apkUrl, aabUrl } = useContext(SettingsContext);
+  const { theme, settings, updateSettings, colorMode, apkUrl, aabUrl, playstoreUrl } = useContext(SettingsContext);
   const { fmt } = useCurrency();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -149,12 +149,14 @@ export default function AdminScreen() {
   const [seoKeywords, setSeoKeywords]                       = useState('');
   const [apkUrlInput, setApkUrlInput]                     = useState('');
   const [aabUrlInput, setAabUrlInput]                     = useState('');
+  const [playstoreUrlInput, setPlaystoreUrlInput]         = useState('');
   // Gateway enable/disable toggles
   const [stripeEnabled, setStripeEnabled]             = useState(true);
   const [paystackEnabled, setPaystackEnabled]         = useState(true);
   const [flutterwaveEnabled, setFlutterwaveEnabled]   = useState(true);
   const [opayEnabled, setOpayEnabled]                 = useState(true);
   const [podEnabled, setPodEnabled]                   = useState(true);
+  const [walletEnabled, setWalletEnabled]             = useState(true);
 
   // Outgoing Email & SMTP Notification Server (Admin only)
   const [smtpHost, setSmtpHost]                       = useState('smtp.gmail.com');
@@ -626,7 +628,7 @@ export default function AdminScreen() {
   const handleOpenReceipt = async (type: string, entityId: string) => {
     try {
       const res = await apiClient.get(`/payments/receipt/${type.toLowerCase()}/${entityId}`);
-      setTxSelectedReceipt(res.data);
+      setTxSelectedReceipt(res.data?.receipt || res.data);
       setTxReceiptModalVisible(true);
     } catch (e: any) {
       Alert.alert('Receipt Error', e?.response?.data?.error || 'Unable to retrieve transaction receipt.');
@@ -905,12 +907,14 @@ export default function AdminScreen() {
       setSeoKeywords(settings.seo_keywords || '');
       setApkUrlInput(settings.apk_url || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk');
       setAabUrlInput(settings.aab_url || 'https://akpoaza-3.onrender.com/uploads/fixmart-latest.aab');
+      setPlaystoreUrlInput(settings.playstore_url || 'https://play.google.com/store/apps/details?id=com.akpoaza.kachlinks&pcampaignid=web_share&pli=1');
       // Gateway enabled toggles
       setStripeEnabled(settings.stripe_enabled !== 'false');
       setPaystackEnabled(settings.paystack_enabled !== 'false');
       setFlutterwaveEnabled(settings.flutterwave_enabled !== 'false');
       setOpayEnabled(settings.opay_enabled !== 'false');
       setPodEnabled(settings.pod_enabled !== 'false');
+      setWalletEnabled(settings.wallet_enabled !== 'false');
       // Rider pricing
       setRiderBaseFare(settings.rider_base_fare || '1000');
       setRiderPricePerKm(settings.rider_price_per_km || '200');
@@ -1481,11 +1485,13 @@ export default function AdminScreen() {
         seo_keywords:             seoKeywords.trim(),
         apk_url:                  apkUrlInput,
         aab_url:                  aabUrlInput,
+        playstore_url:            playstoreUrlInput.trim(),
         stripe_enabled:           stripeEnabled ? 'true' : 'false',
         paystack_enabled:         paystackEnabled ? 'true' : 'false',
         flutterwave_enabled:      flutterwaveEnabled ? 'true' : 'false',
         opay_enabled:             opayEnabled ? 'true' : 'false',
         pod_enabled:              podEnabled ? 'true' : 'false',
+        wallet_enabled:           walletEnabled ? 'true' : 'false',
         // Outgoing Email & SMTP
         smtp_host:                smtpHost.trim(),
         smtp_port:                smtpPort.trim(),
@@ -2090,7 +2096,15 @@ export default function AdminScreen() {
                     );
                   })}
 
-                  {/* 📱 APK & 📦 AAB Download Links */}
+                  {/* 📱 Play Store, APK & 📦 AAB Download Links */}
+                  <TouchableOpacity
+                    style={[styles.adminVercelLinkBtn, { backgroundColor: '#0F172A14', borderColor: '#0F172A30', marginRight: 6 }]}
+                    onPress={() => Linking.openURL(playstoreUrlInput || playstoreUrl)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.adminVercelLinkText, { color: '#0F172A' }]}>▶ Play Store ↗</Text>
+                  </TouchableOpacity>
+
                   <TouchableOpacity
                     style={[styles.adminVercelLinkBtn, { backgroundColor: '#22C55E14', borderColor: '#22C55E40', marginRight: 6 }]}
                     onPress={() => Linking.openURL(apkUrl)}
@@ -3096,6 +3110,15 @@ export default function AdminScreen() {
                       {opayEnabled ? '✓' : '✕'} 🔵 OPay
                     </Text>
                   </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.pickerPill, walletEnabled && { backgroundColor: '#059669', borderColor: '#059669' }]}
+                    onPress={() => setWalletEnabled(!walletEnabled)}
+                  >
+                    <Text style={[styles.pickerPillText, walletEnabled && { color: '#FFF' }]}>
+                      {walletEnabled ? '✓' : '✕'} 👛 FixMart Wallet
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               </View>
 
@@ -3183,10 +3206,28 @@ export default function AdminScreen() {
 
               <Text style={styles.sectionHeading}>4. Mobile App Distribution & Download Links</Text>
               <View style={styles.subSettingsCard}>
-                <Text style={styles.subCardTitle}>📱 Android APK & App Bundle (AAB)</Text>
+                <Text style={styles.subCardTitle}>📱 Google Play Store & Android APK</Text>
                 <Text style={styles.subCardNote}>
                   Download links served by the website, client portals, and mobile app download banners.
                 </Text>
+
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Google Play Store Link</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={playstoreUrlInput}
+                    onChangeText={setPlaystoreUrlInput}
+                    placeholder="https://play.google.com/store/apps/details?id=com.akpoaza.kachlinks&pcampaignid=web_share&pli=1"
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={{ marginTop: 6, alignSelf: 'flex-start' }}
+                    onPress={() => Linking.openURL(playstoreUrlInput || playstoreUrl)}
+                  >
+                    <Text style={{ fontSize: 12, color: '#0284C7', fontWeight: '700' }}>▶ Open Play Store Listing ↗</Text>
+                  </TouchableOpacity>
+                </View>
+
                 <View style={styles.formGroup}>
                   <Text style={styles.label}>Android APK Direct Download URL</Text>
                   <TextInput

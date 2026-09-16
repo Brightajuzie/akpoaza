@@ -5,7 +5,7 @@
  * Priority order for active currency:
  *   1. Saved preference in SecureStore (persists across restarts)
  *   2. Country field on authenticated userInfo (from /auth/me)
- *   3. Default: United States / USD
+ *   3. Default: Nigeria / NGN
  */
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import * as SecureStore from '../utils/storage';

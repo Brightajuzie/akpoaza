@@ -36,11 +36,6 @@
         "serviceAccountKeyPath": "./google-service-account.json",
         "track": "internal",
         "releaseStatus": "draft"
-      },
-      "ios": {
-        "ascAppId": "",
-        "appleId": "",
-        "appleTeamId": ""
       }
     }
   }

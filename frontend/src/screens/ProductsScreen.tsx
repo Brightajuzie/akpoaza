@@ -41,9 +41,10 @@ export default function ProductsScreen({ navigation, route }: any) {
   const { width, height } = useWindowDimensions();
 
   const isDark = colorMode === 'dark';
-  const isCompactHeight = height < 750;
+  const isCompactHeight = height < 760;
+  const isVeryCompact = height < 700;
   const numColumns = width >= 1200 ? 4 : width >= 768 ? 3 : 2;
-  const imageH = width >= 1200 ? 160 : width >= 768 ? 140 : isCompactHeight ? 105 : 120;
+  const imageH = width >= 1200 ? 160 : width >= 768 ? 140 : isVeryCompact ? 95 : (isCompactHeight ? 105 : 120);
 
   const totalCartCount = cart.reduce((s, i) => s + i.quantity, 0);
 

@@ -16,6 +16,7 @@ const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const notify_1 = require("../lib/notify");
 const prisma_1 = __importDefault(require("../lib/prisma"));
+const orders_1 = require("./orders");
 const wallet_1 = require("../lib/wallet");
 const location_1 = require("../lib/location");
 const router = (0, express_1.Router)();
@@ -110,7 +111,7 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
                 dropoffLng: dLng,
                 parcelDescription,
                 totalAmount: computedTotalAmount,
-                paymentProvider: paymentProvider || 'NONE',
+                paymentProvider: (0, orders_1.sanitizePaymentProvider)(paymentProvider),
                 status: 'PENDING',
             },
             include: { rider: true },
@@ -183,7 +184,7 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
                 dropoffLng: dLng,
                 parcelDescription,
                 totalAmount: computedTotalAmount,
-                paymentProvider: paymentProvider || 'NONE',
+                paymentProvider: (0, orders_1.sanitizePaymentProvider)(paymentProvider),
                 status: 'PENDING',
             },
             include: { rider: true },
