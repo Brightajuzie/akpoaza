@@ -1162,7 +1162,7 @@ export default function HomeScreen({ navigation }: any) {
           activeOpacity={0.85}
         >
           <Text style={styles.downloadBtnText}>📥 Direct APK</Text>
-          <Text style={[styles.downloadBtnText, { fontSize: 10, fontWeight: '500', opacity: 0.9 }]}>v6.0.2 · Fast Install</Text>
+          <Text style={[styles.downloadBtnText, { fontSize: 10, fontWeight: '500', opacity: 0.9 }]}>v6.0.3 · Fast Install</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -1190,7 +1190,7 @@ export default function HomeScreen({ navigation }: any) {
           style={[styles.footerAppBadge, { backgroundColor: '#16A34A' }]}
           activeOpacity={0.85}
         >
-          <Text style={styles.footerAppBadgeText}>📥 Direct APK (v6.0.2)</Text>
+          <Text style={styles.footerAppBadgeText}>📥 Direct APK (v6.0.3)</Text>
         </TouchableOpacity>
       </View>
       <Text style={[styles.footerText, { color: isDark ? '#475569' : '#94A3B8' }]}>{footerText || '© 2026 FixMart. All rights reserved.'}</Text>
