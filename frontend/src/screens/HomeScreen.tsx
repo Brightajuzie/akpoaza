@@ -374,15 +374,6 @@ export default function HomeScreen({ navigation }: any) {
         {/* Right controls */}
         <View style={styles.desktopNavRight}>
           <TouchableOpacity
-            style={styles.navPlayStoreBtn}
-            onPress={() => Linking.openURL(playstoreUrl || 'https://play.google.com/store/apps/details?id=com.akpoaza.kachlinks&pcampaignid=web_share&pli=1')}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.navPlayStoreIcon}>▶</Text>
-            <Text style={styles.navPlayStoreText}>Get on Play Store</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
             style={[styles.navIconBtn, { borderColor: theme.border }]}
             onPress={() => navigation.navigate('CartTab')}
           >
@@ -1178,13 +1169,6 @@ export default function HomeScreen({ navigation }: any) {
         </Text>
       </View>
       <View style={styles.footerAppBadges}>
-        <TouchableOpacity
-          onPress={() => Linking.openURL(playstoreUrl || 'https://play.google.com/store/apps/details?id=com.akpoaza.kachlinks&pcampaignid=web_share&pli=1')}
-          style={[styles.footerAppBadge, { backgroundColor: isDark ? '#0F172A' : '#1E293B' }]}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.footerAppBadgeText}>▶ Google Play</Text>
-        </TouchableOpacity>
         <TouchableOpacity
           onPress={() => triggerDownload(apkUrl, 'fixmart-latest.apk')}
           style={[styles.footerAppBadge, { backgroundColor: '#16A34A' }]}
