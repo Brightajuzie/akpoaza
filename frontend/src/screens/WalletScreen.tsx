@@ -13,10 +13,21 @@ import * as Notifications from 'expo-notifications';
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import PaymentWebView from '../components/PaymentWebView';
+
+// Only real payment gateways make sense for topping up a wallet — unlike
+// CheckoutScreen's payment-method list, WALLET (pay from wallet balance)
+// and POD (pay on delivery) are both meaningless here.
+const FUND_PROVIDERS: { id: 'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY'; label: string; icon: string; enabledKey: string }[] = [
+  { id: 'STRIPE', label: 'Stripe', icon: '💳', enabledKey: 'stripe_enabled' },
+  { id: 'PAYSTACK', label: 'Paystack', icon: '🏦', enabledKey: 'paystack_enabled' },
+  { id: 'FLUTTERWAVE', label: 'Flutterwave', icon: '⚡', enabledKey: 'flutterwave_enabled' },
+  { id: 'OPAY', label: 'OPay', icon: '🔵', enabledKey: 'opay_enabled' },
+];
 
 export default function WalletScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
-  const { theme, colorMode } = useContext(SettingsContext);
+  const { theme, settings, colorMode } = useContext(SettingsContext);
   const isDark = colorMode === 'dark';
 
   const [loading, setLoading] = useState(true);
@@ -32,6 +43,13 @@ export default function WalletScreen({ navigation }: any) {
   const [accountNumber, setAccountNumber] = useState('');
   const [bankName, setBankName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // Fund Wallet form state
+  const [fundModalVisible, setFundModalVisible] = useState(false);
+  const [fundAmount, setFundAmount] = useState('');
+  const [fundProvider, setFundProvider] = useState<'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY' | null>(null);
+  const [fundLoadingProvider, setFundLoadingProvider] = useState<string | null>(null);
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
 
   // Filter state
   const [filterModalVisible, setFilterModalVisible] = useState(false);
@@ -127,6 +145,77 @@ export default function WalletScreen({ navigation }: any) {
       setSubmitting(false);
     }
   };
+
+  // Only show gateways the admin has actually enabled (see AdminScreen's
+  // "Checkout Payment Method Toggles") — same enabledKey filter CheckoutScreen
+  // applies, so a customer never sees "Fund via Stripe" here when Stripe is
+  // off for the whole app.
+  const availableFundProviders = FUND_PROVIDERS.filter(
+    (p) => !settings || Object.keys(settings).length === 0 || settings[p.enabledKey] !== 'false'
+  );
+
+  const handleFundWallet = async (provider: 'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY') => {
+    const amtFloat = parseFloat(fundAmount);
+    if (isNaN(amtFloat) || amtFloat <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a valid positive number.');
+      return;
+    }
+
+    setFundLoadingProvider(provider);
+    try {
+      // 1. Create the PENDING WalletFunding record this top-up will pay off.
+      const fundRes = await apiClient.post('/wallet/fund', { amount: amtFloat });
+      const fundingId = fundRes.data?.fundingId;
+      if (!fundingId) throw new Error('Could not start wallet funding.');
+
+      // 2. Same gateway-initiation call order/booking/parcel checkout uses.
+      const checkoutRes = await apiClient.post('/payments/checkout', {
+        checkoutType: 'wallet_funding',
+        id: fundingId,
+        provider,
+      });
+
+      const redirectUrl = provider === 'FLUTTERWAVE'
+        ? (checkoutRes.data.paymentLink || checkoutRes.data.authorizationUrl)
+        : checkoutRes.data.authorizationUrl;
+
+      if (!redirectUrl) throw new Error('No payment URL returned from server.');
+
+      setFundProvider(provider);
+      setPaymentUrl(redirectUrl);
+      setFundModalVisible(false);
+    } catch (error: any) {
+      Alert.alert(`${provider} Unavailable`, error.response?.data?.error || error.message || `Could not initialise ${provider}.`);
+    } finally {
+      setFundLoadingProvider(null);
+    }
+  };
+
+  const handleFundPaymentSuccess = (reference: string) => {
+    setPaymentUrl(null);
+    const providerName = fundProvider;
+    setFundProvider(null);
+    setFundAmount('');
+    Alert.alert('Wallet Funded', `Your ${providerName} top-up was completed successfully!\nReference: ${reference}`);
+    fetchWalletData();
+  };
+
+  const handleFundPaymentCancel = () => {
+    setPaymentUrl(null);
+    setFundProvider(null);
+    Alert.alert('Cancelled', 'Wallet funding was cancelled. You can try again anytime.');
+  };
+
+  if (paymentUrl) {
+    return (
+      <PaymentWebView
+        url={paymentUrl}
+        provider={fundProvider}
+        onPaymentSuccess={handleFundPaymentSuccess}
+        onPaymentCancel={handleFundPaymentCancel}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -241,14 +330,23 @@ export default function WalletScreen({ navigation }: any) {
           </View>
         </View>
 
-        <TouchableOpacity
-          style={[styles.withdrawBtn, { opacity: data.balance <= 0 ? 0.5 : 1 }]}
-          onPress={() => setModalVisible(true)}
-          disabled={data.balance <= 0}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.withdrawBtnText}>💸 Withdraw Funds</Text>
-        </TouchableOpacity>
+        <View style={styles.balanceActionsRow}>
+          <TouchableOpacity
+            style={[styles.fundBtn]}
+            onPress={() => setFundModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.fundBtnText}>➕ Fund Wallet</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.withdrawBtn, { opacity: data.balance <= 0 ? 0.5 : 1 }]}
+            onPress={() => setModalVisible(true)}
+            disabled={data.balance <= 0}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.withdrawBtnText}>💸 Withdraw Funds</Text>
+          </TouchableOpacity>
+        </View>
       </LinearGradient>
 
       {/* ── Quick Actions Row ─────────────────────────────────────────────── */}
@@ -431,6 +529,67 @@ export default function WalletScreen({ navigation }: any) {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Fund Wallet Modal */}
+      <Modal
+        visible={fundModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setFundModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <ScrollView contentContainerStyle={styles.modalScroll}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Fund Your Wallet</Text>
+              <Text style={styles.modalSubtitle}>Top up your FixMart wallet balance via any payment gateway.</Text>
+
+              <Text style={styles.inputLabel}>Amount (₦)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. 5000.00"
+                keyboardType="numeric"
+                value={fundAmount}
+                onChangeText={setFundAmount}
+              />
+
+              <Text style={styles.inputLabel}>Pay With</Text>
+              <View style={styles.fundProviderGrid}>
+                {availableFundProviders.length === 0 && (
+                  <Text style={{ color: '#8E8E93', fontSize: 13 }}>No payment gateways are currently enabled. Contact support.</Text>
+                )}
+                {availableFundProviders.map((p) => {
+                  const amtValid = !isNaN(parseFloat(fundAmount)) && parseFloat(fundAmount) > 0;
+                  const isLoading = fundLoadingProvider === p.id;
+                  return (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={[styles.fundProviderBtn, { opacity: amtValid ? 1 : 0.5, borderColor: theme.primary }]}
+                      onPress={() => handleFundWallet(p.id)}
+                      disabled={!amtValid || fundLoadingProvider !== null}
+                    >
+                      {isLoading
+                        ? <ActivityIndicator color={theme.primary} size="small" />
+                        : <>
+                            <Text style={styles.fundProviderIcon}>{p.icon}</Text>
+                            <Text style={[styles.fundProviderLabel, { color: theme.primary }]}>{p.label}</Text>
+                          </>
+                      }
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { marginTop: 8 }]}
+                onPress={() => setFundModalVisible(false)}
+                disabled={fundLoadingProvider !== null}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -460,7 +619,16 @@ const styles = StyleSheet.create({
   balanceMetaLabel: { color: 'rgba(255,255,255,0.65)', fontSize: 10, fontWeight: '700', marginBottom: 2 },
   balanceMetaValue: { color: '#FFF', fontSize: 13, fontWeight: '800' },
   balanceMetaDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.2)' },
+  balanceActionsRow: { flexDirection: 'row', gap: 10 },
+  fundBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.6)',
+    paddingVertical: 14, borderRadius: 14, alignItems: 'center',
+  },
+  fundBtnText: { fontSize: 15, fontWeight: '900', color: '#FFFFFF' },
   withdrawBtn: {
+    flex: 1,
     backgroundColor: 'rgba(255,255,255,0.95)',
     paddingVertical: 14, borderRadius: 14, alignItems: 'center',
   },
@@ -616,6 +784,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
+  fundProviderGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 8,
+  },
+  fundProviderBtn: {
+    width: '47%',
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F8F9FA',
+  },
+  fundProviderIcon: { fontSize: 20 },
+  fundProviderLabel: { fontSize: 13, fontWeight: '800' },
   activityHeaderButtons: {
     flexDirection: 'row',
     gap: 12,

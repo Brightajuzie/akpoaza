@@ -799,7 +799,7 @@ export default function ProfileScreen({ navigation }: any) {
           </TouchableOpacity>
         )}
 
-        {(profile.role === 'VENDOR' || profile.role === 'HANDYMAN' || profile.role === 'RIDER') && (
+        {(profile.role === 'VENDOR' || profile.role === 'HANDYMAN' || profile.role === 'RIDER' || profile.role === 'ADMIN') && (
           <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('Wallet')}>
             <Text style={styles.menuItemIcon}>💳</Text>
             <Text style={[styles.menuItemText, { color: textColor }]}>Virtual Platform Wallet</Text>

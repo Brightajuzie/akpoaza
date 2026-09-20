@@ -50,6 +50,7 @@ model User {
   reviewsGiven       Review[]           @relation("ReviewAuthor")
   reviewsReceived    Review[]           @relation("ReviewHandyman")
   wallet             Wallet?
+  walletFundings     WalletFunding[]
 }
 
 model Product {
@@ -208,6 +209,25 @@ model Transaction {
   referenceId String?
   createdAt   DateTime @default(now())
   wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+}
+
+// A user topping up their own FixMart wallet balance via a payment gateway
+// (POST /wallet/fund creates this PENDING, then the existing /payments/checkout
+// flow — same as order/booking/parcel — takes it through to PAID). Unlike
+// those, funding a wallet never goes through escrow: it's the user's own
+// money landing directly in their own wallet, not payment to a vendor/
+// handyman/rider that needs to be held and split.
+model WalletFunding {
+  id              String          @id @default(uuid())
+  userId          String
+  amount          Float
+  currency        String          @default("NGN")
+  status          String          @default("PENDING") // PENDING | PAID
+  paymentProvider PaymentProvider @default(NONE)
+  paymentRef      String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PromoSlide {
