@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const stripe_1 = __importDefault(require("stripe"));
 const axios_1 = __importDefault(require("axios"));
+const crypto_1 = __importDefault(require("crypto"));
 const prisma_1 = __importDefault(require("../lib/prisma"));
 const wallet_1 = require("../lib/wallet");
 const notify_1 = require("../lib/notify");
@@ -51,6 +52,64 @@ function getFrontendUrl(req) {
     }
     return 'http://localhost:8081';
 }
+// Server-side confirmation that a given OPay reference genuinely succeeded,
+// via OPay's Cashier "Query Payment Status" API (doc.opaycheckout.com/
+// query-payment-status) — never trusts a client-supplied reference alone.
+// Per OPay's docs the request body is signed HMAC-SHA512 with the merchant's
+// SECRET key: `Authorization: Bearer {hex(hmacSHA512(secretKey, JSON.stringify(body)))}`.
+// NOTE: OPay's docs don't spell out hex vs base64 output — hex is used here
+// (the near-universal convention, and what Paystack/Flutterwave-style APIs
+// use); confirm against a real OPay sandbox call before relying on this in
+// production. A malformed/incorrect signature makes OPay's API reject the
+// call, which this treats as "not verified" (fails closed), never as "so
+// trust it anyway" — so an implementation slip here can't reopen the
+// vulnerability this replaces.
+function verifyOpayTransaction(reference, merchantId, publicKey, secretKey) {
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c, _d;
+        const body = { reference, country: 'NG' };
+        const bodyStr = JSON.stringify(body);
+        const signature = crypto_1.default.createHmac('sha512', secretKey).update(bodyStr).digest('hex');
+        const response = yield axios_1.default.post('https://sandboxapi.opaycheckout.com/api/v1/international/cashier/status', body, {
+            timeout: 10000,
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${signature}`,
+                MerchantId: merchantId,
+            },
+        });
+        const data = (_a = response.data) === null || _a === void 0 ? void 0 : _a.data;
+        const verified = ((_b = response.data) === null || _b === void 0 ? void 0 : _b.code) === '00000' && (data === null || data === void 0 ? void 0 : data.status) === 'SUCCESS';
+        return {
+            verified,
+            amount: ((_c = data === null || data === void 0 ? void 0 : data.amount) === null || _c === void 0 ? void 0 : _c.total) ? Number(data.amount.total) / 100 : undefined,
+            currency: (_d = data === null || data === void 0 ? void 0 : data.amount) === null || _d === void 0 ? void 0 : _d.currency,
+        };
+    });
+}
+// Verifies an incoming OPay webhook payload's `sha512` field against the
+// HMAC-SHA3-512 signature OPay documents (doc.opaycheckout.com/
+// callback-signature): a hash of the payload's own fields (in OPay's
+// documented order) signed with the merchant's secret key. Without this,
+// `/opay/webhook` had no way to distinguish a real OPay notification from
+// anyone who found the URL and POSTed a fake "paid" payload.
+function verifyOpayWebhookSignature(payload, secretKey) {
+    var _a, _b;
+    const received = (payload === null || payload === void 0 ? void 0 : payload.sha512) || ((_a = payload === null || payload === void 0 ? void 0 : payload.data) === null || _a === void 0 ? void 0 : _a.sha512);
+    if (!received || typeof received !== 'string')
+        return false;
+    const d = (payload === null || payload === void 0 ? void 0 : payload.data) || payload;
+    const signContent = `{Amount:"${d.amount}",Currency:"${d.currency}",Reference:"${d.reference}",` +
+        `Refunded:${d.refunded ? 't' : 'f'},Status:"${d.status}",Timestamp:"${d.timestamp}",` +
+        `Token:"${d.token}",TransactionID:"${(_b = d.transactionId) !== null && _b !== void 0 ? _b : d.orderNo}"}`;
+    const expected = crypto_1.default.createHmac('sha3-512', secretKey).update(signContent).digest('hex');
+    try {
+        return crypto_1.default.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(received, 'hex'));
+    }
+    catch (_c) {
+        return false;
+    }
+}
 // Shared helper to process payment verification across all providers
 function processPaymentVerification(_a) {
     return __awaiter(this, arguments, void 0, function* ({ provider, reference, checkoutType, id, chargedAmount, }) {
@@ -59,6 +118,16 @@ function processPaymentVerification(_a) {
             const order = yield prisma_1.default.order.findUnique({ where: { id } });
             if (!order)
                 throw new Error('Order not found');
+            // Idempotency guard: a provider's webhook, its redirect callback, and a
+            // client-side verify poll can all fire for the very same transaction.
+            // Without this, each one would re-increment amountPaid, create another
+            // escrow hold, and re-send the receipt/notification emails for a single
+            // real payment. `reference` uniquely identifies one transaction attempt
+            // (see the *_${id}_${Date.now()} generation in /checkout), so a repeat of
+            // the same reference is always a duplicate call, never a new payment.
+            if (reference && order.paymentRef === reference) {
+                return { type: 'order', record: order, duplicate: true };
+            }
             const updatedOrder = yield prisma_1.default.order.update({
                 where: { id },
                 data: {
@@ -189,10 +258,16 @@ function processPaymentVerification(_a) {
             });
             if (!booking)
                 throw new Error('Booking not found');
+            // See the matching guard in the 'order' branch above for why this is needed.
+            if (reference && booking.paymentRef === reference) {
+                return { type: 'booking', record: booking, duplicate: true };
+            }
             const updatedBooking = yield prisma_1.default.booking.update({
                 where: { id },
                 data: {
                     status: 'ACCEPTED',
+                    paymentProvider: (0, orders_1.sanitizePaymentProvider)(provider),
+                    paymentRef: reference,
                     amountPaid: { increment: chargedAmount },
                 },
             });
@@ -267,6 +342,10 @@ function processPaymentVerification(_a) {
             const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
             if (!parcel)
                 throw new Error('Parcel delivery not found');
+            // See the matching guard in the 'order' branch above for why this is needed.
+            if (reference && parcel.paymentRef === reference) {
+                return { type: 'parcel', record: parcel, duplicate: true };
+            }
             const updatedParcel = yield prisma_1.default.parcelDelivery.update({
                 where: { id },
                 data: {
@@ -406,6 +485,138 @@ function renderSuccessHtml(provider, reference, frontendUrl, title, message) {
           notifyAndRedirect();
           setTimeout(function() {
             window.location.href = "${frontendUrl}/?payment_status=success&ref=${encodeURIComponent(reference)}";
+          }, 3500);
+        </script>
+      </body>
+    </html>
+  `;
+}
+// Render branded HTML failure page — used when a redirect callback's
+// server-side verification with the provider fails or errors. Previously
+// callback handlers rendered renderSuccessHtml() unconditionally in their
+// catch blocks, so a customer could see "Payment Successful!" even when the
+// backend never actually confirmed or recorded the payment.
+function renderFailureHtml(provider, reference, frontendUrl, message) {
+    const displayMessage = message || `We could not verify this ${provider} transaction. If you were charged, contact support with this reference.`;
+    return `
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>${provider} Payment Not Verified</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            color: #F1F5F9;
+          }
+          .card {
+            background: #FFFFFF;
+            color: #0F172A;
+            border-radius: 24px;
+            padding: 40px 32px;
+            max-width: 440px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            border: 1px solid #E2E8F0;
+          }
+          .badge-icon {
+            width: 72px;
+            height: 72px;
+            background: #FEF2F2;
+            color: #DC2626;
+            border-radius: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            margin: 0 auto 20px auto;
+            border: 2px solid #FECACA;
+          }
+          h1 {
+            font-size: 22px;
+            font-weight: 800;
+            margin: 0 0 10px 0;
+            color: #0F172A;
+          }
+          p {
+            font-size: 14px;
+            color: #64748B;
+            line-height: 1.5;
+            margin: 0 0 24px 0;
+          }
+          .ref-box {
+            background: #F8FAFC;
+            border: 1px dashed #CBD5E1;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #475569;
+            word-break: break-all;
+            margin-bottom: 24px;
+          }
+          .btn {
+            display: block;
+            background: #DC2626;
+            color: #FFFFFF;
+            text-decoration: none;
+            padding: 14px 20px;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            width: 100%;
+            box-sizing: border-box;
+          }
+          .btn:hover {
+            background: #B91C1C;
+          }
+          .subtext {
+            font-size: 11px;
+            color: #94A3B8;
+            margin-top: 16px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="badge-icon">✕</div>
+          <h1>${provider} Payment Not Verified</h1>
+          <p>${displayMessage}</p>
+          <div class="ref-box">REF: ${reference}</div>
+          <button class="btn" onclick="returnToApp()">← Return to FixMart App</button>
+          <div class="subtext">Auto-redirecting back to app...</div>
+        </div>
+
+        <script>
+          function notifyAndRedirect() {
+            try {
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ status: 'failed', reference: "${reference}" }));
+              }
+            } catch (e) {}
+          }
+          function returnToApp() {
+            notifyAndRedirect();
+            setTimeout(function() {
+              window.location.href = "${frontendUrl}/?payment_status=failed&ref=${encodeURIComponent(reference)}";
+            }, 300);
+          }
+          notifyAndRedirect();
+          setTimeout(function() {
+            window.location.href = "${frontendUrl}/?payment_status=failed&ref=${encodeURIComponent(reference)}";
           }, 3500);
         </script>
       </body>
@@ -793,8 +1004,15 @@ router.get('/paystack/verify/:reference', (req, res, next) => __awaiter(void 0, 
     try {
         const paystackSetting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'paystack_secret_key' } });
         const activePaystackKey = (paystackSetting === null || paystackSetting === void 0 ? void 0 : paystackSetting.value) || process.env.PAYSTACK_SECRET_KEY || 'sk_test_dummy';
-        // If sandbox mock reference
-        if (reference.startsWith('PAY_') || activePaystackKey.includes('dummy')) {
+        const isDummy = !activePaystackKey || activePaystackKey.includes('dummy') || activePaystackKey === 'sk_test_dummy';
+        // Sandbox mock mode — ONLY when no real secret key is configured. This
+        // must never be decided from `reference`'s own prefix: /checkout mints
+        // the SAME "PAY_<id>_<timestamp>" reference for both mock AND real
+        // Paystack transactions (it's also the reference sent to Paystack's own
+        // initialize call), so an attacker could otherwise craft a request with
+        // that prefix and skip real verification entirely, marking any order
+        // "paid" for free even with a fully configured live Paystack account.
+        if (isDummy) {
             const parts = reference.split('_');
             const id = parts[1];
             if (!id)
@@ -829,6 +1047,9 @@ router.get('/paystack/verify/:reference', (req, res, next) => __awaiter(void 0, 
         const data = (_a = response.data) === null || _a === void 0 ? void 0 : _a.data;
         if (data && data.status === 'success') {
             const { checkoutType, id } = data.metadata || {};
+            if (!checkoutType || !id) {
+                return res.status(400).json({ error: 'Payment verified but is missing order metadata; cannot fulfil it.' });
+            }
             const chargedAmount = data.amount / 100;
             const result = yield processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType, id, chargedAmount });
             return res.json(Object.assign({ status: 'success', message: 'Paystack payment verified.' }, result));
@@ -841,7 +1062,7 @@ router.get('/paystack/verify/:reference', (req, res, next) => __awaiter(void 0, 
 }));
 // Paystack Redirect Callback
 router.get('/paystack/callback', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j;
     const reference = (req.query.reference || req.query.trxref);
     const frontendUrl = getFrontendUrl(req);
     if (!reference) {
@@ -852,20 +1073,34 @@ router.get('/paystack/callback', (req, res, next) => __awaiter(void 0, void 0, v
         let chargedAmountOverride = null;
         const paystackSetting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'paystack_secret_key' } });
         const activePaystackKey = (paystackSetting === null || paystackSetting === void 0 ? void 0 : paystackSetting.value) || process.env.PAYSTACK_SECRET_KEY || 'sk_test_dummy';
-        if (!activePaystackKey.includes('dummy') && !reference.startsWith('PAY_')) {
+        const isDummy = !activePaystackKey || activePaystackKey.includes('dummy') || activePaystackKey === 'sk_test_dummy';
+        // Whenever a real key is configured, verification with Paystack is
+        // mandatory — never inferred from `reference`'s own prefix (see the
+        // matching comment on /paystack/verify above for why that's unsafe: an
+        // attacker can hit this public, unauthenticated GET endpoint directly
+        // with any reference of their choosing, and this callback's only job is
+        // to mark the underlying order/booking/parcel PAID and move money into
+        // escrow). If verification fails or the API errors, refuse outright
+        // instead of silently proceeding.
+        if (!isDummy) {
             try {
                 const verifyRes = yield axios_1.default.get(`${PAYSTACK_BASE_URL}/transaction/verify/${encodeURIComponent(reference)}`, {
                     headers: { Authorization: `Bearer ${activePaystackKey}` },
                     timeout: 10000,
                 });
-                if ((_c = (_b = (_a = verifyRes.data) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.metadata) === null || _c === void 0 ? void 0 : _c.id) {
+                if (((_b = (_a = verifyRes.data) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.status) !== 'success') {
+                    return res.send(renderFailureHtml('Paystack', reference, frontendUrl, `Payment status: ${((_d = (_c = verifyRes.data) === null || _c === void 0 ? void 0 : _c.data) === null || _d === void 0 ? void 0 : _d.status) || 'unknown'}.`));
+                }
+                if ((_g = (_f = (_e = verifyRes.data) === null || _e === void 0 ? void 0 : _e.data) === null || _f === void 0 ? void 0 : _f.metadata) === null || _g === void 0 ? void 0 : _g.id) {
                     id = verifyRes.data.data.metadata.id;
                 }
-                if ((_e = (_d = verifyRes.data) === null || _d === void 0 ? void 0 : _d.data) === null || _e === void 0 ? void 0 : _e.amount) {
+                if ((_j = (_h = verifyRes.data) === null || _h === void 0 ? void 0 : _h.data) === null || _j === void 0 ? void 0 : _j.amount) {
                     chargedAmountOverride = verifyRes.data.data.amount / 100;
                 }
             }
-            catch (e) { }
+            catch (e) {
+                return res.send(renderFailureHtml('Paystack', reference, frontendUrl));
+            }
         }
         if (!id) {
             const ord = yield prisma_1.default.order.findFirst({ where: { paymentRef: reference } });
@@ -892,10 +1127,15 @@ router.get('/paystack/callback', (req, res, next) => __awaiter(void 0, void 0, v
                 }
             }
         }
+        else {
+            return res.send(renderFailureHtml('Paystack', reference, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
+        }
         res.send(renderSuccessHtml('Paystack', reference, frontendUrl));
     }
     catch (error) {
-        res.send(renderSuccessHtml('Paystack', reference, frontendUrl));
+        // Was renderSuccessHtml here — showed "Payment Successful!" even when
+        // this handler threw before ever confirming or recording the payment.
+        res.send(renderFailureHtml('Paystack', reference, frontendUrl));
     }
 }));
 // Verify Flutterwave Payment via API
@@ -905,7 +1145,13 @@ router.get('/flutterwave/verify/:transactionId', (req, res, next) => __awaiter(v
     try {
         const flutterwaveSetting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'flutterwave_secret_key' } });
         const activeFlutterwaveKey = (flutterwaveSetting === null || flutterwaveSetting === void 0 ? void 0 : flutterwaveSetting.value) || process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK_TEST-dummy';
-        if (transactionId.startsWith('FLW_') || activeFlutterwaveKey.includes('dummy')) {
+        const isDummy = !activeFlutterwaveKey || activeFlutterwaveKey.includes('dummy') || activeFlutterwaveKey.startsWith('FLWSECK_TEST-dummy');
+        // Sandbox mock mode — ONLY when no real secret key is configured. See
+        // the matching comment on /paystack/verify: /checkout mints the SAME
+        // "FLW_<id>_<timestamp>" txRef for both mock AND real Flutterwave
+        // transactions, so deciding this from the reference's own prefix would
+        // let anyone skip real verification by crafting that prefix themselves.
+        if (isDummy) {
             const parts = transactionId.split('_');
             const id = parts[1];
             if (!id)
@@ -939,6 +1185,9 @@ router.get('/flutterwave/verify/:transactionId', (req, res, next) => __awaiter(v
         const data = (_a = response.data) === null || _a === void 0 ? void 0 : _a.data;
         if (data && (data.status === 'successful' || data.status === 'success')) {
             const { checkoutType, id } = data.meta || {};
+            if (!checkoutType || !id) {
+                return res.status(400).json({ error: 'Payment verified but is missing order metadata; cannot fulfil it.' });
+            }
             const chargedAmount = data.amount;
             const result = yield processPaymentVerification({ provider: 'FLUTTERWAVE', reference: String(transactionId), checkoutType, id, chargedAmount });
             return res.json(Object.assign({ status: 'success', message: 'Flutterwave payment verified.' }, result));
@@ -951,7 +1200,7 @@ router.get('/flutterwave/verify/:transactionId', (req, res, next) => __awaiter(v
 }));
 // Flutterwave Redirect Callback
 router.get('/flutterwave/callback', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b, _c, _d, _e;
+    var _a, _b, _c, _d, _e, _f, _g;
     const txRef = (req.query.tx_ref || req.query.transaction_id || req.query.reference);
     const status = req.query.status;
     const frontendUrl = getFrontendUrl(req);
@@ -963,20 +1212,30 @@ router.get('/flutterwave/callback', (req, res, next) => __awaiter(void 0, void 0
         let chargedAmountOverride = null;
         const flutterwaveSetting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'flutterwave_secret_key' } });
         const activeFlutterwaveKey = (flutterwaveSetting === null || flutterwaveSetting === void 0 ? void 0 : flutterwaveSetting.value) || process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK_TEST-dummy';
-        if (!activeFlutterwaveKey.includes('dummy') && !txRef.startsWith('FLW_')) {
+        const isDummy = !activeFlutterwaveKey || activeFlutterwaveKey.includes('dummy') || activeFlutterwaveKey.startsWith('FLWSECK_TEST-dummy');
+        // Whenever a real key is configured, verification with Flutterwave is
+        // mandatory — see the matching comment on /paystack/callback for why
+        // this can't be decided from txRef's own prefix.
+        if (!isDummy) {
             try {
                 const verifyRes = yield axios_1.default.get(`${FLUTTERWAVE_BASE_URL}/transactions/${encodeURIComponent(txRef)}/verify`, {
                     headers: { Authorization: `Bearer ${activeFlutterwaveKey}` },
                     timeout: 10000,
                 });
-                if ((_c = (_b = (_a = verifyRes.data) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.meta) === null || _c === void 0 ? void 0 : _c.id) {
+                const vStatus = (_b = (_a = verifyRes.data) === null || _a === void 0 ? void 0 : _a.data) === null || _b === void 0 ? void 0 : _b.status;
+                if (vStatus !== 'successful' && vStatus !== 'success') {
+                    return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl, `Payment status: ${vStatus || 'unknown'}.`));
+                }
+                if ((_e = (_d = (_c = verifyRes.data) === null || _c === void 0 ? void 0 : _c.data) === null || _d === void 0 ? void 0 : _d.meta) === null || _e === void 0 ? void 0 : _e.id) {
                     id = verifyRes.data.data.meta.id;
                 }
-                if ((_e = (_d = verifyRes.data) === null || _d === void 0 ? void 0 : _d.data) === null || _e === void 0 ? void 0 : _e.amount) {
+                if ((_g = (_f = verifyRes.data) === null || _f === void 0 ? void 0 : _f.data) === null || _g === void 0 ? void 0 : _g.amount) {
                     chargedAmountOverride = verifyRes.data.data.amount;
                 }
             }
-            catch (e) { }
+            catch (e) {
+                return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl));
+            }
         }
         if (!id) {
             const ord = yield prisma_1.default.order.findFirst({ where: { paymentRef: txRef } });
@@ -1003,10 +1262,13 @@ router.get('/flutterwave/callback', (req, res, next) => __awaiter(void 0, void 0
                 }
             }
         }
+        else {
+            return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
+        }
         res.send(renderSuccessHtml('Flutterwave', txRef, frontendUrl));
     }
     catch (error) {
-        res.send(renderSuccessHtml('Flutterwave', txRef, frontendUrl));
+        res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl));
     }
 }));
 // ─── SANDBOX MOCK CASHIERS ─────────────────────────────────────────────────────
@@ -1132,28 +1394,38 @@ router.get('/stripe/verify/:reference', (req, res, next) => __awaiter(void 0, vo
         let id = reference.split('_')[1];
         let checkoutType = null;
         let chargedAmountOverride = null;
-        // Handle live Stripe PaymentIntent references (pi_...)
-        if (reference.startsWith('pi_')) {
-            const stripeSetting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'stripe_secret_key' } });
-            const activeStripeKey = (stripeSetting === null || stripeSetting === void 0 ? void 0 : stripeSetting.value) || process.env.STRIPE_SECRET_KEY || 'sk_test_dummy';
-            if (!activeStripeKey.includes('dummy')) {
-                try {
-                    const activeStripe = new stripe_1.default(activeStripeKey, { apiVersion: '2023-10-16' });
-                    const pi = yield activeStripe.paymentIntents.retrieve(reference);
-                    if ((_a = pi.metadata) === null || _a === void 0 ? void 0 : _a.id)
-                        id = pi.metadata.id;
-                    if ((_b = pi.metadata) === null || _b === void 0 ? void 0 : _b.checkoutType)
-                        checkoutType = pi.metadata.checkoutType;
-                    if (pi.amount_received)
-                        chargedAmountOverride = pi.amount_received / 100;
+        const stripeSetting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'stripe_secret_key' } });
+        const activeStripeKey = (stripeSetting === null || stripeSetting === void 0 ? void 0 : stripeSetting.value) || process.env.STRIPE_SECRET_KEY || 'sk_test_dummy';
+        const isDummy = !activeStripeKey || activeStripeKey.includes('dummy') || activeStripeKey === 'sk_test_dummy';
+        // Whenever a real key is configured, verification with Stripe is
+        // mandatory — the previous version only attempted it when `reference`
+        // happened to start with "pi_", and silently fell through to trusting
+        // "id = reference.split('_')[1]" directly (from this public,
+        // unauthenticated GET endpoint's own URL param) for anything else,
+        // including if the real retrieve() call itself failed. That let anyone
+        // mark any order/booking/parcel "paid" for free by hitting this
+        // endpoint with a crafted reference, live Stripe account or not.
+        if (!isDummy) {
+            if (!reference.startsWith('pi_')) {
+                return res.send(renderFailureHtml('Stripe', reference, frontendUrl, 'Not a recognized Stripe payment reference.'));
+            }
+            try {
+                const activeStripe = new stripe_1.default(activeStripeKey, { apiVersion: '2023-10-16' });
+                const pi = yield activeStripe.paymentIntents.retrieve(reference);
+                if (pi.status !== 'succeeded') {
+                    return res.send(renderFailureHtml('Stripe', reference, frontendUrl, `Payment status: ${pi.status}.`));
                 }
-                catch (e) {
-                    console.warn('[StripeVerify] Could not retrieve PaymentIntent:', e);
-                }
+                id = ((_a = pi.metadata) === null || _a === void 0 ? void 0 : _a.id) || null;
+                checkoutType = ((_b = pi.metadata) === null || _b === void 0 ? void 0 : _b.checkoutType) || null;
+                chargedAmountOverride = pi.amount_received / 100;
+            }
+            catch (e) {
+                console.warn('[StripeVerify] Could not retrieve PaymentIntent:', e);
+                return res.send(renderFailureHtml('Stripe', reference, frontendUrl));
             }
         }
         if (!id) {
-            // Fallback: check if an order or parcel has paymentRef = reference
+            // Mock-mode fallback: check if an order or parcel has paymentRef = reference
             const ord = yield prisma_1.default.order.findFirst({ where: { paymentRef: reference } });
             if (ord) {
                 id = ord.id;
@@ -1168,7 +1440,7 @@ router.get('/stripe/verify/:reference', (req, res, next) => __awaiter(void 0, vo
             }
         }
         if (!id) {
-            return res.send(renderSuccessHtml('Stripe', reference, frontendUrl));
+            return res.send(renderFailureHtml('Stripe', reference, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
         }
         const order = yield prisma_1.default.order.findUnique({ where: { id } });
         if (order) {
@@ -1191,7 +1463,7 @@ router.get('/stripe/verify/:reference', (req, res, next) => __awaiter(void 0, vo
         res.send(renderSuccessHtml('Stripe', reference, frontendUrl));
     }
     catch (error) {
-        res.send(renderSuccessHtml('Stripe', reference, frontendUrl));
+        res.send(renderFailureHtml('Stripe', reference, frontendUrl));
     }
 }));
 // Paystack Sandbox Mock Page
@@ -1555,6 +1827,33 @@ router.get('/opay/verify/:reference', (req, res, next) => __awaiter(void 0, void
         if (!id) {
             return res.status(400).send('Invalid reference signature.');
         }
+        const opaySettings = yield prisma_1.default.appSetting.findMany({
+            where: { key: { in: ['opay_merchant_id', 'opay_public_key', 'opay_secret_key'] } },
+        });
+        const os = opaySettings.reduce((acc, s) => (Object.assign(Object.assign({}, acc), { [s.key]: s.value })), {});
+        const merchantId = os['opay_merchant_id'] || process.env.OPAY_MERCHANT_ID || '';
+        const publicKey = os['opay_public_key'] || process.env.OPAY_PUBLIC_KEY || '';
+        const secretKey = os['opay_secret_key'] || process.env.OPAY_SECRET_KEY || '';
+        const isDummy = !merchantId || !publicKey || !secretKey ||
+            merchantId.includes('dummy') || publicKey.includes('dummy') || secretKey.includes('dummy');
+        // Whenever real OPay credentials are configured, this public,
+        // unauthenticated GET endpoint MUST confirm with OPay's own status API
+        // before marking anything paid — previously it trusted the `id`
+        // extracted from `reference` unconditionally, so anyone who found this
+        // URL could mark any order/booking/parcel paid for free by requesting
+        // e.g. /opay/verify/OPAY_<anyId>_123, real OPay account or not.
+        if (!isDummy) {
+            try {
+                const result = yield verifyOpayTransaction(reference, merchantId, publicKey, secretKey);
+                if (!result.verified) {
+                    return res.send(renderFailureHtml('OPay', reference, frontendUrl, 'OPay did not confirm this payment as successful.'));
+                }
+            }
+            catch (e) {
+                console.warn('[OPayVerify] Status check failed:', e);
+                return res.send(renderFailureHtml('OPay', reference, frontendUrl));
+            }
+        }
         const order = yield prisma_1.default.order.findUnique({ where: { id } });
         if (order) {
             const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
@@ -1587,11 +1886,26 @@ router.get('/opay/verify-callback', (req, res, next) => __awaiter(void 0, void 0
 }));
 // Staging OPay Webhook receiver (official OPay API webhooks)
 router.post('/opay/webhook', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a, _b;
+    var _a, _b, _c;
     try {
         const payload = req.body;
         console.log('[OPayWebhook] Received notification:', JSON.stringify(payload));
-        const ref = payload.reference || payload.orderNo || ((_a = payload.data) === null || _a === void 0 ? void 0 : _a.reference) || ((_b = payload.data) === null || _b === void 0 ? void 0 : _b.orderNo);
+        // This endpoint's whole job is to mark an order/booking/parcel paid —
+        // it had no signature check at all, so anyone who found this URL could
+        // POST a payload of their own choosing and get anything marked paid for
+        // free, with real money moved into escrow. Require OPay's documented
+        // HMAC-SHA3-512 payload signature (see verifyOpayWebhookSignature) once
+        // real credentials are configured; while only dummy/unconfigured keys
+        // exist there's no real webhook traffic to receive in the first place,
+        // so this intentionally still accepts (and ignores) test payloads then.
+        const opaySettings = yield prisma_1.default.appSetting.findMany({ where: { key: 'opay_secret_key' } });
+        const secretKey = ((_a = opaySettings[0]) === null || _a === void 0 ? void 0 : _a.value) || process.env.OPAY_SECRET_KEY || '';
+        const isDummy = !secretKey || secretKey.includes('dummy');
+        if (!isDummy && !verifyOpayWebhookSignature(payload, secretKey)) {
+            console.error('[OPayWebhook] Signature verification failed; ignoring payload.');
+            return res.json({ code: '00000', message: 'SUCCESS' });
+        }
+        const ref = payload.reference || payload.orderNo || ((_b = payload.data) === null || _b === void 0 ? void 0 : _b.reference) || ((_c = payload.data) === null || _c === void 0 ? void 0 : _c.orderNo);
         if (ref) {
             const parts = ref.split('_');
             const id = parts[1];
@@ -1639,13 +1953,16 @@ router.post('/webhook', (req, res, next) => __awaiter(void 0, void 0, void 0, fu
         const activeStripe = new stripe_1.default(activeStripeKey, {
             apiVersion: '2023-10-16',
         });
-        let event;
-        if (endpointSecret) {
-            event = activeStripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+        // Without a webhook secret there is no way to prove this request really
+        // came from Stripe rather than anyone who found this URL — parsing the
+        // raw body as a trusted event let anyone POST a fake
+        // "payment_intent.succeeded" and mark any order/booking/parcel paid.
+        // Refuse rather than silently trust when the secret isn't configured.
+        if (!endpointSecret) {
+            console.error('[StripeWebhook] stripe_webhook_secret is not configured; refusing unverifiable webhook.');
+            return res.status(400).json({ error: 'Webhook is not configured for signature verification.' });
         }
-        else {
-            event = JSON.parse(req.body.toString());
-        }
+        const event = activeStripe.webhooks.constructEvent(req.body, sig, endpointSecret);
         if (event.type === 'payment_intent.succeeded') {
             const paymentIntent = event.data.object;
             const { checkoutType, id } = paymentIntent.metadata || {};

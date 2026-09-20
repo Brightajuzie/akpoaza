@@ -139,12 +139,19 @@ model Booking {
   handymanLongitude Float?
   latitude          Float?
   longitude         Float?
-  amountPaid        Float    @default(0.0)
-  isSplitPayment    Boolean  @default(false)
-  currency          String   @default("NGN")
-  customer          User     @relation("CustomerBookings", fields: [customerId], references: [id])
-  handyman          User?    @relation("HandymanJobs", fields: [handymanId], references: [id])
-  service           Service  @relation(fields: [serviceId], references: [id])
+  amountPaid        Float           @default(0.0)
+  isSplitPayment    Boolean         @default(false)
+  currency          String          @default("NGN")
+  // Mirrors Order/ParcelDelivery — lets payment verification recognize a
+  // reference it has already applied (see processPaymentVerification in
+  // payments.ts) instead of re-crediting escrow/re-sending receipts every
+  // time a provider's webhook, redirect callback, and client-side verify
+  // poll all fire for the same underlying transaction.
+  paymentProvider   PaymentProvider @default(NONE)
+  paymentRef        String?
+  customer          User            @relation("CustomerBookings", fields: [customerId], references: [id])
+  handyman          User?           @relation("HandymanJobs", fields: [handymanId], references: [id])
+  service           Service         @relation(fields: [serviceId], references: [id])
   escrows           Escrow[]
 }
 
