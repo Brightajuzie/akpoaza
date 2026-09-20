@@ -400,6 +400,66 @@ async function processPaymentVerification({
     );
 
     return { type: 'parcel', record: updatedParcel };
+  } else if (checkoutType === 'wallet_funding') {
+    const funding = await prisma.walletFunding.findUnique({ where: { id } });
+    if (!funding) throw new Error('Wallet funding request not found');
+
+    // See the matching guard in the 'order' branch above for why this is needed.
+    if (reference && funding.paymentRef === reference) {
+      return { type: 'wallet_funding', record: funding, duplicate: true };
+    }
+
+    const updatedFunding = await prisma.walletFunding.update({
+      where: { id },
+      data: {
+        status: 'PAID',
+        paymentProvider: sanitizePaymentProvider(provider),
+        paymentRef: reference,
+      },
+    });
+
+    // Unlike order/booking/parcel payments, this is the user's own money
+    // landing in their own wallet — it goes straight to the spendable
+    // `balance`, never through escrow/pendingBalance or a commission split.
+    const wallet = await getOrCreateWallet(funding.userId);
+    await prisma.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: { increment: chargedAmount } },
+    });
+    await prisma.transaction.create({
+      data: {
+        walletId: wallet.id,
+        amount: chargedAmount,
+        type: 'WALLET_FUNDING',
+        status: 'COMPLETED',
+        description: `Wallet top-up of ₦${chargedAmount.toFixed(2)} via ${provider}`,
+        referenceId: id,
+      },
+    });
+
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: funding.userId },
+        select: { name: true, email: true, phone: true },
+      });
+      sendNotification({
+        userId: funding.userId,
+        title: '💰 Wallet Funded',
+        body: `₦${chargedAmount.toLocaleString()} has been added to your FixMart wallet via ${provider}.`,
+        type: 'PAYMENT',
+        referenceId: id,
+        email: user?.email,
+        phone: user?.phone || undefined,
+        emailSubject: '💰 Wallet Top-Up Confirmed — FixMart',
+        emailHtml: `<p style="font-size:16px;color:#374151">Hi ${user?.name || 'there'},</p>
+          <p>Your wallet top-up of <strong>₦${chargedAmount.toLocaleString()}</strong> via ${provider} was successful.</p>
+          <p>Your new wallet balance is available in the app under Wallet.</p>`,
+      }).catch(() => {});
+    } catch (err) {
+      console.error('[payments] Failed to dispatch wallet funding notification:', err);
+    }
+
+    return { type: 'wallet_funding', record: updatedFunding };
   }
 
   throw new Error(`Invalid checkout type: ${checkoutType}`);
@@ -740,6 +800,21 @@ router.post('/checkout', async (req: Request, res: Response, next: NextFunction)
       userEmail = parcel.user.email;
       userName = parcel.user.name;
       totalAmount = parcel.totalAmount;
+    } else if (checkoutType === 'wallet_funding') {
+      // The record here is a WalletFunding row (POST /wallet/fund creates it
+      // PENDING), not an order/booking/parcel — same shape as the other
+      // three branches otherwise, so it flows through the rest of this
+      // endpoint (and processPaymentVerification) unchanged.
+      const funding = await prisma.walletFunding.findUnique({
+        where: { id },
+        include: { user: true },
+      });
+      if (!funding) return res.status(404).json({ error: 'Wallet funding request not found' });
+      if (funding.status === 'PAID') return res.status(400).json({ error: 'This funding request was already paid.' });
+
+      userEmail = funding.user.email;
+      userName = funding.user.name;
+      totalAmount = funding.amount;
     } else {
       return res.status(400).json({ error: 'Invalid checkoutType' });
     }
@@ -1132,6 +1207,12 @@ router.get('/paystack/verify/:reference', async (req: Request, res: Response, ne
         return res.json({ status: 'success', message: 'Parcel payment verified via Paystack sandbox.', ...result });
       }
 
+      const funding = await prisma.walletFunding.findUnique({ where: { id } });
+      if (funding) {
+        const result = await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'wallet_funding', id, chargedAmount: funding.amount });
+        return res.json({ status: 'success', message: 'Wallet funding verified via Paystack sandbox.', ...result });
+      }
+
       return res.status(404).json({ error: 'Target record not found for reference.' });
     }
 
@@ -1224,6 +1305,11 @@ router.get('/paystack/callback', async (req: Request, res: Response, next: NextF
           const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
           if (parcel) {
             await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
+          } else {
+            const funding = await prisma.walletFunding.findUnique({ where: { id } });
+            if (funding) {
+              await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'wallet_funding', id, chargedAmount: chargedAmountOverride || funding.amount });
+            }
           }
         }
       }
@@ -1276,6 +1362,12 @@ router.get('/flutterwave/verify/:transactionId', async (req: Request, res: Respo
       if (parcel) {
         const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
         return res.json({ status: 'success', message: 'Parcel payment verified via Flutterwave sandbox.', ...result });
+      }
+
+      const funding = await prisma.walletFunding.findUnique({ where: { id } });
+      if (funding) {
+        const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'wallet_funding', id, chargedAmount: funding.amount });
+        return res.json({ status: 'success', message: 'Wallet funding verified via Flutterwave sandbox.', ...result });
       }
 
       return res.status(404).json({ error: 'Target record not found for transaction ID.' });
@@ -1367,6 +1459,11 @@ router.get('/flutterwave/callback', async (req: Request, res: Response, next: Ne
           const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
           if (parcel) {
             await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
+          } else {
+            const funding = await prisma.walletFunding.findUnique({ where: { id } });
+            if (funding) {
+              await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'wallet_funding', id, chargedAmount: chargedAmountOverride || funding.amount });
+            }
           }
         }
       }
@@ -1539,7 +1636,7 @@ router.get('/stripe/verify/:reference', async (req: Request, res: Response, next
     }
 
     if (!id) {
-      // Mock-mode fallback: check if an order or parcel has paymentRef = reference
+      // Mock-mode fallback: check if an order/parcel/wallet-funding has paymentRef = reference
       const ord = await prisma.order.findFirst({ where: { paymentRef: reference } });
       if (ord) {
         id = ord.id;
@@ -1549,6 +1646,12 @@ router.get('/stripe/verify/:reference', async (req: Request, res: Response, next
         if (pcl) {
           id = pcl.id;
           checkoutType = 'parcel';
+        } else {
+          const wf = await prisma.walletFunding.findFirst({ where: { paymentRef: reference } });
+          if (wf) {
+            id = wf.id;
+            checkoutType = 'wallet_funding';
+          }
         }
       }
     }
@@ -1570,6 +1673,11 @@ router.get('/stripe/verify/:reference', async (req: Request, res: Response, next
         const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
         if (parcel) {
           await processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
+        } else {
+          const funding = await prisma.walletFunding.findUnique({ where: { id } });
+          if (funding) {
+            await processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'wallet_funding', id, chargedAmount: chargedAmountOverride || funding.amount });
+          }
         }
       }
     }
@@ -1998,6 +2106,12 @@ router.get('/opay/verify/:reference', async (req: Request, res: Response, next: 
       return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Parcel Delivery Paid Successfully!', 'Your parcel dispatch is now confirmed and a rider is being assigned.'));
     }
 
+    const funding = await prisma.walletFunding.findUnique({ where: { id } });
+    if (funding) {
+      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'wallet_funding', id, chargedAmount: funding.amount });
+      return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Wallet Funded Successfully!', 'Your OPay top-up has been verified and added to your wallet balance.'));
+    }
+
     return res.status(404).send('Reference ID was not found or could not match any active record.');
   } catch (error) {
     next(error);
@@ -2053,6 +2167,11 @@ router.post('/opay/webhook', async (req: Request, res: Response, next: NextFunct
         const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
         if (parcel && parcel.status !== 'PAID') {
           await processPaymentVerification({ provider: 'OPAY', reference: ref, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
+        }
+
+        const funding = await prisma.walletFunding.findUnique({ where: { id } });
+        if (funding && funding.status !== 'PAID') {
+          await processPaymentVerification({ provider: 'OPAY', reference: ref, checkoutType: 'wallet_funding', id, chargedAmount: funding.amount });
         }
       }
     }

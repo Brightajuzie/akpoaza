@@ -45,6 +45,40 @@ router.get('/balance', authenticateToken, async (req: AuthRequest, res: Response
   }
 });
 
+// Start a wallet top-up: creates a PENDING WalletFunding record, which the
+// frontend then hands to the existing POST /payments/checkout (same flow
+// order/booking/parcel checkout already uses, with checkoutType:
+// 'wallet_funding' and id: the funding record just created here) to pick a
+// gateway and get a payment link. Kept as a separate, tiny endpoint (rather
+// than folding wallet-funding creation into /payments/checkout itself)
+// because unlike an order/booking/parcel, there's no other flow that
+// already creates this record first — checkout there only initiates
+// payment for something that already exists.
+router.post('/fund', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const userId = req.user?.userId;
+  const { amount, currency } = req.body;
+
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  if (!amount || typeof amount !== 'number' || amount <= 0) {
+    return res.status(400).json({ error: 'Valid funding amount is required.' });
+  }
+
+  try {
+    const funding = await prisma.walletFunding.create({
+      data: {
+        userId,
+        amount,
+        currency: currency || 'NGN',
+        status: 'PENDING',
+      },
+    });
+
+    res.json({ success: true, fundingId: funding.id });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Request withdrawal from virtual wallet to local bank
 router.post('/withdraw', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const userId = req.user?.userId;

@@ -486,7 +486,6 @@ export default function HomeScreen({ navigation }: any) {
                   { icon: '📦', label: 'Products', screen: 'Products' },
                   { icon: '⚡', label: 'Services', screen: 'Services' },
                   { icon: '🚚', label: 'Book Rider', screen: 'BookParcel' },
-                  { icon: '💳', label: 'Wallet', screen: 'Wallet' },
                   { icon: '🛒', label: 'Cart', screen: 'CartTab' },
                   { icon: '🔔', label: 'Alerts', screen: 'NotificationsTab' },
                   { icon: '👤', label: 'Profile', screen: 'ProfileTab' },
