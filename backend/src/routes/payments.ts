@@ -2304,6 +2304,28 @@ router.get('/admin/all-escrows', authenticateToken, async (req: AuthRequest, res
   }
 });
 
+// ─── ADMIN: FORCE-RELEASE ESCROW ────────────────────────────────────────────────
+router.post('/admin/force-release-escrow/:escrowId', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+
+  const { escrowId } = req.params;
+  if (!escrowId) return res.status(400).json({ error: 'escrowId is required.' });
+
+  try {
+    // Verify the escrow exists and is still HELD before releasing
+    const escrow = await prisma.escrow.findUnique({ where: { id: escrowId } });
+    if (!escrow) return res.status(404).json({ error: 'Escrow record not found.' });
+    if (escrow.status !== 'HELD') {
+      return res.status(400).json({ error: `Escrow is already ${escrow.status.toLowerCase()} and cannot be force-released.` });
+    }
+
+    const updatedEscrow = await releaseEscrow(escrowId);
+    res.json({ success: true, escrow: updatedEscrow, message: 'Escrow funds successfully released to professional wallet.' });
+  } catch (err: any) {
+    next(err);
+  }
+});
+
 // ─── ADMIN: GET ALL TRANSACTIONS WITH SUMMARY METRICS & FILTERING ─────────────
 router.get('/admin/transactions', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const role = req.user?.role;
