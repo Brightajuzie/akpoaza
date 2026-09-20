@@ -523,10 +523,12 @@ function renderSuccessHtml(provider, reference, frontendUrl, title, message) {
           <p>${displayMessage}</p>
           <div class="ref-box">REF: ${reference}</div>
           <button class="btn" onclick="returnToApp()">← Return to FixMart App</button>
-          <div class="subtext">Auto-redirecting back to app...</div>
         </div>
 
         <script>
+          // Only reaches the native app's own WebView bridge — never
+          // triggers a page navigation by itself. On web there is no
+          // window.ReactNativeWebView, so this is a safe no-op there.
           function notifyAndRedirect() {
             try {
               if (window.ReactNativeWebView) {
@@ -534,6 +536,11 @@ function renderSuccessHtml(provider, reference, frontendUrl, title, message) {
               }
             } catch (e) {}
           }
+          // Navigating away is only ever user-initiated (this button) —
+          // this page used to auto-redirect here after 3.5s regardless of
+          // whether frontendUrl was actually configured correctly, which
+          // could carry the customer straight past this confirmation to
+          // wherever that guess landed instead.
           function returnToApp() {
             notifyAndRedirect();
             setTimeout(function() {
@@ -541,9 +548,6 @@ function renderSuccessHtml(provider, reference, frontendUrl, title, message) {
             }, 300);
           }
           notifyAndRedirect();
-          setTimeout(function() {
-            window.location.href = "${frontendUrl}/?payment_status=success&ref=${encodeURIComponent(reference)}";
-          }, 3500);
         </script>
       </body>
     </html>
@@ -655,7 +659,6 @@ function renderFailureHtml(provider, reference, frontendUrl, message) {
           <p>${displayMessage}</p>
           <div class="ref-box">REF: ${reference}</div>
           <button class="btn" onclick="returnToApp()">← Return to FixMart App</button>
-          <div class="subtext">Auto-redirecting back to app...</div>
         </div>
 
         <script>
@@ -673,13 +676,42 @@ function renderFailureHtml(provider, reference, frontendUrl, message) {
             }, 300);
           }
           notifyAndRedirect();
-          setTimeout(function() {
-            window.location.href = "${frontendUrl}/?payment_status=failed&ref=${encodeURIComponent(reference)}";
-          }, 3500);
         </script>
       </body>
     </html>
   `;
+}
+// The actual page a customer lands on right after paying. Renders the real
+// itemized receipt (same template used for the email — see receipt.ts)
+// directly on THIS page rather than the generic "Payment Successful!" card,
+// so "was I charged, and what for" is answered immediately without
+// depending on a redirect back into the app ever landing anywhere useful.
+// That matters because the previous version auto-redirected to
+// `${frontendUrl}/?payment_status=success...` after a few seconds — if
+// FRONTEND_URL isn't configured (it wasn't, anywhere in this deploy) and
+// the request's Origin/Referer headers don't reliably describe our own
+// frontend either (they don't, for a top-level redirect chain arriving
+// from an external gateway), that redirect could land the customer on
+// this API's own JSON root instead of ever seeing a receipt. Falls back to
+// the generic success card for wallet_funding (nothing itemized to show)
+// or if receipt generation fails for any reason — payment already
+// succeeded either way, so this never blocks that from being communicated.
+function renderPaymentSuccessPage(_a) {
+    return __awaiter(this, arguments, void 0, function* ({ checkoutType, id, provider, reference, frontendUrl, }) {
+        if (checkoutType === 'order' || checkoutType === 'booking' || checkoutType === 'parcel') {
+            try {
+                const receipt = yield (0, receipt_1.generateReceiptData)(checkoutType, id);
+                if (receipt) {
+                    const returnUrl = `${frontendUrl}/?payment_status=success&ref=${encodeURIComponent(reference)}`;
+                    return (0, receipt_1.renderReceiptHtml)(receipt, { returnUrl });
+                }
+            }
+            catch (err) {
+                console.error(`[payments] Failed to render receipt page for ${checkoutType} ${id}:`, err);
+            }
+        }
+        return renderSuccessHtml(provider, reference, frontendUrl);
+    });
 }
 // ─── POST /checkout ────────────────────────────────────────────────────────────
 // Create a checkout session/intent or sandbox mock for the chosen payment provider
@@ -1187,27 +1219,32 @@ router.get('/paystack/callback', (req, res, next) => __awaiter(void 0, void 0, v
             if (ord)
                 id = ord.id;
         }
+        let matchedType = null;
         if (id) {
             const order = yield prisma_1.default.order.findUnique({ where: { id } });
             if (order) {
                 const chargedAmount = chargedAmountOverride || (order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount);
                 yield processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'order', id, chargedAmount });
+                matchedType = 'order';
             }
             else {
                 const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
                 if (booking) {
                     const chargedAmount = chargedAmountOverride || (booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice);
                     yield processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'booking', id, chargedAmount });
+                    matchedType = 'booking';
                 }
                 else {
                     const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
                     if (parcel) {
                         yield processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
+                        matchedType = 'parcel';
                     }
                     else {
                         const funding = yield prisma_1.default.walletFunding.findUnique({ where: { id } });
                         if (funding) {
                             yield processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'wallet_funding', id, chargedAmount: chargedAmountOverride || funding.amount });
+                            matchedType = 'wallet_funding';
                         }
                     }
                 }
@@ -1216,7 +1253,10 @@ router.get('/paystack/callback', (req, res, next) => __awaiter(void 0, void 0, v
         else {
             return res.send(renderFailureHtml('Paystack', reference, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
         }
-        res.send(renderSuccessHtml('Paystack', reference, frontendUrl));
+        if (!matchedType) {
+            return res.send(renderFailureHtml('Paystack', reference, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
+        }
+        res.send(yield renderPaymentSuccessPage({ checkoutType: matchedType, id, provider: 'Paystack', reference, frontendUrl }));
     }
     catch (error) {
         // Was renderSuccessHtml here — showed "Payment Successful!" even when
@@ -1333,27 +1373,32 @@ router.get('/flutterwave/callback', (req, res, next) => __awaiter(void 0, void 0
             if (ord)
                 id = ord.id;
         }
+        let matchedType = null;
         if (id) {
             const order = yield prisma_1.default.order.findUnique({ where: { id } });
             if (order) {
                 const chargedAmount = chargedAmountOverride || (order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount);
                 yield processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'order', id, chargedAmount });
+                matchedType = 'order';
             }
             else {
                 const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
                 if (booking) {
                     const chargedAmount = chargedAmountOverride || (booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice);
                     yield processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'booking', id, chargedAmount });
+                    matchedType = 'booking';
                 }
                 else {
                     const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
                     if (parcel) {
                         yield processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
+                        matchedType = 'parcel';
                     }
                     else {
                         const funding = yield prisma_1.default.walletFunding.findUnique({ where: { id } });
                         if (funding) {
                             yield processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'wallet_funding', id, chargedAmount: chargedAmountOverride || funding.amount });
+                            matchedType = 'wallet_funding';
                         }
                     }
                 }
@@ -1362,7 +1407,10 @@ router.get('/flutterwave/callback', (req, res, next) => __awaiter(void 0, void 0
         else {
             return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
         }
-        res.send(renderSuccessHtml('Flutterwave', txRef, frontendUrl));
+        if (!matchedType) {
+            return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
+        }
+        res.send(yield renderPaymentSuccessPage({ checkoutType: matchedType, id, provider: 'Flutterwave', reference: txRef, frontendUrl }));
     }
     catch (error) {
         res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl));
@@ -1546,31 +1594,39 @@ router.get('/stripe/verify/:reference', (req, res, next) => __awaiter(void 0, vo
         if (!id) {
             return res.send(renderFailureHtml('Stripe', reference, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
         }
+        let matchedType = null;
         const order = yield prisma_1.default.order.findUnique({ where: { id } });
         if (order) {
             const chargedAmount = chargedAmountOverride || (order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount);
             yield processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'order', id, chargedAmount });
+            matchedType = 'order';
         }
         else {
             const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
             if (booking) {
                 const chargedAmount = chargedAmountOverride || (booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice);
                 yield processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'booking', id, chargedAmount });
+                matchedType = 'booking';
             }
             else {
                 const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
                 if (parcel) {
                     yield processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
+                    matchedType = 'parcel';
                 }
                 else {
                     const funding = yield prisma_1.default.walletFunding.findUnique({ where: { id } });
                     if (funding) {
                         yield processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'wallet_funding', id, chargedAmount: chargedAmountOverride || funding.amount });
+                        matchedType = 'wallet_funding';
                     }
                 }
             }
         }
-        res.send(renderSuccessHtml('Stripe', reference, frontendUrl));
+        if (!matchedType) {
+            return res.send(renderFailureHtml('Stripe', reference, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
+        }
+        res.send(yield renderPaymentSuccessPage({ checkoutType: matchedType, id, provider: 'Stripe', reference, frontendUrl }));
     }
     catch (error) {
         res.send(renderFailureHtml('Stripe', reference, frontendUrl));
@@ -1968,18 +2024,18 @@ router.get('/opay/verify/:reference', (req, res, next) => __awaiter(void 0, void
         if (order) {
             const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
             yield processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'order', id, chargedAmount });
-            return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Order Payment Successful!', 'Thank you for your purchase. OPay transaction reference has been verified.'));
+            return res.send(yield renderPaymentSuccessPage({ checkoutType: 'order', id, provider: 'OPay', reference, frontendUrl }));
         }
         const booking = yield prisma_1.default.booking.findUnique({ where: { id } });
         if (booking) {
             const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
             yield processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'booking', id, chargedAmount });
-            return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Booking Paid Successfully!', 'Your handyman appointment is now confirmed. The technician will head to your location.'));
+            return res.send(yield renderPaymentSuccessPage({ checkoutType: 'booking', id, provider: 'OPay', reference, frontendUrl }));
         }
         const parcel = yield prisma_1.default.parcelDelivery.findUnique({ where: { id } });
         if (parcel) {
             yield processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
-            return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Parcel Delivery Paid Successfully!', 'Your parcel dispatch is now confirmed and a rider is being assigned.'));
+            return res.send(yield renderPaymentSuccessPage({ checkoutType: 'parcel', id, provider: 'OPay', reference, frontendUrl }));
         }
         const funding = yield prisma_1.default.walletFunding.findUnique({ where: { id } });
         if (funding) {

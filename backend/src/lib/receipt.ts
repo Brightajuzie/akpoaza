@@ -262,9 +262,17 @@ export async function generateReceiptData(
 }
 
 /**
- * Render an executive, high-converting HTML receipt template
+ * Render an executive, high-converting HTML receipt template.
+ *
+ * `returnUrl`, when given, adds a "Return to App" button above the footer,
+ * and also fires the same window.ReactNativeWebView.postMessage bridge call
+ * the old generic success page used — used when this same template is
+ * rendered as the page a customer actually lands on right after paying (see
+ * payments.ts's renderPaymentSuccessPage), so the native app's PaymentWebView
+ * still detects success immediately on load rather than only if the
+ * customer happens to tap the button. Left undefined for the email/API use.
  */
-export function renderReceiptHtml(data: ReceiptData): string {
+export function renderReceiptHtml(data: ReceiptData, options?: { returnUrl?: string }): string {
   const currencySymbol = data.currency === 'USD' ? '$' : data.currency === 'EUR' ? '€' : data.currency === 'GBP' ? '£' : '₦';
   const statusColor = data.status === 'PAID' ? '#10B981' : data.status === 'ESCROW_HELD' ? '#3B82F6' : data.status === 'DUE_ON_DELIVERY' ? '#F59E0B' : '#6B7280';
   const statusBg = data.status === 'PAID' ? '#ECFDF5' : data.status === 'ESCROW_HELD' ? '#EFF6FF' : data.status === 'DUE_ON_DELIVERY' ? '#FFFBEB' : '#F3F4F6';
@@ -465,6 +473,17 @@ export function renderReceiptHtml(data: ReceiptData): string {
               </td>
             </tr>
 
+            ${options?.returnUrl ? `
+            <!-- Return to App -->
+            <tr>
+              <td style="padding: 0 32px 24px; text-align: center;">
+                <a href="${options.returnUrl}" style="display: inline-block; background-color: #059669; color: #FFFFFF; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-size: 14px; font-weight: 800;">
+                  ← Return to FixMart App
+                </a>
+              </td>
+            </tr>
+            ` : ''}
+
             <!-- Footer -->
             <tr>
               <td style="background-color: #F1F5F9; padding: 20px 32px; text-align: center; font-size: 12px; color: #94A3B8; border-top: 1px solid #E2E8F0;">
@@ -475,6 +494,19 @@ export function renderReceiptHtml(data: ReceiptData): string {
         </td>
       </tr>
     </table>
+    ${options?.returnUrl ? `
+    <script>
+      // Native app's PaymentWebView listens for this postMessage to know the
+      // payment succeeded — fires immediately on load, not just on the
+      // "Return to App" tap below, matching how the generic success page
+      // (renderSuccessHtml) already behaves.
+      try {
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ status: 'success', reference: "${data.reference}" }));
+        }
+      } catch (e) {}
+    </script>
+    ` : ''}
   </body>
   </html>
   `;

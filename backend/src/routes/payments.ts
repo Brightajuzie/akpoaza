@@ -569,10 +569,12 @@ function renderSuccessHtml(provider: string, reference: string, frontendUrl: str
           <p>${displayMessage}</p>
           <div class="ref-box">REF: ${reference}</div>
           <button class="btn" onclick="returnToApp()">← Return to FixMart App</button>
-          <div class="subtext">Auto-redirecting back to app...</div>
         </div>
 
         <script>
+          // Only reaches the native app's own WebView bridge — never
+          // triggers a page navigation by itself. On web there is no
+          // window.ReactNativeWebView, so this is a safe no-op there.
           function notifyAndRedirect() {
             try {
               if (window.ReactNativeWebView) {
@@ -580,6 +582,11 @@ function renderSuccessHtml(provider: string, reference: string, frontendUrl: str
               }
             } catch (e) {}
           }
+          // Navigating away is only ever user-initiated (this button) —
+          // this page used to auto-redirect here after 3.5s regardless of
+          // whether frontendUrl was actually configured correctly, which
+          // could carry the customer straight past this confirmation to
+          // wherever that guess landed instead.
           function returnToApp() {
             notifyAndRedirect();
             setTimeout(function() {
@@ -587,9 +594,6 @@ function renderSuccessHtml(provider: string, reference: string, frontendUrl: str
             }, 300);
           }
           notifyAndRedirect();
-          setTimeout(function() {
-            window.location.href = "${frontendUrl}/?payment_status=success&ref=${encodeURIComponent(reference)}";
-          }, 3500);
         </script>
       </body>
     </html>
@@ -703,7 +707,6 @@ function renderFailureHtml(provider: string, reference: string, frontendUrl: str
           <p>${displayMessage}</p>
           <div class="ref-box">REF: ${reference}</div>
           <button class="btn" onclick="returnToApp()">← Return to FixMart App</button>
-          <div class="subtext">Auto-redirecting back to app...</div>
         </div>
 
         <script>
@@ -721,13 +724,53 @@ function renderFailureHtml(provider: string, reference: string, frontendUrl: str
             }, 300);
           }
           notifyAndRedirect();
-          setTimeout(function() {
-            window.location.href = "${frontendUrl}/?payment_status=failed&ref=${encodeURIComponent(reference)}";
-          }, 3500);
         </script>
       </body>
     </html>
   `;
+}
+
+// The actual page a customer lands on right after paying. Renders the real
+// itemized receipt (same template used for the email — see receipt.ts)
+// directly on THIS page rather than the generic "Payment Successful!" card,
+// so "was I charged, and what for" is answered immediately without
+// depending on a redirect back into the app ever landing anywhere useful.
+// That matters because the previous version auto-redirected to
+// `${frontendUrl}/?payment_status=success...` after a few seconds — if
+// FRONTEND_URL isn't configured (it wasn't, anywhere in this deploy) and
+// the request's Origin/Referer headers don't reliably describe our own
+// frontend either (they don't, for a top-level redirect chain arriving
+// from an external gateway), that redirect could land the customer on
+// this API's own JSON root instead of ever seeing a receipt. Falls back to
+// the generic success card for wallet_funding (nothing itemized to show)
+// or if receipt generation fails for any reason — payment already
+// succeeded either way, so this never blocks that from being communicated.
+async function renderPaymentSuccessPage({
+  checkoutType,
+  id,
+  provider,
+  reference,
+  frontendUrl,
+}: {
+  checkoutType: string;
+  id: string;
+  provider: string;
+  reference: string;
+  frontendUrl: string;
+}): Promise<string> {
+  if (checkoutType === 'order' || checkoutType === 'booking' || checkoutType === 'parcel') {
+    try {
+      const receipt = await generateReceiptData(checkoutType, id);
+      if (receipt) {
+        const returnUrl = `${frontendUrl}/?payment_status=success&ref=${encodeURIComponent(reference)}`;
+        return renderReceiptHtml(receipt, { returnUrl });
+      }
+    } catch (err) {
+      console.error(`[payments] Failed to render receipt page for ${checkoutType} ${id}:`, err);
+    }
+  }
+
+  return renderSuccessHtml(provider, reference, frontendUrl);
 }
 
 // ─── POST /checkout ────────────────────────────────────────────────────────────
@@ -1291,24 +1334,30 @@ router.get('/paystack/callback', async (req: Request, res: Response, next: NextF
       if (ord) id = ord.id;
     }
 
+    let matchedType: string | null = null;
+
     if (id) {
       const order = await prisma.order.findUnique({ where: { id } });
       if (order) {
         const chargedAmount = chargedAmountOverride || (order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount);
         await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'order', id, chargedAmount });
+        matchedType = 'order';
       } else {
         const booking = await prisma.booking.findUnique({ where: { id } });
         if (booking) {
           const chargedAmount = chargedAmountOverride || (booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice);
           await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'booking', id, chargedAmount });
+          matchedType = 'booking';
         } else {
           const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
           if (parcel) {
             await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
+            matchedType = 'parcel';
           } else {
             const funding = await prisma.walletFunding.findUnique({ where: { id } });
             if (funding) {
               await processPaymentVerification({ provider: 'PAYSTACK', reference, checkoutType: 'wallet_funding', id, chargedAmount: chargedAmountOverride || funding.amount });
+              matchedType = 'wallet_funding';
             }
           }
         }
@@ -1317,7 +1366,11 @@ router.get('/paystack/callback', async (req: Request, res: Response, next: NextF
       return res.send(renderFailureHtml('Paystack', reference, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
     }
 
-    res.send(renderSuccessHtml('Paystack', reference, frontendUrl));
+    if (!matchedType) {
+      return res.send(renderFailureHtml('Paystack', reference, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
+    }
+
+    res.send(await renderPaymentSuccessPage({ checkoutType: matchedType, id, provider: 'Paystack', reference, frontendUrl }));
   } catch (error) {
     // Was renderSuccessHtml here — showed "Payment Successful!" even when
     // this handler threw before ever confirming or recording the payment.
@@ -1445,24 +1498,30 @@ router.get('/flutterwave/callback', async (req: Request, res: Response, next: Ne
       if (ord) id = ord.id;
     }
 
+    let matchedType: string | null = null;
+
     if (id) {
       const order = await prisma.order.findUnique({ where: { id } });
       if (order) {
         const chargedAmount = chargedAmountOverride || (order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount);
         await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'order', id, chargedAmount });
+        matchedType = 'order';
       } else {
         const booking = await prisma.booking.findUnique({ where: { id } });
         if (booking) {
           const chargedAmount = chargedAmountOverride || (booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice);
           await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'booking', id, chargedAmount });
+          matchedType = 'booking';
         } else {
           const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
           if (parcel) {
             await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
+            matchedType = 'parcel';
           } else {
             const funding = await prisma.walletFunding.findUnique({ where: { id } });
             if (funding) {
               await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'wallet_funding', id, chargedAmount: chargedAmountOverride || funding.amount });
+              matchedType = 'wallet_funding';
             }
           }
         }
@@ -1471,7 +1530,11 @@ router.get('/flutterwave/callback', async (req: Request, res: Response, next: Ne
       return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
     }
 
-    res.send(renderSuccessHtml('Flutterwave', txRef, frontendUrl));
+    if (!matchedType) {
+      return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
+    }
+
+    res.send(await renderPaymentSuccessPage({ checkoutType: matchedType, id, provider: 'Flutterwave', reference: txRef, frontendUrl }));
   } catch (error) {
     res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl));
   }
@@ -1660,29 +1723,39 @@ router.get('/stripe/verify/:reference', async (req: Request, res: Response, next
       return res.send(renderFailureHtml('Stripe', reference, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
     }
 
+    let matchedType: string | null = null;
+
     const order = await prisma.order.findUnique({ where: { id } });
     if (order) {
       const chargedAmount = chargedAmountOverride || (order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount);
       await processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'order', id, chargedAmount });
+      matchedType = 'order';
     } else {
       const booking = await prisma.booking.findUnique({ where: { id } });
       if (booking) {
         const chargedAmount = chargedAmountOverride || (booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice);
         await processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'booking', id, chargedAmount });
+        matchedType = 'booking';
       } else {
         const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
         if (parcel) {
           await processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
+          matchedType = 'parcel';
         } else {
           const funding = await prisma.walletFunding.findUnique({ where: { id } });
           if (funding) {
             await processPaymentVerification({ provider: 'STRIPE', reference, checkoutType: 'wallet_funding', id, chargedAmount: chargedAmountOverride || funding.amount });
+            matchedType = 'wallet_funding';
           }
         }
       }
     }
 
-    res.send(renderSuccessHtml('Stripe', reference, frontendUrl));
+    if (!matchedType) {
+      return res.send(renderFailureHtml('Stripe', reference, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
+    }
+
+    res.send(await renderPaymentSuccessPage({ checkoutType: matchedType, id, provider: 'Stripe', reference, frontendUrl }));
   } catch (error) {
     res.send(renderFailureHtml('Stripe', reference, frontendUrl));
   }
@@ -2090,20 +2163,20 @@ router.get('/opay/verify/:reference', async (req: Request, res: Response, next: 
     if (order) {
       const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
       await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'order', id, chargedAmount });
-      return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Order Payment Successful!', 'Thank you for your purchase. OPay transaction reference has been verified.'));
+      return res.send(await renderPaymentSuccessPage({ checkoutType: 'order', id, provider: 'OPay', reference, frontendUrl }));
     }
 
     const booking = await prisma.booking.findUnique({ where: { id } });
     if (booking) {
       const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
       await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'booking', id, chargedAmount });
-      return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Booking Paid Successfully!', 'Your handyman appointment is now confirmed. The technician will head to your location.'));
+      return res.send(await renderPaymentSuccessPage({ checkoutType: 'booking', id, provider: 'OPay', reference, frontendUrl }));
     }
 
     const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
     if (parcel) {
       await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
-      return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Parcel Delivery Paid Successfully!', 'Your parcel dispatch is now confirmed and a rider is being assigned.'));
+      return res.send(await renderPaymentSuccessPage({ checkoutType: 'parcel', id, provider: 'OPay', reference, frontendUrl }));
     }
 
     const funding = await prisma.walletFunding.findUnique({ where: { id } });
