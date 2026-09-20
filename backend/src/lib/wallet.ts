@@ -198,6 +198,17 @@ export async function createEscrowForPaidItem(checkoutType: 'booking' | 'order' 
         throw new Error('Parcel delivery not found');
       }
 
+      // Unlike the booking/order branches above, this had no guard against
+      // being called again for a delivery that's already escrowed — every
+      // repeat call (a retried webhook, a callback plus a client verify poll
+      // for the same transaction) created ANOTHER full-amount escrow and
+      // credited the rider's pendingBalance again for the same payment.
+      const existingEscrows = await tx.escrow.findMany({ where: { parcelDeliveryId: id } });
+      const totalEscrowed = existingEscrows.reduce((sum, e) => sum + e.amount, 0);
+      if (totalEscrowed >= parcel.totalAmount) {
+        return existingEscrows[existingEscrows.length - 1];
+      }
+
       let transactionAmount = paidAmount || parcel.totalAmount;
       const commissionAmount = transactionAmount * commissionRate;
       const providerAmount = transactionAmount - commissionAmount;

@@ -3123,7 +3123,15 @@ export default function AdminScreen() {
               </View>
 
               <View style={styles.formGroup}>
-                <Text style={styles.label}>Select Primary System Gateway</Text>
+                {/* This picks which gateway's credential fields are shown
+                    below for editing — it does NOT determine which gateways
+                    customers can pay with (that's the toggles above) or
+                    prioritize one over another at checkout. Renamed from
+                    "Select Primary System Gateway", which implied it did. */}
+                <Text style={styles.label}>Edit Credentials For</Text>
+                <Text style={styles.subCardNote}>
+                  Choose which gateway's API keys to view or edit below. This doesn't affect which gateways are enabled — use the toggles above for that.
+                </Text>
                 <View style={styles.pickerRow}>
                   {['NONE', 'STRIPE', 'PAYSTACK', 'FLUTTERWAVE', 'OPAY'].map(gw => (
                     <TouchableOpacity
@@ -3142,7 +3150,7 @@ export default function AdminScreen() {
                   <Text style={styles.subCardTitle}>Stripe Gateway Keys</Text>
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>Stripe Publishable Key</Text>
-                    <TextInput style={styles.input} value={stripePubKey} onChangeText={setStripePubKey} placeholder="pk_test_..." secureTextEntry />
+                    <TextInput style={styles.input} value={stripePubKey} onChangeText={setStripePubKey} placeholder="pk_test_..." />
                   </View>
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>Stripe Secret Key</Text>
@@ -3160,7 +3168,7 @@ export default function AdminScreen() {
                   <Text style={styles.subCardTitle}>Paystack Gateway Keys</Text>
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>Paystack Public Key</Text>
-                    <TextInput style={styles.input} value={paystackPubKey} onChangeText={setPaystackPubKey} placeholder="pk_test_..." secureTextEntry />
+                    <TextInput style={styles.input} value={paystackPubKey} onChangeText={setPaystackPubKey} placeholder="pk_test_..." />
                   </View>
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>Paystack Secret Key</Text>
@@ -3174,7 +3182,7 @@ export default function AdminScreen() {
                   <Text style={styles.subCardTitle}>Flutterwave Gateway Keys</Text>
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>Flutterwave Public Key</Text>
-                    <TextInput style={styles.input} value={flutterwavePubKey} onChangeText={setFlutterwavePubKey} placeholder="FLWPUBK_TEST-..." secureTextEntry />
+                    <TextInput style={styles.input} value={flutterwavePubKey} onChangeText={setFlutterwavePubKey} placeholder="FLWPUBK_TEST-..." />
                   </View>
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>Flutterwave Secret Key</Text>
@@ -3191,11 +3199,11 @@ export default function AdminScreen() {
                   </Text>
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>OPay Merchant ID</Text>
-                    <TextInput style={styles.input} value={opayMerchantId} onChangeText={setOpayMerchantId} placeholder="merchant_id_from_dashboard" secureTextEntry />
+                    <TextInput style={styles.input} value={opayMerchantId} onChangeText={setOpayMerchantId} placeholder="merchant_id_from_dashboard" />
                   </View>
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>OPay Public Key</Text>
-                    <TextInput style={styles.input} value={opayPublicKey} onChangeText={setOpayPublicKey} placeholder="pk_live_..." secureTextEntry />
+                    <TextInput style={styles.input} value={opayPublicKey} onChangeText={setOpayPublicKey} placeholder="pk_live_..." />
                   </View>
                   <View style={styles.formGroup}>
                     <Text style={styles.label}>OPay Secret Key</Text>

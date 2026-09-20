@@ -62,36 +62,35 @@ function extractReference(url: string, provider?: string | null): string {
 
 /**
  * Detects whether a navigation URL signals a successful payment.
- * Matches `/payment/callback`, `/payment/success`, or gateway-specific redirects.
+ *
+ * This used to match any URL that merely *looked like* a gateway callback
+ * (e.g. any navigation to `/api/payments/paystack/callback`, regardless of
+ * outcome) — but the backend serves that exact same path whether or not it
+ * actually verified the payment (see renderSuccessHtml/renderFailureHtml in
+ * payments.ts), and `onNavigationStateChange` fires the instant that URL is
+ * requested, before the page's own postMessage/redirect JS has run. So the
+ * app could show "Payment Successful!" purely because the WebView navigated
+ * to a callback-shaped URL, even for a payment the backend had just refused
+ * to verify. Every one of those pages' own JS goes on to redirect the
+ * WebView to `${frontendUrl}/?payment_status=success|failed|cancelled&ref=…`
+ * once the real, verified outcome is known — checking that param is what's
+ * actually authoritative.
  */
 function isSuccessUrl(url: string): boolean {
-  return (
-    url.includes('payment/callback') ||
-    url.includes('payment/success') ||
-    url.includes('/checkout/success') ||
-    url.includes('/api/payments/paystack/callback') ||
-    url.includes('/api/payments/flutterwave/callback') ||
-    url.includes('/api/payments/stripe/verify') ||
-    url.includes('/api/payments/opay/verify') ||
-    // Paystack status=success
-    (url.includes('paystack') && (url.includes('status=success') || url.includes('callback'))) ||
-    // Flutterwave status=successful
-    (url.includes('flutterwave') && (url.includes('status=successful') || url.includes('status=success') || url.includes('callback'))) ||
-    // OPay success indicators
-    (url.includes('opay') && (url.includes('status=SUCCESS') || url.includes('/opay/verify') || url.includes('status=success'))) ||
-    // Stripe success indicators
-    (url.includes('stripe') && (url.includes('status=success') || url.includes('verify') || url.includes('payment_intent_client_secret')))
-  );
+  try {
+    return new URL(url).searchParams.get('payment_status') === 'success';
+  } catch {
+    return url.includes('payment_status=success');
+  }
 }
 
 function isCancelUrl(url: string): boolean {
-  return (
-    url.includes('payment/cancel') ||
-    url.includes('payment/failed') ||
-    url.includes('/checkout/cancel') ||
-    (url.includes('paystack') && url.includes('status=cancel')) ||
-    (url.includes('flutterwave') && url.includes('status=cancelled'))
-  );
+  try {
+    const status = new URL(url).searchParams.get('payment_status');
+    return status === 'cancelled' || status === 'failed';
+  } catch {
+    return url.includes('payment_status=cancelled') || url.includes('payment_status=failed');
+  }
 }
 
 export default function PaymentWebView({
@@ -159,6 +158,8 @@ export default function PaymentWebView({
             const data = JSON.parse(event.nativeEvent.data);
             if (data && data.status === 'success') {
               onPaymentSuccess(data.reference || extractReference(url, provider));
+            } else if (data && data.status === 'failed') {
+              onPaymentCancel();
             }
           } catch (e) {
             // Ignore non-JSON messages
