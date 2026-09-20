@@ -22,7 +22,7 @@ const BIOMETRIC_ENABLED_KEY = 'biometric_enabled';
 export default function LoginScreen({ route, navigation }: any) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width >= 768;
-  const [email, setEmail]       = useState('');
+  const [email, setEmail]       = useState(route?.params?.initialEmail || route?.params?.email || '');
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -35,6 +35,15 @@ export default function LoginScreen({ route, navigation }: any) {
   const redirectTo: string | undefined     = route?.params?.redirectTo;
   const redirectParams: any                = route?.params?.redirectParams;
   const TAB_SCREENS = ['HomeTab', 'CartTab', 'NotificationsTab', 'ProfileTab'];
+
+  // Update email if navigated from another screen (e.g., Signup with duplicate account)
+  useEffect(() => {
+    if (route?.params?.initialEmail) {
+      setEmail(route.params.initialEmail);
+    } else if (route?.params?.email) {
+      setEmail(route.params.email);
+    }
+  }, [route?.params?.initialEmail, route?.params?.email]);
 
   // ── Google Auth ──────────────────────────────────────────────────────────
   // Only enable Google Sign-In when at least one client ID is configured.
@@ -153,13 +162,14 @@ export default function LoginScreen({ route, navigation }: any) {
 
   // ── Password Login ────────────────────────────────────────────────────────
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password.trim()) {
       Alert.alert('Missing Fields', 'Please fill in all inputs.');
       return;
     }
     setLoading(true);
     try {
-      const res = await apiClient.post('/auth/login', { email, password });
+      const res = await apiClient.post('/auth/login', { email: cleanEmail, password });
       await login(res.data.token, res.data.user);
 
       // Offer biometric setup after first manual login

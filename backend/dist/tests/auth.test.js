@@ -47,12 +47,36 @@ describe('Handyman E-Commerce Backend Integration Tests', () => {
                 email: testEmail,
                 password: 'password123',
                 name: 'Test Customer',
+                phone: '08012345678',
                 role: 'CUSTOMER',
             });
             expect(res.status).toBe(201);
             expect(res.body).toHaveProperty('token');
-            expect(res.body.user.email).toBe(testEmail);
+            expect(res.body.user.email).toBe(testEmail.toLowerCase());
+            expect(res.body.user.phone).toBe('08012345678');
             expect(res.body.user.role).toBe('CUSTOMER');
+        }));
+        it('should fail registration if email format is invalid', () => __awaiter(void 0, void 0, void 0, function* () {
+            const res = yield (0, supertest_1.default)(index_1.default)
+                .post('/api/auth/register')
+                .send({
+                email: 'invalid-email-format',
+                password: 'password123',
+                name: 'Invalid Email User',
+            });
+            expect(res.status).toBe(400);
+            expect(res.body.error).toContain('valid email');
+        }));
+        it('should fail registration if password is too short', () => __awaiter(void 0, void 0, void 0, function* () {
+            const res = yield (0, supertest_1.default)(index_1.default)
+                .post('/api/auth/register')
+                .send({
+                email: `short_${Date.now()}@domain.com`,
+                password: '123',
+                name: 'Short Pass User',
+            });
+            expect(res.status).toBe(400);
+            expect(res.body.error).toContain('at least 6 characters');
         }));
         it('should register a new handyman user successfully with specialty, address, and coordinates', () => __awaiter(void 0, void 0, void 0, function* () {
             const testHandymanEmail = `test_handyman_${Date.now()}@domain.com`;
@@ -129,6 +153,17 @@ describe('Handyman E-Commerce Backend Integration Tests', () => {
             expect(res.status).toBe(200);
             expect(res.body).toHaveProperty('token');
             token = res.body.token;
+        }));
+        it('should login the user with case-insensitive email (uppercase)', () => __awaiter(void 0, void 0, void 0, function* () {
+            const res = yield (0, supertest_1.default)(index_1.default)
+                .post('/api/auth/login')
+                .send({
+                email: testEmail.toUpperCase(),
+                password: 'password123',
+            });
+            expect(res.status).toBe(200);
+            expect(res.body).toHaveProperty('token');
+            expect(res.body.user.email).toBe(testEmail.toLowerCase());
         }));
         it('should fail login with invalid password', () => __awaiter(void 0, void 0, void 0, function* () {
             const res = yield (0, supertest_1.default)(index_1.default)

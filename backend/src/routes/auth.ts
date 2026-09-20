@@ -29,8 +29,22 @@ router.post('/register', async (req, res) => {
     currency,
   } = req.body;
 
-  if (!email || !password || !name) {
-    return res.status(400).json({ error: 'Missing required fields' });
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanName = (name || '').trim();
+  const cleanPhone = phone ? String(phone).trim() : null;
+  const cleanOpayPhone = opayPhone ? String(opayPhone).trim() : (cleanPhone || null);
+
+  if (!cleanEmail || !password || !cleanName) {
+    return res.status(400).json({ error: 'Name, email, and password are required' });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(cleanEmail)) {
+    return res.status(400).json({ error: 'Please provide a valid email address' });
+  }
+
+  if (typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters long' });
   }
 
   const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER'];
@@ -39,7 +53,7 @@ router.post('/register', async (req, res) => {
   }
 
   try {
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const existingUser = await prisma.user.findUnique({ where: { email: cleanEmail } });
     if (existingUser) {
       if (!existingUser.passwordHash) {
         // Guest user converting to a full registered account post-checkout!
@@ -52,12 +66,13 @@ router.post('/register', async (req, res) => {
         }
 
         const updatedUser = await prisma.user.update({
-          where: { email },
+          where: { email: cleanEmail },
           data: {
             passwordHash,
-            name: name || existingUser.name,
-            phone: phone || existingUser.phone,
-            address: address || existingUser.address,
+            name: cleanName || existingUser.name,
+            phone: cleanPhone || existingUser.phone,
+            opayPhone: cleanOpayPhone || existingUser.opayPhone || cleanPhone,
+            address: address ? String(address).trim() : existingUser.address,
             bvnHash: bvnHash || existingUser.bvnHash,
           },
         });
@@ -78,7 +93,7 @@ router.post('/register', async (req, res) => {
           },
         });
       }
-      return res.status(400).json({ error: 'User already exists' });
+      return res.status(400).json({ error: 'User already exists. Please log in instead.' });
     }
 
     const salt = await bcrypt.genSalt(10);
@@ -95,11 +110,11 @@ router.post('/register', async (req, res) => {
     // Rule 2: Vendors must complete registration (address, phone/opay, BVN/NIN/KYC ref) before being verified.
     // Rule 3: Services men (HANDYMAN) and Riders can ONLY be verified by Admin after complete registration (status PENDING_REVIEW).
     let verificationStatus: 'UNVERIFIED' | 'PENDING_REVIEW' | 'VERIFIED' = 'UNVERIFIED';
-    const hasContact = Boolean(phone || opayPhone);
-    const hasAddress = Boolean(address);
+    const hasContact = Boolean(cleanPhone || cleanOpayPhone);
+    const hasAddress = Boolean(address && String(address).trim());
     const hasIdentity = Boolean(identityNumber || kycReferenceId);
 
-    if (role === 'CUSTOMER') {
+    if (role === 'CUSTOMER' || !role) {
       verificationStatus = 'VERIFIED';
     } else if (role === 'VENDOR') {
       // Vendors must complete registration before being verified
@@ -122,15 +137,15 @@ router.post('/register', async (req, res) => {
 
     const newUser = await prisma.user.create({
       data: {
-        email,
+        email: cleanEmail,
         passwordHash,
-        name,
+        name: cleanName,
         role: (role || 'CUSTOMER') as any,
         provider: 'LOCAL',
-        phone: phone || null,
-        opayPhone: opayPhone || phone || null,
+        phone: cleanPhone,
+        opayPhone: cleanOpayPhone,
         specialty: role === 'HANDYMAN' ? specialty : null,
-        address: (role === 'HANDYMAN' || role === 'VENDOR' || role === 'RIDER') ? address : null,
+        address: address ? String(address).trim() : null,
         latitude: (role === 'HANDYMAN' || role === 'VENDOR' || role === 'RIDER') && latitude !== undefined && latitude !== null ? parseFloat(latitude as any) : null,
         longitude: (role === 'HANDYMAN' || role === 'VENDOR' || role === 'RIDER') && longitude !== undefined && longitude !== null ? parseFloat(longitude as any) : null,
         vehicleType: role === 'RIDER' ? req.body.vehicleType : null,
@@ -199,12 +214,14 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
-  if (!email || !password) {
+  const cleanEmail = (email || '').trim().toLowerCase();
+
+  if (!cleanEmail || !password) {
     return res.status(400).json({ error: 'Missing email or password' });
   }
 
   try {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
     if (!user || !user.passwordHash) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -220,7 +237,8 @@ router.post('/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus !== 'VERIFIED';
+    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus === 'UNVERIFIED';
+    const isPendingReview = user.verificationStatus === 'PENDING_REVIEW';
     res.json({
       token,
       user: {
@@ -228,8 +246,10 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        phone: user.phone,
         verificationStatus: user.verificationStatus,
-        requiresKYC
+        requiresKYC,
+        isPendingReview,
       }
     });
   } catch (error: any) {
@@ -296,6 +316,7 @@ router.post('/google', async (req, res) => {
       return res.status(400).json({ error: 'Missing idToken or email for Google auth' });
     }
 
+    email = email.trim().toLowerCase();
     let user = await prisma.user.findUnique({ where: { email } });
 
     if (!user) {
@@ -323,7 +344,8 @@ router.post('/google', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus !== 'VERIFIED';
+    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus === 'UNVERIFIED';
+    const isPendingReview = user.verificationStatus === 'PENDING_REVIEW';
     res.json({
       token,
       user: {
@@ -331,8 +353,10 @@ router.post('/google', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        phone: user.phone,
         verificationStatus: user.verificationStatus,
-        requiresKYC
+        requiresKYC,
+        isPendingReview,
       }
     });
   } catch (error) {

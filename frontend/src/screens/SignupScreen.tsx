@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect, useRef } from 'react';
+import React, { useState, useContext } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
-  Animated,
   useWindowDimensions,
   Modal,
   FlatList,
@@ -20,71 +19,107 @@ import apiClient, { getImageUri } from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
-import { SUPPORTED_COUNTRIES } from '../utils/currency';
 import AddressInput from '../components/AddressInput';
-
 
 export default function SignupScreen({ route, navigation }: any) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width >= 768;
-  const { login, refreshUser } = useContext(AuthContext);
+  const { login } = useContext(AuthContext);
   const { theme } = useContext(SettingsContext);
 
   const redirectTo: string | undefined = route?.params?.redirectTo;
   const redirectParams: any = route?.params?.redirectParams;
+  const TAB_SCREENS = ['HomeTab', 'CartTab', 'NotificationsTab', 'ProfileTab'];
 
+  // Current Step: 1 = Essentials, 2 = Business / Service Details (Partners only)
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
 
   // Step 1: Account setup
-  const [role, setRole] = useState(route?.params?.role || route?.params?.initialRole || 'CUSTOMER'); // CUSTOMER, HANDYMAN, VENDOR, RIDER
+  const [role, setRole] = useState<'CUSTOMER' | 'HANDYMAN' | 'VENDOR' | 'RIDER'>(
+    route?.params?.role || route?.params?.initialRole || 'CUSTOMER'
+  );
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isOpaySignup, setIsOpaySignup] = useState(false);
-  const [opayPhone, setOpayPhone] = useState('');
-
-  // Step 2: Professional Details (Handyman/Vendor/Rider)
-  const [specialty, setSpecialty] = useState('Plumbing');
-  const [address, setAddress] = useState('');
-  const [latitude, setLatitude] = useState<number | null>(null);
-  const [longitude, setLongitude] = useState<number | null>(null);
-  const [vehicleType, setVehicleType] = useState('MOTORCYCLE'); // BICYCLE, MOTORCYCLE, CAR
-  const [licensePlate, setLicensePlate] = useState('');
-  
-  // Step 3: Identity Selection (BVN or NIN)
-  const [identityType, setIdentityType] = useState<'BVN' | 'NIN'>('BVN');
-  const [identityNumber, setIdentityNumber] = useState('');
-  const [consent, setConsent] = useState(false);
-  const [identityVerified, setIdentityVerified] = useState(false);
-  const [identityName, setIdentityName] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Country & Currency
   const { activeCountry, setCountry, countries } = useCurrency();
   const [selectedCountry, setSelectedCountry] = useState(activeCountry);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
 
-  // Step 4: Biometric Liveness Simulation
-  const [livenessStage, setLivenessStage] = useState<'idle' | 'scanning' | 'blink' | 'smile' | 'processing' | 'done'>('idle');
-  const [livenessInstruction, setLivenessInstruction] = useState('Align your face inside the circle.');
-  const [livenessRef] = useState(`REF_LIVENESS_${Math.floor(Math.random() * 899999 + 100000)}`);
-  const scanLineAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  // Step 2: Professional Details (Handyman/Vendor/Rider)
+  const [specialty, setSpecialty] = useState('Plumbing');
+  const [address, setAddress] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
+  const [vehicleType, setVehicleType] = useState('MOTORCYCLE');
+  const [licensePlate, setLicensePlate] = useState('');
 
-  // Step 5: Photos & Documents for Handyman / Rider / Vendor
+  // Identity document (BVN or NIN)
+  const [identityType, setIdentityType] = useState<'BVN' | 'NIN'>('BVN');
+  const [identityNumber, setIdentityNumber] = useState('');
+
+  // Photos for Handyman / Rider / Vendor
   const [passportPhoto, setPassportPhoto] = useState<string | null>(null);
   const [actionPhoto, setActionPhoto] = useState<string | null>(null);
   const [uploadingPassport, setUploadingPassport] = useState(false);
   const [uploadingAction, setUploadingAction] = useState(false);
-  const [uploadedDocName, setUploadedDocName] = useState<string | null>(null);
 
-  const specialties = ['Plumbing', 'Electrical', 'General'];
-  const TAB_SCREENS = ['HomeTab', 'CartTab', 'NotificationsTab', 'ProfileTab'];
+  const specialties = [
+    'Plumbing',
+    'Electrical',
+    'Carpentry',
+    'Painting',
+    'Appliance Repair',
+    'AC / HVAC',
+    'Cleaning',
+    'Masonry & Tiling',
+    'General Repairs',
+  ];
 
-  // OPay emerald green color branding
-  const OPAY_GREEN = '#03B576';
+  const vehicleOptions = [
+    { type: 'MOTORCYCLE', label: 'Motorcycle', icon: '🏍️' },
+    { type: 'BICYCLE', label: 'Bicycle', icon: '🚲' },
+    { type: 'CAR', label: 'Car', icon: '🚗' },
+    { type: 'VAN', label: 'Van / Truck', icon: '🚚' },
+  ];
 
-  // Photo picker & upload helpers
+  const BRAND_GREEN = '#03B576';
+
+  // Navigate user after successful registration and login
+  const handlePostAuthNavigation = () => {
+    if (redirectTo) {
+      if (TAB_SCREENS.includes(redirectTo)) {
+        navigation.navigate('Main', { screen: redirectTo, params: redirectParams });
+      } else {
+        navigation.navigate(redirectTo, redirectParams || {});
+      }
+    } else {
+      navigation.replace('Main');
+    }
+  };
+
+  // Helper for duplicate user prompt
+  const handleExistingAccountPrompt = (emailAddress: string) => {
+    Alert.alert(
+      'Account Already Exists',
+      `An account with "${emailAddress}" is already registered. Would you like to log in instead?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Log In',
+          onPress: () => navigation.navigate('Login', { initialEmail: emailAddress, redirectTo, redirectParams }),
+        },
+      ]
+    );
+  };
+
+  // Upload helper for passport and action photos
   const handleUploadPhoto = async (target: 'passport' | 'action', source: 'camera' | 'gallery' | 'file') => {
     try {
       if (Platform.OS === 'web' && source === 'file') {
@@ -108,7 +143,7 @@ export default function SignupScreen({ route, navigation }: any) {
         if (Platform.OS !== 'web') {
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
           if (status !== 'granted') {
-            Alert.alert('Permission Required', 'Please grant camera access to take a photo.');
+            Alert.alert('Permission Required', 'Please grant camera access to capture a photo.');
             return;
           }
         }
@@ -140,7 +175,7 @@ export default function SignupScreen({ route, navigation }: any) {
       }
     } catch (err: any) {
       console.error('Photo select error:', err);
-      Alert.alert('Error', 'Could not select photo.');
+      Alert.alert('Error', 'Could not access photo.');
     }
   };
 
@@ -177,7 +212,10 @@ export default function SignupScreen({ route, navigation }: any) {
         } else {
           setActionPhoto(res.data.imageUrl);
         }
-        Alert.alert('✅ Photo Uploaded', `${target === 'passport' ? 'Passport photograph' : 'Action picture'} uploaded successfully!`);
+        Alert.alert(
+          'Photo Uploaded',
+          `${target === 'passport' ? 'Passport photograph' : 'Action picture'} uploaded successfully!`
+        );
       }
     } catch (uploadErr: any) {
       console.error('Upload failed:', uploadErr);
@@ -205,7 +243,10 @@ export default function SignupScreen({ route, navigation }: any) {
         } else {
           setActionPhoto(res.data.imageUrl);
         }
-        Alert.alert('✅ Photo Uploaded', `${target === 'passport' ? 'Passport photograph' : 'Action picture'} uploaded successfully!`);
+        Alert.alert(
+          'Photo Uploaded',
+          `${target === 'passport' ? 'Passport photograph' : 'Action picture'} uploaded successfully!`
+        );
       }
     } catch (uploadErr: any) {
       console.error('Upload failed:', uploadErr);
@@ -217,476 +258,375 @@ export default function SignupScreen({ route, navigation }: any) {
   };
 
   const showPhotoOptions = (target: 'passport' | 'action') => {
-    const title = target === 'passport' ? 'Upload Passport Photograph' : 'Upload Action Picture';
+    const title = target === 'passport' ? 'Passport Photograph' : 'Action Picture';
     if (Platform.OS === 'web') {
       handleUploadPhoto(target, 'file');
       return;
     }
     Alert.alert(
       title,
-      target === 'passport' ? 'Please provide a clear front-facing portrait photo.' : 'Please provide a photo of you performing work or with your vehicle.',
+      target === 'passport'
+        ? 'Please provide a clear front-facing portrait photo.'
+        : 'Please provide a photo of you performing work or with your vehicle.',
       [
-        { text: '📸 Take Photo (Camera)', onPress: () => handleUploadPhoto(target, 'camera') },
+        { text: '📸 Take Photo', onPress: () => handleUploadPhoto(target, 'camera') },
         { text: '🖼️ Choose from Gallery', onPress: () => handleUploadPhoto(target, 'gallery') },
-        { text: 'Cancel', style: 'cancel' }
+        { text: 'Cancel', style: 'cancel' },
       ]
     );
   };
 
-  // Liveness animations
-  useEffect(() => {
-    let anim: Animated.CompositeAnimation | null = null;
-    if (livenessStage === 'scanning' || livenessStage === 'blink' || livenessStage === 'smile') {
-      anim = Animated.loop(
-        Animated.sequence([
-          Animated.timing(scanLineAnim, {
-            toValue: 180,
-            duration: 1800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(scanLineAnim, {
-            toValue: 0,
-            duration: 1800,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      anim.start();
-    } else {
-      scanLineAnim.setValue(0);
+  // Validate Step 1 Inputs
+  const validateStep1 = (): boolean => {
+    if (!name.trim()) {
+      Alert.alert('Name Required', 'Please enter your full name.');
+      return false;
     }
-    return () => {
-      if (anim) anim.stop();
-    };
-  }, [livenessStage]);
-
-  useEffect(() => {
-    let anim: Animated.CompositeAnimation | null = null;
-    if (livenessStage === 'processing') {
-      anim = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.12,
-            duration: 700,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 700,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      anim.start();
-    } else {
-      pulseAnim.setValue(1);
+    if (!phone.trim() || phone.trim().length < 8) {
+      Alert.alert('Phone Required', 'Please enter a valid mobile phone number for order updates and communication.');
+      return false;
     }
-    return () => {
-      if (anim) anim.stop();
-    };
-  }, [livenessStage]);
-
-  // Handle Standard customer signup or First-stage register for Handyman/Vendor
-  const handleRegisterBasicAccount = async () => {
-    if (!name.trim() || !email.trim() || !password.trim()) {
-      Alert.alert('Missing Info', 'Please enter your name, email, and password.');
-      return;
+    const cleanEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      Alert.alert('Valid Email Required', 'Please enter a valid email address.');
+      return false;
     }
-    if (role !== 'CUSTOMER' && isOpaySignup && (!opayPhone.trim() || opayPhone.length < 10)) {
-      Alert.alert('OPay Required', 'Please enter a valid OPay Wallet phone number.');
-      return;
+    if (!password || password.length < 6) {
+      Alert.alert('Password Too Short', 'Password must be at least 6 characters long.');
+      return false;
     }
-
-    setLoading(true);
-
-    let latitude = null;
-    let longitude = null;
-    if (address.trim()) {
-      latitude = 40.7128 + (Math.random() - 0.5) * 0.02;
-      longitude = -74.0060 + (Math.random() - 0.5) * 0.02;
+    if (password !== confirmPassword) {
+      Alert.alert('Passwords Do Not Match', 'Please ensure both password fields match.');
+      return false;
     }
+    return true;
+  };
 
-    try {
-      // For CUSTOMER, register immediately and log in
-      if (role === 'CUSTOMER') {
+  // Step 1 Submission: Customers register immediately; Partners advance to Step 2
+  const handleStep1Submit = async () => {
+    if (!validateStep1()) return;
+
+    if (role === 'CUSTOMER') {
+      setLoading(true);
+      const cleanEmail = email.trim().toLowerCase();
+      try {
         const response = await apiClient.post('/auth/register', {
-          name,
-          email,
+          name: name.trim(),
+          email: cleanEmail,
+          phone: phone.trim(),
           password,
-          role,
+          role: 'CUSTOMER',
           country: selectedCountry.country,
           currency: selectedCountry.currency,
         });
+
         await setCountry(selectedCountry.country);
         await login(response.data.token, response.data.user);
-        
-        if (redirectTo) {
-          if (TAB_SCREENS.includes(redirectTo)) {
-            navigation.navigate('Main', { screen: redirectTo });
-          } else {
-            navigation.navigate(redirectTo, redirectParams || {});
-          }
+        handlePostAuthNavigation();
+      } catch (error: any) {
+        const errorMsg = error.response?.data?.error || 'Could not complete registration.';
+        if (errorMsg.toLowerCase().includes('already exists')) {
+          handleExistingAccountPrompt(cleanEmail);
         } else {
-          navigation.replace('Main');
+          Alert.alert('Registration Error', errorMsg);
         }
-        return;
+      } finally {
+        setLoading(false);
       }
-
-      // For Handyman/Vendor, proceed to Professional Info
-      setCurrentStep(2);
-    } catch (error: any) {
-      console.error(error);
-      Alert.alert('Registration Failed', error.response?.data?.error || 'Could not initiate registration.');
-    } finally {
-      setLoading(false);
+      return;
     }
+
+    // Handyman, Vendor, Rider advance to Step 2 for business details
+    setCurrentStep(2);
   };
 
-  // Perform background register for Handyman/Vendor/Rider, acquiring the JWT token
-  const handleVerifyProfessionAndRegister = async () => {
+  // Step 2 Submission: Atomic registration for Partners
+  const handlePartnerSubmit = async () => {
     if (!address.trim()) {
-      Alert.alert('Address Required', 'Please enter your work/store address.');
+      Alert.alert('Address Required', 'Please provide your workshop, store, or base operating address.');
       return;
     }
     if (role === 'RIDER' && !licensePlate.trim()) {
-      Alert.alert('License Plate Required', 'Please enter your license plate number.');
+      Alert.alert('License Plate Required', 'Please enter your delivery vehicle license plate number.');
+      return;
+    }
+    if (identityNumber.trim() && identityNumber.trim().length !== 11) {
+      Alert.alert('Invalid ID', `${identityType} must be exactly 11 digits.`);
       return;
     }
 
     setLoading(true);
-
-    // Use geocoded coordinates if available, otherwise default to Port Harcourt area coordinates
+    const cleanEmail = email.trim().toLowerCase();
     const finalLat = latitude !== null ? latitude : 4.8156 + (Math.random() - 0.5) * 0.02;
     const finalLng = longitude !== null ? longitude : 7.0498 + (Math.random() - 0.5) * 0.02;
 
     try {
-      // Register the account first to get JWT token
       const response = await apiClient.post('/auth/register', {
-        name,
-        email,
+        name: name.trim(),
+        email: cleanEmail,
+        phone: phone.trim(),
+        opayPhone: phone.trim(),
         password,
         role,
-        phone: isOpaySignup ? opayPhone : null,
-        opayPhone: isOpaySignup ? opayPhone : null,
+        country: selectedCountry.country,
+        currency: selectedCountry.currency,
         specialty: role === 'HANDYMAN' ? specialty : null,
-        address,
+        address: address.trim(),
         latitude: finalLat,
         longitude: finalLng,
         vehicleType: role === 'RIDER' ? vehicleType : null,
-        licensePlate: role === 'RIDER' ? licensePlate : null,
+        licensePlate: role === 'RIDER' ? licensePlate.trim() : null,
         passportPhoto: passportPhoto || null,
         actionPhoto: actionPhoto || null,
-        country: selectedCountry.country,
-        currency: selectedCountry.currency,
+        identityNumber: identityNumber.trim() || null,
       });
 
-      // Login the user to secure local auth header defaults
+      await setCountry(selectedCountry.country);
       await login(response.data.token, response.data.user);
 
-      // Successfully registered basic account, proceed to KYC flow
-      setCurrentStep(3);
-    } catch (error: any) {
-      console.error(error);
-      Alert.alert('Setup Failed', error.response?.data?.error || 'Could not complete registration details.');
-    } finally {
-      setLoading(false);
-    }
-  };
+      const isPending = response.data.user?.verificationStatus === 'PENDING_REVIEW';
+      const roleTitle =
+        role === 'HANDYMAN' ? 'Services Pro' : role === 'RIDER' ? 'Courier Rider' : 'Store Vendor';
 
-  // Real-time Dojah BVN/NIN verification during signup
-  const handleVerifyIdentity = async () => {
-    if (identityType === 'BVN' && !consent) {
-      Alert.alert('Consent Required', 'You must consent to verify your BVN details.');
-      return;
-    }
-    if (identityNumber.length !== 11 || !/^\d+$/.test(identityNumber)) {
-      Alert.alert('Invalid Number', `${identityType} must be exactly 11 digits.`);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      if (identityType === 'BVN') {
-        const res = await apiClient.post('/kyc/bvn', { bvn: identityNumber, consent });
-        if (res.data.success) {
-          setIdentityVerified(true);
-          setIdentityName(res.data.data.formatted_name);
-          Alert.alert('BVN Verified', `Verified as ${res.data.data.formatted_name}. Proceed to liveness check.`);
-        }
-      } else {
-        const res = await apiClient.post('/kyc/nin', { nin: identityNumber });
-        if (res.data.success) {
-          setIdentityVerified(true);
-          setIdentityName(name); // default to input name for NIN mock
-          Alert.alert('NIN Verified', 'NIN verified successfully. Proceed to liveness check.');
-        }
-      }
-    } catch (err: any) {
-      Alert.alert('Verification Failed', err.response?.data?.error || `Could not verify ${identityType}.`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Liveness check simulator
-  const startLivenessScan = () => {
-    setLivenessStage('scanning');
-    setLivenessInstruction('Align your face inside the circle.');
-
-    setTimeout(() => {
-      setLivenessStage('blink');
-      setLivenessInstruction('Blink your eyes twice slowly.');
-
-      setTimeout(() => {
-        setLivenessStage('smile');
-        setLivenessInstruction('Smile widely for the camera.');
-
-        setTimeout(() => {
-          setLivenessStage('processing');
-          setLivenessInstruction('Analyzing facial scan data...');
-
-          setTimeout(async () => {
-            try {
-              const res = await apiClient.post('/kyc/liveness', { referenceId: livenessRef });
-              if (res.data.success) {
-                setLivenessStage('done');
-                setLivenessInstruction('Biometric Scan Verified ✅');
-                Alert.alert('Liveness Passed', 'Facial mapping match confirmed!', [
-                  { text: 'Proceed', onPress: () => setCurrentStep(5) }
-                ]);
-              }
-            } catch (err: any) {
-              setLivenessStage('idle');
-              setLivenessInstruction('Verification failed. Try again.');
-              Alert.alert('Match Failed', 'Face did not match records. Scan again.');
-            }
-          }, 2000);
-        }, 2000);
-      }, 2000);
-    }, 2000);
-  };
-
-  // Document Upload simulator
-  const simulateDocUpload = (type: string) => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      if (type === 'cac') {
-        setUploadedDocName('CAC-Certificate-99201.pdf');
-      } else {
-        setUploadedDocName('Govt-ID-DriversLicense.jpg');
-      }
-    }, 1500);
-  };
-
-  // Final submit KYC matching & redirection
-  const handleFinalSubmit = async () => {
-    setLoading(true);
-    try {
-      const payload: any = {
-        opayPhone: isOpaySignup ? opayPhone : opayPhone || null,
-        phone: isOpaySignup ? opayPhone : null,
-        referenceId: livenessRef,
-        address: address || null,
-        latitude: latitude !== null ? latitude : null,
-        longitude: longitude !== null ? longitude : null,
-        specialty: role === 'HANDYMAN' ? specialty : null,
-        vehicleType: role === 'RIDER' ? vehicleType : null,
-        licensePlate: role === 'RIDER' ? licensePlate : null,
-        passportPhoto: passportPhoto || null,
-        actionPhoto: actionPhoto || null,
-      };
-
-      if (identityType === 'BVN') {
-        payload.bvn = identityNumber;
-      } else {
-        payload.nin = identityNumber;
-      }
-
-      // Link final registration details to KYC submission
-      const response = await apiClient.post('/kyc/submit', payload);
-
-      if (response.data.success) {
-        await refreshUser();
-        const alertTitle = role === 'VENDOR' ? '✅ Store Setup Complete' : '📋 Registration Submitted';
-        const alertMsg = role === 'VENDOR'
-          ? 'Your vendor registration is complete! Your seller account is verified.'
-          : role === 'HANDYMAN'
-          ? 'Your service technician registration is complete and submitted for Admin verification.'
-          : 'Your rider courier registration is complete and submitted for Admin verification.';
-
-        Alert.alert(alertTitle, alertMsg, [
+      Alert.alert(
+        '🎉 Registration Successful',
+        isPending
+          ? `Welcome, ${name.trim()}! Your ${roleTitle} account has been created and submitted for Admin verification. You can now explore the app and track your verification status.`
+          : `Welcome, ${name.trim()}! Your ${roleTitle} account is active and ready to use.`,
+        [
           {
-            text: 'Launch App',
-            onPress: () => {
-              navigation.replace('Main');
-            }
-          }
-        ]);
+            text: 'Get Started',
+            onPress: handlePostAuthNavigation,
+          },
+        ]
+      );
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || 'Could not complete registration.';
+      if (errorMsg.toLowerCase().includes('already exists')) {
+        handleExistingAccountPrompt(cleanEmail);
+      } else {
+        Alert.alert('Registration Error', errorMsg);
       }
-    } catch (err: any) {
-      Alert.alert('Submission Failed', err.response?.data?.error || 'Could not finalize KYC registration.');
     } finally {
       setLoading(false);
     }
-  };
-
-  // Step Indicators
-  const renderStepIndicators = () => {
-    if (role === 'CUSTOMER') return null;
-    return (
-      <View style={styles.stepIndicatorContainer}>
-        {[1, 2, 3, 4, 5, 6].map((step) => {
-          const isActive = currentStep === step;
-          const isCompleted = currentStep > step;
-          return (
-            <View key={step} style={styles.stepDotWrapper}>
-              <View 
-                style={[
-                  styles.stepDot, 
-                  { 
-                    backgroundColor: isActive ? OPAY_GREEN : isCompleted ? '#34C759' : '#E5E5EA',
-                    borderColor: isActive ? OPAY_GREEN : 'transparent' 
-                  }
-                ]} 
-              >
-                {isCompleted ? (
-                  <Text style={styles.stepDotCheck}>✓</Text>
-                ) : (
-                  <Text style={[styles.stepDotText, isActive && { color: '#FFF' }]}>{step}</Text>
-                )}
-              </View>
-              {step < 6 && (
-                <View 
-                  style={[
-                    styles.stepLine, 
-                    { backgroundColor: isCompleted ? '#34C759' : '#E5E5EA' }
-                  ]} 
-                />
-              )}
-            </View>
-          );
-        })}
-      </View>
-    );
   };
 
   return (
-    <ScrollView 
-      style={[styles.container, { backgroundColor: theme.background }]} 
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.background }]}
       contentContainerStyle={[styles.contentContainer, isLargeScreen && styles.contentContainerWeb]}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
     >
       <View style={[styles.card, { borderColor: theme.border }, isLargeScreen && styles.cardWeb]}>
-        <Text style={styles.title}>Create Account</Text>
+        {/* Header Section */}
+        <Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
         <Text style={styles.subtitle}>
-          {role === 'CUSTOMER' ? 'Join as a Customer' : `Partner Registration (Step ${currentStep} of 6)`}
+          {role === 'CUSTOMER'
+            ? 'Join FixMart in seconds to order services, buy products & dispatch riders'
+            : currentStep === 1
+            ? 'Partner Onboarding (Step 1 of 2: Account Details)'
+            : 'Partner Onboarding (Step 2 of 2: Service & Work Info)'}
         </Text>
 
-        {renderStepIndicators()}
+        {/* Progress Bar for Partners */}
+        {role !== 'CUSTOMER' && (
+          <View style={styles.progressContainer}>
+            <View style={styles.stepPillWrapper}>
+              <View
+                style={[
+                  styles.stepBadge,
+                  { backgroundColor: BRAND_GREEN, borderColor: BRAND_GREEN },
+                ]}
+              >
+                <Text style={styles.stepBadgeText}>1</Text>
+              </View>
+              <Text style={[styles.stepBadgeLabel, { color: BRAND_GREEN, fontWeight: '700' }]}>
+                Account
+              </Text>
+            </View>
 
-        {/* STEP 1: Account Setup */}
+            <View
+              style={[
+                styles.stepProgressLine,
+                { backgroundColor: currentStep === 2 ? BRAND_GREEN : '#E5E5EA' },
+              ]}
+            />
+
+            <View style={styles.stepPillWrapper}>
+              <View
+                style={[
+                  styles.stepBadge,
+                  {
+                    backgroundColor: currentStep === 2 ? BRAND_GREEN : '#F2F2F7',
+                    borderColor: currentStep === 2 ? BRAND_GREEN : '#E5E5EA',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.stepBadgeText,
+                    { color: currentStep === 2 ? '#FFF' : '#8E8E93' },
+                  ]}
+                >
+                  2
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.stepBadgeLabel,
+                  { color: currentStep === 2 ? BRAND_GREEN : '#8E8E93' },
+                ]}
+              >
+                Business
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── STEP 1: Account Essentials (All roles) ── */}
         {currentStep === 1 && (
           <View>
-            <Text style={styles.label}>Register As</Text>
-            <View style={styles.roleContainer}>
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>I want to join as</Text>
+            <View style={styles.roleGrid}>
               <TouchableOpacity
                 style={[
-                  styles.roleButton,
-                  role === 'CUSTOMER' && { backgroundColor: theme.primary + '15', borderColor: theme.primary }
+                  styles.roleCard,
+                  role === 'CUSTOMER' && {
+                    borderColor: theme.primary,
+                    backgroundColor: theme.primary + '10',
+                  },
                 ]}
                 onPress={() => setRole('CUSTOMER')}
+                activeOpacity={0.8}
               >
-                <Text style={[styles.roleButtonText, role === 'CUSTOMER' && { color: theme.primary }]}>Customer</Text>
+                <Text style={styles.roleCardIcon}>🛒</Text>
+                <Text
+                  style={[
+                    styles.roleCardTitle,
+                    role === 'CUSTOMER' && { color: theme.primary, fontWeight: '700' },
+                  ]}
+                >
+                  Customer
+                </Text>
+                <Text style={styles.roleCardSub}>Shop & Hire</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
-                  styles.roleButton,
-                  role === 'HANDYMAN' && { backgroundColor: OPAY_GREEN + '15', borderColor: OPAY_GREEN }
+                  styles.roleCard,
+                  role === 'HANDYMAN' && {
+                    borderColor: BRAND_GREEN,
+                    backgroundColor: BRAND_GREEN + '10',
+                  },
                 ]}
                 onPress={() => setRole('HANDYMAN')}
+                activeOpacity={0.8}
               >
-                <Text style={[styles.roleButtonText, role === 'HANDYMAN' && { color: OPAY_GREEN }]}>Services</Text>
+                <Text style={styles.roleCardIcon}>🔧</Text>
+                <Text
+                  style={[
+                    styles.roleCardTitle,
+                    role === 'HANDYMAN' && { color: BRAND_GREEN, fontWeight: '700' },
+                  ]}
+                >
+                  Services
+                </Text>
+                <Text style={styles.roleCardSub}>Artisan / Tech</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
-                  styles.roleButton,
-                  role === 'VENDOR' && { backgroundColor: OPAY_GREEN + '15', borderColor: OPAY_GREEN }
+                  styles.roleCard,
+                  role === 'VENDOR' && {
+                    borderColor: BRAND_GREEN,
+                    backgroundColor: BRAND_GREEN + '10',
+                  },
                 ]}
                 onPress={() => setRole('VENDOR')}
+                activeOpacity={0.8}
               >
-                <Text style={[styles.roleButtonText, role === 'VENDOR' && { color: OPAY_GREEN }]}>Vendor</Text>
+                <Text style={styles.roleCardIcon}>🏪</Text>
+                <Text
+                  style={[
+                    styles.roleCardTitle,
+                    role === 'VENDOR' && { color: BRAND_GREEN, fontWeight: '700' },
+                  ]}
+                >
+                  Vendor
+                </Text>
+                <Text style={styles.roleCardSub}>Sell Products</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[
-                  styles.roleButton,
-                  role === 'RIDER' && { backgroundColor: OPAY_GREEN + '15', borderColor: OPAY_GREEN }
+                  styles.roleCard,
+                  role === 'RIDER' && {
+                    borderColor: BRAND_GREEN,
+                    backgroundColor: BRAND_GREEN + '10',
+                  },
                 ]}
                 onPress={() => setRole('RIDER')}
+                activeOpacity={0.8}
               >
-                <Text style={[styles.roleButtonText, role === 'RIDER' && { color: OPAY_GREEN }]}>Rider</Text>
+                <Text style={styles.roleCardIcon}>🏍️</Text>
+                <Text
+                  style={[
+                    styles.roleCardTitle,
+                    role === 'RIDER' && { color: BRAND_GREEN, fontWeight: '700' },
+                  ]}
+                >
+                  Rider
+                </Text>
+                <Text style={styles.roleCardSub}>Courier</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Notification & Checklist Banner for Handyman / Rider */}
-            {(role === 'HANDYMAN' || role === 'RIDER') && (
-              <View style={styles.requirementNoticeBox}>
-                <View style={styles.requirementNoticeHeader}>
-                  <Text style={styles.requirementNoticeIcon}>📢</Text>
-                  <Text style={styles.requirementNoticeTitle}>
-                    {role === 'HANDYMAN' ? 'Service Technician Checklist' : 'Courier Rider Checklist'}
-                  </Text>
-                </View>
-                <Text style={styles.requirementNoticeDesc}>
-                  Please ensure you have the following <Text style={{ fontWeight: '700' }}>2 photos</Text> and credentials handy to complete your registration:
+            {/* Informative Banner for Partners */}
+            {role !== 'CUSTOMER' && (
+              <View style={styles.infoBanner}>
+                <Text style={styles.infoBannerIcon}>💡</Text>
+                <Text style={styles.infoBannerText}>
+                  {role === 'HANDYMAN'
+                    ? 'FixMart connects you with local service jobs. In Step 2 you will specify your specialty trade and work base.'
+                    : role === 'RIDER'
+                    ? 'FixMart dispatches package delivery orders to your phone. In Step 2 you will specify your vehicle details.'
+                    : 'FixMart allows you to list inventory and reach thousands of buyers. In Step 2 you will set up your store address.'}
                 </Text>
-                <View style={styles.requirementNoticeList}>
-                  <Text style={styles.requirementNoticeItem}>
-                    • 📸 <Text style={{ fontWeight: '700' }}>Passport Photograph:</Text> Clear portrait photo of your face.
-                  </Text>
-                  <Text style={styles.requirementNoticeItem}>
-                    • {role === 'HANDYMAN' ? '🛠️' : '🏍️'} <Text style={{ fontWeight: '700' }}>Action Picture:</Text> {role === 'HANDYMAN' ? 'Photo of you doing service work / with your tools.' : 'Photo of you with your delivery vehicle / gear.'}
-                  </Text>
-                  <Text style={styles.requirementNoticeItem}>
-                    • 🪪 <Text style={{ fontWeight: '700' }}>Identity Number:</Text> Valid 11-digit BVN or NIN.
-                  </Text>
-                  <Text style={styles.requirementNoticeItem}>
-                    • 📍 <Text style={{ fontWeight: '700' }}>Work/Base Address</Text> for localized job matching.
-                  </Text>
-                </View>
               </View>
             )}
 
-            {role !== 'CUSTOMER' && (
-              <TouchableOpacity
-                style={[styles.opayToggleBtn, isOpaySignup && { borderColor: OPAY_GREEN, backgroundColor: OPAY_GREEN + '08' }]}
-                onPress={() => setIsOpaySignup(!isOpaySignup)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.opayToggleCheck, { color: isOpaySignup ? OPAY_GREEN : '#8E8E93' }]}>
-                  {isOpaySignup ? '☑' : '☐'}
-                </Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.opayToggleTitle}>Sign Up with OPay Wallet</Text>
-                  <Text style={styles.opayToggleSubtitle}>Links your OPay phone for secure payouts</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-
+            {/* Full Name */}
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>Full Name</Text>
             <TextInput
-              style={[styles.input, { borderColor: theme.border }]}
-              placeholder="Full Name"
+              style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+              placeholder="e.g. Johnathan Doe"
               value={name}
               onChangeText={setName}
               placeholderTextColor="#8E8E93"
+              autoCapitalize="words"
             />
-            
+
+            {/* Phone Number */}
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>
+              Phone Number <Text style={styles.fieldNote}>(Calls & WhatsApp)</Text>
+            </Text>
             <TextInput
-              style={[styles.input, { borderColor: theme.border }]}
-              placeholder="Email address"
+              style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+              placeholder="e.g. 08012345678"
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              placeholderTextColor="#8E8E93"
+            />
+
+            {/* Email Address */}
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>Email Address</Text>
+            <TextInput
+              style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+              placeholder="e.g. john@example.com"
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
@@ -694,137 +634,128 @@ export default function SignupScreen({ route, navigation }: any) {
               placeholderTextColor="#8E8E93"
             />
 
-            {role !== 'CUSTOMER' && isOpaySignup && (
+            {/* Password */}
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>Password</Text>
+            <View style={[styles.passwordWrapper, { borderColor: theme.border }]}>
               <TextInput
-                style={[styles.input, { borderColor: OPAY_GREEN }]}
-                placeholder="OPay Wallet Phone Number"
-                value={opayPhone}
-                onChangeText={setOpayPhone}
-                keyboardType="phone-pad"
-                maxLength={11}
+                style={[styles.passwordInput, { color: theme.text }]}
+                placeholder="At least 6 characters"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
                 placeholderTextColor="#8E8E93"
               />
+              <TouchableOpacity
+                style={styles.eyeToggleBtn}
+                onPress={() => setShowPassword(!showPassword)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.eyeToggleText}>{showPassword ? 'Hide' : 'Show'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Confirm Password */}
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>Confirm Password</Text>
+            <View
+              style={[
+                styles.passwordWrapper,
+                { borderColor: theme.border },
+                confirmPassword.length > 0 &&
+                  password !== confirmPassword && { borderColor: '#FF3B30' },
+              ]}
+            >
+              <TextInput
+                style={[styles.passwordInput, { color: theme.text }]}
+                placeholder="Re-enter your password"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry={!showConfirmPassword}
+                placeholderTextColor="#8E8E93"
+              />
+              <TouchableOpacity
+                style={styles.eyeToggleBtn}
+                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.eyeToggleText}>{showConfirmPassword ? 'Hide' : 'Show'}</Text>
+              </TouchableOpacity>
+            </View>
+            {confirmPassword.length > 0 && password !== confirmPassword && (
+              <Text style={styles.errorHelperText}>Passwords do not match</Text>
             )}
 
-            <TextInput
-              style={[styles.input, { borderColor: theme.border }]}
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              placeholderTextColor="#8E8E93"
-            />
-
-            {/* Country of Residence Selector */}
-            <Text style={[styles.fieldLabel, { marginTop: 8, marginBottom: 6 }]}>Country of Residence</Text>
+            {/* Country of Residence */}
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>Country of Residence</Text>
             <TouchableOpacity
-              style={[
-                styles.countryPickerBtn,
-                { borderColor: theme.border },
-              ]}
+              style={[styles.countryPickerBtn, { borderColor: theme.border }]}
               onPress={() => setShowCountryPicker(true)}
               activeOpacity={0.8}
             >
               <Text style={{ fontSize: 22 }}>{selectedCountry.flag}</Text>
-              <Text style={[styles.countryPickerLabel, { color: theme.text }]}>{selectedCountry.country}</Text>
-              <Text style={[styles.countryPickerCurrency, { color: theme.primary }]}>
-                {selectedCountry.currency} {selectedCountry.symbol}
+              <Text style={[styles.countryPickerLabel, { color: theme.text }]}>
+                {selectedCountry.country}
               </Text>
-              <Text style={{ color: '#8E8E93', marginLeft: 'auto' }}>›</Text>
+              <Text style={[styles.countryPickerCurrency, { color: theme.primary }]}>
+                {selectedCountry.currency} ({selectedCountry.symbol})
+              </Text>
+              <Text style={{ color: '#8E8E93', marginLeft: 'auto', fontSize: 18 }}>›</Text>
             </TouchableOpacity>
 
-            {/* Country Picker Modal */}
-            <Modal
-              visible={showCountryPicker}
-              transparent
-              animationType="slide"
-              onRequestClose={() => setShowCountryPicker(false)}
-            >
-              <View style={styles.modalOverlay}>
-                <View style={[styles.modalSheet, { backgroundColor: theme.card || '#FFF' }]}>
-                  <View style={styles.modalHeaderRow}>
-                    <Text style={[styles.modalSheetTitle, { color: theme.text }]}>Select Country</Text>
-                    <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
-                      <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 15 }}>Done</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <FlatList
-                    data={countries}
-                    keyExtractor={(c) => c.currency}
-                    renderItem={({ item }) => {
-                      const isActive = item.currency === selectedCountry.currency;
-                      return (
-                        <TouchableOpacity
-                          style={[
-                            styles.countryModalRow,
-                            { borderBottomColor: theme.border },
-                            isActive && { backgroundColor: theme.primary + '12' },
-                          ]}
-                          onPress={() => {
-                            setSelectedCountry(item);
-                            setShowCountryPicker(false);
-                          }}
-                        >
-                          <Text style={{ fontSize: 22 }}>{item.flag}</Text>
-                          <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }}>{item.country}</Text>
-                            <Text style={{ fontSize: 12, color: '#8E8E93' }}>{item.currency} · {item.symbol}</Text>
-                          </View>
-                          {isActive && <Text style={{ color: theme.primary, fontWeight: '800' }}>✓</Text>}
-                        </TouchableOpacity>
-                      );
-                    }}
-                  />
-                </View>
-              </View>
-            </Modal>
-
-            <TouchableOpacity 
-              style={[styles.button, { backgroundColor: role === 'CUSTOMER' ? theme.primary : OPAY_GREEN }]} 
-              onPress={handleRegisterBasicAccount} 
+            {/* Step 1 Action Button */}
+            <TouchableOpacity
+              style={[
+                styles.primaryButton,
+                { backgroundColor: role === 'CUSTOMER' ? theme.primary : BRAND_GREEN },
+              ]}
+              onPress={handleStep1Submit}
               disabled={loading}
+              activeOpacity={0.85}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.buttonText}>
-                  {role === 'CUSTOMER' ? 'Sign Up' : 'Continue'}
+                <Text style={styles.primaryButtonText}>
+                  {role === 'CUSTOMER' ? 'Create Customer Account' : 'Continue to Service Details →'}
                 </Text>
               )}
             </TouchableOpacity>
           </View>
         )}
 
-        {/* STEP 2: Professional Info (Handyman/Vendor) */}
-        {currentStep === 2 && (
+        {/* ── STEP 2: Professional & Business Details (Partners only) ── */}
+        {currentStep === 2 && role !== 'CUSTOMER' && (
           <View>
-            <Text style={styles.stepTitle}>Work Details</Text>
-            <Text style={styles.stepDesc}>Provide your service details to continue.</Text>
+            {/* Back Button to Step 1 */}
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => setCurrentStep(1)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.backButtonText, { color: theme.primary }]}>
+                ← Back to Account Details
+              </Text>
+            </TouchableOpacity>
 
-            {(role === 'HANDYMAN' || role === 'RIDER') && (
-              <View style={[styles.requirementNoticeBox, { marginBottom: 16 }]}>
-                <Text style={[styles.requirementNoticeDesc, { marginBottom: 0 }]}>
-                  📸 <Text style={{ fontWeight: '700' }}>Reminder:</Text> In Step 5 you will upload your <Text style={{ fontWeight: '700' }}>Passport Photograph</Text> and <Text style={{ fontWeight: '700' }}>Action Picture</Text>. Please have them ready!
-                </Text>
-              </View>
-            )}
-
+            {/* Handyman Specialty Selector */}
             {role === 'HANDYMAN' && (
               <View style={styles.fieldSection}>
-                <Text style={styles.fieldLabel}>Select Your Specialty</Text>
-                <View style={styles.specialtyRow}>
-                  {specialties.map(spec => {
+                <Text style={[styles.fieldLabel, { color: theme.text }]}>Primary Trade / Specialty</Text>
+                <View style={styles.specialtyWrap}>
+                  {specialties.map((spec) => {
                     const isActive = specialty === spec;
                     return (
                       <TouchableOpacity
                         key={spec}
                         style={[
-                          styles.specPill,
-                          isActive && { backgroundColor: OPAY_GREEN, borderColor: OPAY_GREEN }
+                          styles.specialtyPill,
+                          isActive && { backgroundColor: BRAND_GREEN, borderColor: BRAND_GREEN },
                         ]}
                         onPress={() => setSpecialty(spec)}
+                        activeOpacity={0.8}
                       >
-                        <Text style={[styles.specText, isActive && { color: '#FFF' }]}>{spec}</Text>
+                        <Text style={[styles.specialtyText, isActive && { color: '#FFF' }]}>
+                          {spec}
+                        </Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -832,49 +763,64 @@ export default function SignupScreen({ route, navigation }: any) {
               </View>
             )}
 
+            {/* Rider Vehicle Type & License Plate */}
             {role === 'RIDER' && (
-              <View>
-                <View style={styles.fieldSection}>
-                  <Text style={styles.fieldLabel}>Select Vehicle Type</Text>
-                  <View style={styles.specialtyRow}>
-                    {['BICYCLE', 'MOTORCYCLE', 'CAR'].map(typeOpt => {
-                      const isActive = vehicleType === typeOpt;
-                      const emoji = typeOpt === 'BICYCLE' ? '🚲' : typeOpt === 'MOTORCYCLE' ? '🏍️' : '🚗';
-                      return (
-                        <TouchableOpacity
-                          key={typeOpt}
+              <View style={styles.fieldSection}>
+                <Text style={[styles.fieldLabel, { color: theme.text }]}>Delivery Vehicle</Text>
+                <View style={styles.vehicleGrid}>
+                  {vehicleOptions.map((v) => {
+                    const isActive = vehicleType === v.type;
+                    return (
+                      <TouchableOpacity
+                        key={v.type}
+                        style={[
+                          styles.vehicleCard,
+                          isActive && {
+                            borderColor: BRAND_GREEN,
+                            backgroundColor: BRAND_GREEN + '12',
+                          },
+                        ]}
+                        onPress={() => setVehicleType(v.type)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.vehicleIcon}>{v.icon}</Text>
+                        <Text
                           style={[
-                            styles.specPill,
-                            isActive && { backgroundColor: OPAY_GREEN, borderColor: OPAY_GREEN }
+                            styles.vehicleLabel,
+                            isActive && { color: BRAND_GREEN, fontWeight: '700' },
                           ]}
-                          onPress={() => setVehicleType(typeOpt)}
                         >
-                          <Text style={[styles.specText, isActive && { color: '#FFF' }]}>
-                            {emoji} {typeOpt.charAt(0) + typeOpt.slice(1).toLowerCase()}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+                          {v.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
 
-                <View style={styles.fieldSection}>
-                  <Text style={styles.fieldLabel}>License Plate Number</Text>
-                  <TextInput
-                    style={[styles.input, { borderColor: theme.border }]}
-                    placeholder="e.g. ABC-123-XYZ"
-                    value={licensePlate}
-                    onChangeText={setLicensePlate}
-                    placeholderTextColor="#8E8E93"
-                    autoCapitalize="characters"
-                  />
-                </View>
+                <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 12 }]}>
+                  License Plate Number
+                </Text>
+                <TextInput
+                  style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+                  placeholder="e.g. ABC-123-XY"
+                  value={licensePlate}
+                  onChangeText={setLicensePlate}
+                  autoCapitalize="characters"
+                  placeholderTextColor="#8E8E93"
+                />
               </View>
             )}
 
+            {/* Address with Geocoding */}
             <View style={styles.fieldSection}>
               <AddressInput
-                label="Work/Store Address"
+                label={
+                  role === 'VENDOR'
+                    ? 'Store / Business Location'
+                    : role === 'RIDER'
+                    ? 'Operating Station / Base Address'
+                    : 'Workshop / Operating Address'
+                }
                 onAddressChange={(assembledAddress, lat, lng) => {
                   setAddress(assembledAddress);
                   setLatitude(lat);
@@ -885,450 +831,249 @@ export default function SignupScreen({ route, navigation }: any) {
               />
             </View>
 
-            <TouchableOpacity 
-              style={[styles.button, { backgroundColor: OPAY_GREEN }]} 
-              onPress={handleVerifyProfessionAndRegister} 
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Register & Verify Identity</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
+            {/* Optional Identity Verification */}
+            <View style={styles.fieldSection}>
+              <Text style={[styles.fieldLabel, { color: theme.text }]}>
+                Identity Verification <Text style={styles.fieldOptional}>(Recommended)</Text>
+              </Text>
+              <Text style={styles.fieldHint}>
+                Providing your BVN or NIN speeds up Admin verification and enables instant payouts.
+              </Text>
+              <View style={styles.identityToggleRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.idToggleBtn,
+                    identityType === 'BVN' && {
+                      backgroundColor: BRAND_GREEN,
+                      borderColor: BRAND_GREEN,
+                    },
+                  ]}
+                  onPress={() => setIdentityType('BVN')}
+                >
+                  <Text
+                    style={[
+                      styles.idToggleBtnText,
+                      identityType === 'BVN' && { color: '#FFF' },
+                    ]}
+                  >
+                    BVN (11 digits)
+                  </Text>
+                </TouchableOpacity>
 
-        {/* STEP 3: Identity Verification (BVN or NIN) */}
-        {currentStep === 3 && (
-          <View>
-            <Text style={styles.stepTitle}>Identity Verification</Text>
-            <Text style={styles.stepDesc}>Verify your identity using either your BVN or NIN document.</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.idToggleBtn,
+                    identityType === 'NIN' && {
+                      backgroundColor: BRAND_GREEN,
+                      borderColor: BRAND_GREEN,
+                    },
+                  ]}
+                  onPress={() => setIdentityType('NIN')}
+                >
+                  <Text
+                    style={[
+                      styles.idToggleBtnText,
+                      identityType === 'NIN' && { color: '#FFF' },
+                    ]}
+                  >
+                    NIN (11 digits)
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-            <View style={styles.identityToggle}>
-              <TouchableOpacity
-                style={[styles.idToggleBtn, identityType === 'BVN' && styles.idToggleBtnActive]}
-                onPress={() => { setIdentityType('BVN'); setIdentityVerified(false); }}
-              >
-                <Text style={[styles.idToggleText, identityType === 'BVN' && { color: '#FFF' }]}>Verify with BVN</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.idToggleBtn, identityType === 'NIN' && styles.idToggleBtnActive]}
-                onPress={() => { setIdentityType('NIN'); setIdentityVerified(false); }}
-              >
-                <Text style={[styles.idToggleText, identityType === 'NIN' && { color: '#FFF' }]}>Verify with NIN</Text>
-              </TouchableOpacity>
+              <TextInput
+                style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+                placeholder={`Enter 11-digit ${identityType} (Optional)`}
+                value={identityNumber}
+                onChangeText={setIdentityNumber}
+                keyboardType="numeric"
+                maxLength={11}
+                placeholderTextColor="#8E8E93"
+              />
             </View>
 
-            {!identityVerified ? (
-              <View>
-                <TextInput
-                  style={[styles.input, { borderColor: theme.border }]}
-                  placeholder={`Enter 11-digit ${identityType}`}
-                  value={identityNumber}
-                  onChangeText={setIdentityNumber}
-                  keyboardType="numeric"
-                  maxLength={11}
-                  placeholderTextColor="#8E8E93"
-                />
+            {/* Verification Photos */}
+            <View style={styles.fieldSection}>
+              <Text style={[styles.fieldLabel, { color: theme.text }]}>
+                Profile & Work Photos <Text style={styles.fieldOptional}>(Recommended)</Text>
+              </Text>
+              <Text style={styles.fieldHint}>
+                Upload clear photos to build trust with FixMart clients and pass Admin review.
+              </Text>
 
-                {identityType === 'BVN' && (
-                  <TouchableOpacity 
-                    style={styles.consentRow} 
-                    onPress={() => setConsent(!consent)}
-                    activeOpacity={0.8}
+              {/* Passport Photo */}
+              <View style={styles.photoRow}>
+                <View style={styles.photoInfo}>
+                  <Text style={styles.photoTitle}>1. Portrait / Passport Photo</Text>
+                  <Text style={styles.photoSub}>Clear portrait photo of your face</Text>
+                </View>
+
+                {passportPhoto ? (
+                  <View style={styles.photoThumbContainer}>
+                    <Image
+                      source={{ uri: getImageUri(passportPhoto) ?? undefined }}
+                      style={styles.photoThumb}
+                    />
+                    <TouchableOpacity
+                      style={styles.photoActionBadge}
+                      onPress={() => setPassportPhoto(null)}
+                    >
+                      <Text style={styles.photoActionBadgeText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.photoUploadBtn, { borderColor: BRAND_GREEN }]}
+                    onPress={() => showPhotoOptions('passport')}
+                    disabled={uploadingPassport}
                   >
-                    <Text style={[styles.consentCheckText, { color: consent ? OPAY_GREEN : '#8E8E93' }]}>
-                      {consent ? '☑' : '☐'}
-                    </Text>
-                    <Text style={styles.consentLabelText}>
-                      I consent to verify my identity details via Dojah API.
-                    </Text>
+                    {uploadingPassport ? (
+                      <ActivityIndicator size="small" color={BRAND_GREEN} />
+                    ) : (
+                      <Text style={[styles.photoUploadBtnText, { color: BRAND_GREEN }]}>
+                        📸 Upload
+                      </Text>
+                    )}
                   </TouchableOpacity>
                 )}
-
-                <TouchableOpacity 
-                  style={[styles.button, { backgroundColor: OPAY_GREEN }]} 
-                  onPress={handleVerifyIdentity} 
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={styles.buttonText}>Verify {identityType}</Text>
-                  )}
-                </TouchableOpacity>
               </View>
-            ) : (
-              <View style={styles.successCard}>
-                <Text style={styles.successCheck}>✅</Text>
-                <Text style={styles.successNameText}>{identityType} Verification Success</Text>
-                {identityType === 'BVN' && <Text style={styles.successDetailText}>Name: {identityName}</Text>}
-                
-                <TouchableOpacity 
-                  style={[styles.button, { backgroundColor: OPAY_GREEN, marginTop: 20 }]} 
-                  onPress={() => setCurrentStep(4)}
-                >
-                  <Text style={styles.buttonText}>Proceed to Liveness Check</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        )}
 
-        {/* STEP 4: Liveness Selfie Scan */}
-        {currentStep === 4 && (
-          <View style={{ alignItems: 'center' }}>
-            <Text style={[styles.stepTitle, { alignSelf: 'flex-start' }]}>Biometric Selfie Scan</Text>
-            <Text style={[styles.stepDesc, { alignSelf: 'flex-start' }]}>Verify you are a live user.</Text>
-
-            <View style={styles.cameraFrame}>
-              <Animated.View 
-                style={[
-                  styles.cameraOval, 
-                  { 
-                    borderColor: livenessStage === 'done' ? '#34C759' : livenessStage !== 'idle' ? OPAY_GREEN : '#E5E5EA',
-                    transform: [{ scale: pulseAnim }]
-                  }
-                ]}
-              >
-                <View style={styles.faceOverlay} />
-                {(livenessStage === 'scanning' || livenessStage === 'blink' || livenessStage === 'smile') && (
-                  <Animated.View 
-                    style={[
-                      styles.scanLineElement, 
-                      { 
-                        backgroundColor: OPAY_GREEN,
-                        transform: [{ translateY: scanLineAnim }] 
-                      }
-                    ]} 
-                  />
-                )}
-              </Animated.View>
-            </View>
-
-            <Text style={styles.livenessInstruct}>{livenessInstruction}</Text>
-
-            {livenessStage === 'idle' && (
-              <TouchableOpacity 
-                style={[styles.button, { backgroundColor: OPAY_GREEN, width: '100%' }]} 
-                onPress={startLivenessScan}
-              >
-                <Text style={styles.buttonText}>Start Scan</Text>
-              </TouchableOpacity>
-            )}
-
-            {livenessStage === 'processing' && (
-              <ActivityIndicator size="large" color={OPAY_GREEN} style={{ marginTop: 10 }} />
-            )}
-          </View>
-        )}
-
-        {/* STEP 5: Photos & Document Upload */}
-        {currentStep === 5 && (
-          <View>
-            <Text style={styles.stepTitle}>
-              {role === 'VENDOR' ? 'Store & Legal Documents' : 'Verification Photos & ID'}
-            </Text>
-            <Text style={styles.stepDesc}>
-              {role === 'VENDOR'
-                ? 'Upload your business CAC certificate and verification documents.'
-                : 'Upload both required photos (Passport Photograph & Action Picture) and your government ID card.'}
-            </Text>
-
-            {/* HANDYMAN & RIDER: 2 Required Photos */}
-            {(role === 'HANDYMAN' || role === 'RIDER') && (
-              <View style={{ marginBottom: 20 }}>
-                {/* 1. Passport Photo Card */}
-                <View style={styles.photoUploadCard}>
-                  <View style={styles.photoCardHeader}>
-                    <Text style={styles.photoCardNumber}>1</Text>
-                    <View style={{ flex: 1, marginLeft: 8 }}>
-                      <Text style={styles.photoCardTitle}>Passport Photograph</Text>
-                      <Text style={styles.photoCardSubtitle}>Clear portrait showing your face</Text>
-                    </View>
-                    {passportPhoto && <Text style={styles.photoUploadedTag}>Uploaded ✓</Text>}
-                  </View>
-
-                  {passportPhoto ? (
-                    <View style={styles.photoPreviewWrapper}>
-                      <Image source={{ uri: getImageUri(passportPhoto) ?? undefined }} style={styles.photoThumbnail} />
-                      <View style={{ flex: 1, marginLeft: 14 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#1C1C1E' }}>Passport Photo</Text>
-                        <Text style={{ fontSize: 11, color: '#34C759', marginTop: 2 }}>Ready for Admin Review</Text>
-                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                          <TouchableOpacity 
-                            style={styles.photoChangeBtn} 
-                            onPress={() => showPhotoOptions('passport')}
-                          >
-                            <Text style={styles.photoChangeBtnText}>Change</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity 
-                            style={styles.photoRemoveBtn} 
-                            onPress={() => setPassportPhoto(null)}
-                          >
-                            <Text style={styles.photoRemoveBtnText}>Remove</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={styles.photoUploadBtnsRow}>
-                      {uploadingPassport ? (
-                        <View style={styles.uploadingBox}>
-                          <ActivityIndicator color={OPAY_GREEN} size="small" />
-                          <Text style={styles.uploadingText}>Processing photo...</Text>
-                        </View>
-                      ) : (
-                        <>
-                          <TouchableOpacity 
-                            style={[styles.photoActionBtn, { backgroundColor: OPAY_GREEN }]}
-                            onPress={() => showPhotoOptions('passport')}
-                          >
-                            <Text style={styles.photoActionBtnText}>📸 Select / Take Passport Photo</Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
-                  )}
+              {/* Action Picture */}
+              <View style={styles.photoRow}>
+                <View style={styles.photoInfo}>
+                  <Text style={styles.photoTitle}>
+                    {role === 'HANDYMAN'
+                      ? '2. Action Picture (With Tools)'
+                      : role === 'RIDER'
+                      ? '2. Vehicle / Delivery Gear'
+                      : '2. Store Front / Products'}
+                  </Text>
+                  <Text style={styles.photoSub}>
+                    {role === 'HANDYMAN'
+                      ? 'Photo of you on the job or with your equipment'
+                      : role === 'RIDER'
+                      ? 'Photo of you with your delivery vehicle'
+                      : 'Photo of your physical store or stock'}
+                  </Text>
                 </View>
 
-                {/* 2. Action Picture Card */}
-                <View style={styles.photoUploadCard}>
-                  <View style={styles.photoCardHeader}>
-                    <Text style={styles.photoCardNumber}>2</Text>
-                    <View style={{ flex: 1, marginLeft: 8 }}>
-                      <Text style={styles.photoCardTitle}>
-                        {role === 'HANDYMAN' ? 'Action Picture (At Work / Tools)' : 'Action Picture (With Vehicle)'}
-                      </Text>
-                      <Text style={styles.photoCardSubtitle}>
-                        {role === 'HANDYMAN' 
-                          ? 'Photo of you doing repairs or holding tools' 
-                          : 'Photo of you with your motorcycle/car/gear'}
-                      </Text>
-                    </View>
-                    {actionPhoto && <Text style={styles.photoUploadedTag}>Uploaded ✓</Text>}
+                {actionPhoto ? (
+                  <View style={styles.photoThumbContainer}>
+                    <Image
+                      source={{ uri: getImageUri(actionPhoto) ?? undefined }}
+                      style={styles.photoThumb}
+                    />
+                    <TouchableOpacity
+                      style={styles.photoActionBadge}
+                      onPress={() => setActionPhoto(null)}
+                    >
+                      <Text style={styles.photoActionBadgeText}>✕</Text>
+                    </TouchableOpacity>
                   </View>
-
-                  {actionPhoto ? (
-                    <View style={styles.photoPreviewWrapper}>
-                      <Image source={{ uri: getImageUri(actionPhoto) ?? undefined }} style={styles.photoThumbnail} />
-                      <View style={{ flex: 1, marginLeft: 14 }}>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: '#1C1C1E' }}>Action Picture</Text>
-                        <Text style={{ fontSize: 11, color: '#34C759', marginTop: 2 }}>Ready for Admin Review</Text>
-                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                          <TouchableOpacity 
-                            style={styles.photoChangeBtn} 
-                            onPress={() => showPhotoOptions('action')}
-                          >
-                            <Text style={styles.photoChangeBtnText}>Change</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity 
-                            style={styles.photoRemoveBtn} 
-                            onPress={() => setActionPhoto(null)}
-                          >
-                            <Text style={styles.photoRemoveBtnText}>Remove</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-                  ) : (
-                    <View style={styles.photoUploadBtnsRow}>
-                      {uploadingAction ? (
-                        <View style={styles.uploadingBox}>
-                          <ActivityIndicator color={OPAY_GREEN} size="small" />
-                          <Text style={styles.uploadingText}>Processing photo...</Text>
-                        </View>
-                      ) : (
-                        <>
-                          <TouchableOpacity 
-                            style={[styles.photoActionBtn, { backgroundColor: OPAY_GREEN }]}
-                            onPress={() => showPhotoOptions('action')}
-                          >
-                            <Text style={styles.photoActionBtnText}>
-                              {role === 'HANDYMAN' ? '🛠️ Select / Take Action Photo' : '🏍️ Select / Take Action Photo'}
-                            </Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {/* 3. Government ID Card / CAC Document */}
-            <Text style={[styles.fieldLabel, { marginTop: (role === 'HANDYMAN' || role === 'RIDER') ? 8 : 0 }]}>
-              {role === 'VENDOR' ? 'Corporate Affairs Commission (CAC) Certificate' : '3. Government ID Card'}
-            </Text>
-
-            {!uploadedDocName ? (
-              <TouchableOpacity 
-                style={styles.uploadArea} 
-                onPress={() => simulateDocUpload(role === 'VENDOR' ? 'cac' : 'id')}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator size="large" color={OPAY_GREEN} />
                 ) : (
-                  <View style={{ alignItems: 'center' }}>
-                    <Text style={{ fontSize: 32 }}>📁</Text>
-                    <Text style={styles.uploadTextTitle}>
-                      {role === 'VENDOR' ? 'Upload CAC Certificate' : 'Select ID Card Document'}
-                    </Text>
-                    <Text style={styles.uploadTextDesc}>Supports JPG, PNG, PDF up to 5MB</Text>
-                  </View>
+                  <TouchableOpacity
+                    style={[styles.photoUploadBtn, { borderColor: BRAND_GREEN }]}
+                    onPress={() => showPhotoOptions('action')}
+                    disabled={uploadingAction}
+                  >
+                    {uploadingAction ? (
+                      <ActivityIndicator size="small" color={BRAND_GREEN} />
+                    ) : (
+                      <Text style={[styles.photoUploadBtnText, { color: BRAND_GREEN }]}>
+                        📸 Upload
+                      </Text>
+                    )}
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.successDocCard}>
-                <Text style={{ fontSize: 32 }}>📄</Text>
-                <Text style={styles.successDocTitle}>{uploadedDocName}</Text>
-                <Text style={{ color: '#34C759', fontWeight: '700', fontSize: 13, marginTop: 4 }}>File linked successfully</Text>
-                
-                <TouchableOpacity 
-                  style={styles.removeBtn} 
-                  onPress={() => setUploadedDocName(null)}
-                >
-                  <Text style={styles.removeBtnText}>Remove file</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <TouchableOpacity 
-              style={[styles.button, { backgroundColor: OPAY_GREEN, width: '100%', marginTop: 24 }]} 
-              onPress={() => {
-                if ((role === 'HANDYMAN' || role === 'RIDER') && (!passportPhoto || !actionPhoto)) {
-                  Alert.alert(
-                    'Photos Recommended',
-                    'You have not uploaded both required photos (Passport Photo & Action Picture). You can proceed now and update them later in your profile, but complete photos are required for Admin approval.',
-                    [
-                      { text: 'Upload Photos First', style: 'cancel' },
-                      { text: 'Proceed Anyway', onPress: () => setCurrentStep(6) },
-                    ]
-                  );
-                  return;
-                }
-                setCurrentStep(6);
-              }}
-            >
-              <Text style={styles.buttonText}>Proceed to Confirmation</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* STEP 6: Confirmation */}
-        {currentStep === 6 && (
-          <View>
-            <Text style={styles.stepTitle}>Registration Summary</Text>
-            <Text style={styles.stepDesc}>Confirm your details to finalize registration.</Text>
-
-            <View style={styles.summaryContainer}>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Role</Text>
-                <Text style={styles.summaryValue}>{role}</Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Name</Text>
-                <Text style={styles.summaryValue}>{name}</Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Email</Text>
-                <Text style={styles.summaryValue}>{email}</Text>
-              </View>
-              {isOpaySignup && (
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>OPay Phone</Text>
-                  <Text style={[styles.summaryValue, { color: OPAY_GREEN, fontWeight: '700' }]}>{opayPhone}</Text>
-                </View>
-              )}
-              {role === 'HANDYMAN' && (
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Specialty</Text>
-                  <Text style={styles.summaryValue}>{specialty}</Text>
-                </View>
-              )}
-              {role === 'RIDER' && (
-                <>
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Vehicle Type</Text>
-                    <Text style={styles.summaryValue}>{vehicleType}</Text>
-                  </View>
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>License Plate</Text>
-                    <Text style={styles.summaryValue}>{licensePlate}</Text>
-                  </View>
-                </>
-              )}
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Address</Text>
-                <Text style={styles.summaryValue}>{address}</Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Identity Document</Text>
-                <Text style={styles.summaryValue}>{identityType} (Verified)</Text>
-              </View>
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Biometric Liveness</Text>
-                <Text style={styles.summaryValue}>Passed</Text>
-              </View>
-              
-              {(role === 'HANDYMAN' || role === 'RIDER') && (
-                <>
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Passport Photo</Text>
-                    <Text style={[styles.summaryValue, { color: passportPhoto ? '#34C759' : '#FF9500' }]}>
-                      {passportPhoto ? 'Uploaded ✓' : '⚠️ Missing'}
-                    </Text>
-                  </View>
-                  <View style={styles.summaryItem}>
-                    <Text style={styles.summaryLabel}>Action Picture</Text>
-                    <Text style={[styles.summaryValue, { color: actionPhoto ? '#34C759' : '#FF9500' }]}>
-                      {actionPhoto ? 'Uploaded ✓' : '⚠️ Missing'}
-                    </Text>
-                  </View>
-                </>
-              )}
-
-              <View style={styles.summaryItem}>
-                <Text style={styles.summaryLabel}>Verification Status</Text>
-                <Text style={[styles.summaryValue, { color: OPAY_GREEN, fontWeight: '800' }]}>PENDING REVIEW</Text>
               </View>
             </View>
 
-            <TouchableOpacity 
-              style={[styles.button, { backgroundColor: OPAY_GREEN }]} 
-              onPress={handleFinalSubmit} 
+            {/* Step 2 Action Button: Final atomic submit */}
+            <TouchableOpacity
+              style={[styles.primaryButton, { backgroundColor: BRAND_GREEN, marginTop: 16 }]}
+              onPress={handlePartnerSubmit}
               disabled={loading}
+              activeOpacity={0.85}
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.buttonText}>Finalize Account</Text>
+                <Text style={styles.primaryButtonText}>Complete Registration & Get Started</Text>
               )}
             </TouchableOpacity>
           </View>
         )}
 
-        {currentStep === 1 && (
-          <>
-            <TouchableOpacity 
-              onPress={() => navigation.navigate('Login', { redirectTo, redirectParams })} 
-              style={styles.linkContainer}
-            >
-              <Text style={styles.linkText}>
-                Already have an account? <Text style={[styles.linkHighlight, { color: theme.primary }]}>Log In</Text>
-              </Text>
-            </TouchableOpacity>
+        {/* Country Picker Modal */}
+        <Modal
+          visible={showCountryPicker}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowCountryPicker(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalSheet, { backgroundColor: theme.card || '#FFF' }]}>
+              <View style={styles.modalHeaderRow}>
+                <Text style={[styles.modalSheetTitle, { color: theme.text }]}>Select Country</Text>
+                <TouchableOpacity onPress={() => setShowCountryPicker(false)}>
+                  <Text style={{ color: theme.primary, fontWeight: '700', fontSize: 15 }}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={countries}
+                keyExtractor={(c) => c.currency}
+                renderItem={({ item }) => {
+                  const isActive = item.currency === selectedCountry.currency;
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.countryModalRow,
+                        { borderBottomColor: theme.border },
+                        isActive && { backgroundColor: theme.primary + '12' },
+                      ]}
+                      onPress={() => {
+                        setSelectedCountry(item);
+                        setShowCountryPicker(false);
+                      }}
+                    >
+                      <Text style={{ fontSize: 22 }}>{item.flag}</Text>
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '600', color: theme.text }}>
+                          {item.country}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: '#8E8E93' }}>
+                          {item.currency} · {item.symbol}
+                        </Text>
+                      </View>
+                      {isActive && <Text style={{ color: theme.primary, fontWeight: '800' }}>✓</Text>}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            </View>
+          </View>
+        </Modal>
 
-            <TouchableOpacity 
-              onPress={() => navigation.navigate('Main')} 
-              style={styles.cancelLinkContainer}
-            >
-              <Text style={[styles.cancelLinkText, { color: theme.lightText }]}>Cancel</Text>
-            </TouchableOpacity>
-          </>
-        )}
+        {/* Footer Navigation Links */}
+        <TouchableOpacity
+          onPress={() =>
+            navigation.navigate('Login', {
+              initialEmail: email.trim().toLowerCase(),
+              redirectTo,
+              redirectParams,
+            })
+          }
+          style={styles.linkContainer}
+        >
+          <Text style={styles.linkText}>
+            Already have an account?{' '}
+            <Text style={[styles.linkHighlight, { color: theme.primary }]}>Log In</Text>
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={() => navigation.navigate('Main')} style={styles.cancelLinkContainer}>
+          <Text style={[styles.cancelLinkText, { color: theme.lightText }]}>Cancel</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -1339,7 +1084,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    padding: 20,
+    padding: 18,
     justifyContent: 'center',
     flexGrow: 1,
   },
@@ -1348,17 +1093,17 @@ const styles = StyleSheet.create({
     minHeight: '100%',
   },
   cardWeb: {
-    maxWidth: 420,
+    maxWidth: 460,
     width: '100%',
   },
   card: {
     backgroundColor: '#FFFFFF',
-    padding: 24,
-    borderRadius: 24,
+    padding: 22,
+    borderRadius: 22,
     shadowColor: '#171717',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.05,
-    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
     elevation: 3,
     borderWidth: 1,
     marginVertical: 10,
@@ -1366,97 +1111,333 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '800',
-    marginBottom: 6,
+    marginBottom: 4,
     textAlign: 'center',
-    color: '#1C1C1E',
   },
   subtitle: {
     fontSize: 13,
     color: '#8E8E93',
     textAlign: 'center',
+    marginBottom: 18,
+    lineHeight: 18,
+  },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 20,
-    fontWeight: '500',
+    paddingHorizontal: 20,
   },
-  input: {
-    height: 52,
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    fontSize: 15,
-    color: '#1C1C1E',
-    backgroundColor: '#F9F9FB',
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#3A3A3C',
-    marginBottom: 10,
-  },
-  roleContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  roleButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderWidth: 1.5,
-    borderColor: '#E5E5EA',
-    borderRadius: 12,
-    marginHorizontal: 3,
+  stepPillWrapper: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
   },
-  roleButtonText: {
-    color: '#8E8E93',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  opayToggleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E5E5EA',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 16,
-    backgroundColor: '#FFFFFF',
-  },
-  opayToggleCheck: {
-    fontSize: 24,
-    marginRight: 10,
-    fontWeight: 'bold',
-  },
-  opayToggleTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  opayToggleSubtitle: {
-    fontSize: 11,
-    color: '#8E8E93',
-    marginTop: 2,
-  },
-  button: {
-    height: 52,
+  stepBadge: {
+    width: 28,
+    height: 28,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
-    shadowOffset: { width: 0, height: 4 },
+    borderWidth: 1.5,
+  },
+  stepBadgeText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  stepBadgeLabel: {
+    fontSize: 11,
+    marginTop: 4,
+  },
+  stepProgressLine: {
+    flex: 1,
+    height: 2,
+    marginHorizontal: 12,
+    marginBottom: 16,
+  },
+  roleGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    gap: 6,
+  },
+  roleCard: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#E5E5EA',
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: '#FAFAFC',
+  },
+  roleCardIcon: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  roleCardTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#3A3A3C',
+  },
+  roleCardSub: {
+    fontSize: 9.5,
+    color: '#8E8E93',
+    marginTop: 2,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 14,
+    alignItems: 'center',
+    gap: 8,
+  },
+  infoBannerIcon: {
+    fontSize: 16,
+  },
+  infoBannerText: {
+    fontSize: 12,
+    color: '#166534',
+    flex: 1,
+    lineHeight: 16,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+    marginTop: 6,
+  },
+  fieldNote: {
+    fontSize: 11,
+    color: '#8E8E93',
+    fontWeight: '400',
+  },
+  fieldOptional: {
+    fontSize: 11,
+    color: '#8E8E93',
+    fontWeight: '500',
+  },
+  fieldHint: {
+    fontSize: 11.5,
+    color: '#8E8E93',
+    marginBottom: 8,
+    lineHeight: 15,
+  },
+  fieldSection: {
+    marginBottom: 14,
+  },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    fontSize: 14,
+    backgroundColor: '#F9F9FB',
+  },
+  passwordWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    backgroundColor: '#F9F9FB',
+  },
+  passwordInput: {
+    flex: 1,
+    fontSize: 14,
+    height: '100%',
+  },
+  eyeToggleBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  eyeToggleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#8E8E93',
+  },
+  errorHelperText: {
+    fontSize: 11,
+    color: '#FF3B30',
+    marginTop: -6,
+    marginBottom: 10,
+    marginLeft: 4,
+  },
+  countryPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+    backgroundColor: '#F9F9FB',
+  },
+  countryPickerLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  countryPickerCurrency: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  primaryButton: {
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 2,
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
+  primaryButtonText: {
+    color: '#FFF',
+    fontSize: 15,
     fontWeight: '700',
+  },
+  backButton: {
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  backButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  specialtyWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 6,
+  },
+  specialtyPill: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: '#E5E5EA',
+    backgroundColor: '#FFF',
+  },
+  specialtyText: {
+    fontSize: 12,
+    color: '#3A3A3C',
+    fontWeight: '600',
+  },
+  vehicleGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 6,
+  },
+  vehicleCard: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E5E5EA',
+    borderRadius: 12,
+    backgroundColor: '#FAFAFC',
+  },
+  vehicleIcon: {
+    fontSize: 22,
+    marginBottom: 2,
+  },
+  vehicleLabel: {
+    fontSize: 11,
+    color: '#3A3A3C',
+    fontWeight: '600',
+  },
+  identityToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  idToggleBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E5E5EA',
+    backgroundColor: '#FAFAFC',
+  },
+  idToggleBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#636366',
+  },
+  photoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2F2F7',
+    gap: 10,
+  },
+  photoInfo: {
+    flex: 1,
+  },
+  photoTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1C1C1E',
+  },
+  photoSub: {
+    fontSize: 11,
+    color: '#8E8E93',
+    marginTop: 2,
+    lineHeight: 14,
+  },
+  photoUploadBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 80,
+  },
+  photoUploadBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  photoThumbContainer: {
+    position: 'relative',
+  },
+  photoThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: '#E5E5EA',
+  },
+  photoActionBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#FF3B30',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoActionBadgeText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: '800',
   },
   linkContainer: {
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 16,
   },
   linkText: {
     color: '#8E8E93',
@@ -1465,266 +1446,12 @@ const styles = StyleSheet.create({
   linkHighlight: {
     fontWeight: '700',
   },
-  stepIndicatorContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  stepDotWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  stepDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-  },
-  stepDotText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#8E8E93',
-  },
-  stepDotCheck: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#FFF',
-  },
-  stepLine: {
-    width: 14,
-    height: 2,
-    marginHorizontal: 2,
-  },
-  stepTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1C1C1E',
-    marginBottom: 4,
-  },
-  stepDesc: {
-    fontSize: 13,
-    color: '#8E8E93',
-    marginBottom: 20,
-  },
-  fieldSection: {
-    marginBottom: 16,
-  },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#3A3A3C',
-    marginBottom: 10,
-  },
-  specialtyRow: {
-    flexDirection: 'row',
-    marginBottom: 8,
-  },
-  specPill: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#E5E5EA',
-    marginRight: 8,
-    backgroundColor: '#FFF',
-  },
-  specText: {
-    fontSize: 13,
-    color: '#3A3A3C',
-    fontWeight: '600',
-  },
-  identityToggle: {
-    flexDirection: 'row',
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 20,
-  },
-  idToggleBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  idToggleBtnActive: {
-    backgroundColor: '#03B576',
-  },
-  idToggleText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#8E8E93',
-  },
-  consentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  consentCheckText: {
-    fontSize: 24,
-    marginRight: 8,
-  },
-  consentLabelText: {
-    flex: 1,
-    fontSize: 12,
-    color: '#3A3A3C',
-    lineHeight: 16,
-  },
-  successCard: {
-    alignItems: 'center',
-    padding: 20,
-    borderWidth: 1.5,
-    borderColor: '#34C759',
-    borderStyle: 'dashed',
-    borderRadius: 16,
-  },
-  successCheck: {
-    fontSize: 36,
-    marginBottom: 10,
-  },
-  successNameText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  successDetailText: {
-    fontSize: 13,
-    color: '#8E8E93',
-    marginTop: 4,
-  },
-  cameraFrame: {
-    width: 190,
-    height: 190,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 16,
-  },
-  cameraOval: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    borderWidth: 3,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#1C1C1E',
-  },
-  faceOverlay: {
-    width: 100,
-    height: 120,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    borderStyle: 'dashed',
-    position: 'absolute',
-  },
-  scanLineElement: {
-    width: '100%',
-    height: 3,
-    position: 'absolute',
-    top: 0,
-    opacity: 0.8,
-  },
-  livenessInstruct: {
-    fontSize: 15,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 20,
-    color: '#1C1C1E',
-  },
-  uploadArea: {
-    height: 160,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: '#E5E5EA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9F9FB',
-  },
-  uploadTextTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    marginTop: 8,
-  },
-  uploadTextDesc: {
-    fontSize: 11,
-    color: '#8E8E93',
-    marginTop: 2,
-  },
-  successDocCard: {
-    alignItems: 'center',
-    padding: 20,
-    borderWidth: 1.5,
-    borderColor: '#34C759',
-    borderStyle: 'dashed',
-    borderRadius: 16,
-  },
-  successDocTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    marginTop: 8,
-  },
-  removeBtn: {
-    marginTop: 12,
-  },
-  removeBtnText: {
-    fontSize: 13,
-    color: '#FF3B30',
-    fontWeight: '600',
-  },
-  summaryContainer: {
-    backgroundColor: '#F2F2F7',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-  },
-  summaryItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-  },
-  summaryLabel: {
-    fontSize: 13,
-    color: '#8E8E93',
-  },
-  summaryValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1C1C1E',
-  },
   cancelLinkContainer: {
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 12,
     paddingVertical: 4,
   },
   cancelLinkText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  // Country picker
-  countryPickerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginBottom: 16,
-  },
-  countryPickerLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    flex: 1,
-  },
-  countryPickerCurrency: {
     fontSize: 13,
     fontWeight: '600',
   },
@@ -1757,150 +1484,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderBottomWidth: 1,
-  },
-  // Requirement Notice Box
-  requirementNoticeBox: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1.5,
-    borderColor: '#86EFAC',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 16,
-  },
-  requirementNoticeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  requirementNoticeIcon: {
-    fontSize: 18,
-    marginRight: 6,
-  },
-  requirementNoticeTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#166534',
-  },
-  requirementNoticeDesc: {
-    fontSize: 12,
-    color: '#15803D',
-    lineHeight: 17,
-    marginBottom: 8,
-  },
-  requirementNoticeList: {
-    gap: 4,
-  },
-  requirementNoticeItem: {
-    fontSize: 12,
-    color: '#166534',
-    lineHeight: 17,
-  },
-  // Photo Upload Cards in Step 5
-  photoUploadCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    padding: 14,
-    marginBottom: 14,
-  },
-  photoCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  photoCardNumber: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#03B576',
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  photoCardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  photoCardSubtitle: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  photoUploadedTag: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#16A34A',
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  photoPreviewWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  photoThumbnail: {
-    width: 72,
-    height: 72,
-    borderRadius: 10,
-    backgroundColor: '#E2E8F0',
-  },
-  photoChangeBtn: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-  },
-  photoChangeBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  photoRemoveBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  photoRemoveBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#EF4444',
-  },
-  photoUploadBtnsRow: {
-    marginTop: 4,
-  },
-  photoActionBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoActionBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  uploadingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    gap: 8,
-  },
-  uploadingText: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '600',
   },
 });
