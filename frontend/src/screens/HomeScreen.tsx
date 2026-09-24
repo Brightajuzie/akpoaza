@@ -61,7 +61,6 @@ const NAV_LINKS = [
   { label: 'Services', screen: 'Services' },
   { label: 'Book Rider', screen: 'BookParcel' },
   { label: 'My Bookings', screen: 'History' },
-  { label: 'Wallet', screen: 'Wallet' },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
