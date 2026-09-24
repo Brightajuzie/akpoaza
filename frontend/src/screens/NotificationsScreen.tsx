@@ -90,6 +90,7 @@ export default function NotificationsScreen({ navigation }: any) {
       case 'ORDER': return '📦';
       case 'JOB': return '💼';
       case 'CALL': return '📹';
+      case 'ADMIN_MESSAGE': return '📢';
       default: return '🔔';
     }
   };
@@ -100,6 +101,7 @@ export default function NotificationsScreen({ navigation }: any) {
       case 'ORDER': return '#FF9500';
       case 'JOB': return '#34C759';
       case 'CALL': return '#5856D6';
+      case 'ADMIN_MESSAGE': return '#EF4444';
       default: return '#8E8E93';
     }
   };

@@ -46,7 +46,7 @@ export default function AdminScreen() {
   const subtextColor = isDark ? '#94A3B8' : '#64748B';
 
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders' | 'slides' | 'transactions'>(
+  const [activeTab, setActiveTab] = useState<'products' | 'services' | 'settings' | 'bookings' | 'users' | 'kyc' | 'orders' | 'slides' | 'transactions' | 'messages'>(
     route?.params?.activeTab || 'products'
   );
 
@@ -242,7 +242,16 @@ export default function AdminScreen() {
   const [users, setUsers]                   = useState<any[]>([]);
   const [usersLoading, setUsersLoading]     = useState(false);
   const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | 'ADMIN' | 'HANDYMAN' | 'VENDOR' | 'RIDER' | 'CUSTOMER'>('ALL');
- 
+
+  // Admin messaging — compose & send state
+  const [adminMsgTarget, setAdminMsgTarget] = useState<'ALL' | 'ROLE' | 'USER'>('ALL');
+  const [adminMsgRole, setAdminMsgRole]     = useState<'CUSTOMER' | 'VENDOR' | 'HANDYMAN' | 'RIDER'>('CUSTOMER');
+  const [adminMsgUserId, setAdminMsgUserId] = useState<string | null>(null);
+  const [adminMsgUserSearch, setAdminMsgUserSearch] = useState('');
+  const [adminMsgTitle, setAdminMsgTitle]   = useState('');
+  const [adminMsgBody, setAdminMsgBody]     = useState('');
+  const [adminMsgSending, setAdminMsgSending] = useState(false);
+
   // User management – form/modal state
   const [showUserFormModal, setShowUserFormModal]   = useState(false);
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
@@ -862,10 +871,58 @@ export default function AdminScreen() {
     if (!isAdmin) return;
     if (tabId === 'bookings') { fetchBookings(); fetchEscrows(); }
     if (tabId === 'users')    fetchUsers();
+    if (tabId === 'messages') fetchUsers();
     if (tabId === 'kyc')      fetchKycReviews();
     if (tabId === 'orders')   { fetchOrders(); fetchRiders(); }
     if (tabId === 'slides')    fetchSlides();
     if (tabId === 'transactions') fetchTransactions();
+  };
+
+  const handleSendAdminMessage = async () => {
+    if (!adminMsgTitle.trim() || !adminMsgBody.trim()) {
+      Alert.alert('Missing info', 'Please enter both a title and a message.');
+      return;
+    }
+    if (adminMsgTarget === 'USER' && !adminMsgUserId) {
+      Alert.alert('Pick a recipient', 'Please select a user to message.');
+      return;
+    }
+
+    const targetLabel =
+      adminMsgTarget === 'ALL' ? 'ALL customers, vendors, artisans & riders' :
+      adminMsgTarget === 'ROLE' ? `every ${adminMsgRole.toLowerCase()}` :
+      users.find(u => u.id === adminMsgUserId)?.name || 'this user';
+
+    Alert.alert(
+      'Send Message',
+      `Send this message to ${targetLabel}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send', style: 'default', onPress: async () => {
+            setAdminMsgSending(true);
+            try {
+              const res = await apiClient.post('/notifications/admin/message', {
+                title: adminMsgTitle.trim(),
+                body: adminMsgBody.trim(),
+                target: adminMsgTarget,
+                role: adminMsgTarget === 'ROLE' ? adminMsgRole : undefined,
+                userId: adminMsgTarget === 'USER' ? adminMsgUserId : undefined,
+              });
+              Alert.alert('Sent', `Message delivered to ${res.data.recipientCount} recipient${res.data.recipientCount !== 1 ? 's' : ''}.`);
+              setAdminMsgTitle('');
+              setAdminMsgBody('');
+              setAdminMsgUserId(null);
+              setAdminMsgUserSearch('');
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.error || 'Failed to send message.');
+            } finally {
+              setAdminMsgSending(false);
+            }
+          }
+        },
+      ]
+    );
   };
 
   useEffect(() => {
@@ -2074,6 +2131,7 @@ export default function AdminScreen() {
                     { id: 'settings',  label: 'Settings',   icon: '⚙️' },
                     { id: 'kyc',       label: 'KYC',        icon: '🔍' },
                     { id: 'slides',    label: 'Slides',     icon: '🖼️' },
+                    { id: 'messages',  label: 'Messages',   icon: '📢' },
                   ].map(tab => {
                     const isActive = activeTab === tab.id;
                     return (
@@ -2140,6 +2198,7 @@ export default function AdminScreen() {
                         { id: 'settings',  label: 'Settings',   icon: '⚙️' },
                         { id: 'kyc',       label: 'KYC Reviews',icon: '🔍' },
                         { id: 'slides',    label: 'Slides',     icon: '🖼️' },
+                        { id: 'messages',  label: 'Messages',   icon: '📢' },
                       ].find(t => t.id === activeTab)?.icon}
                     </Text>
                     <Text style={[styles.adminMobileActiveLabel, { color: theme.primary }]}>
@@ -2153,6 +2212,7 @@ export default function AdminScreen() {
                         { id: 'settings',  label: 'Settings',   icon: '⚙️' },
                         { id: 'kyc',       label: 'KYC Reviews',icon: '🔍' },
                         { id: 'slides',    label: 'Slides',     icon: '🖼️' },
+                        { id: 'messages',  label: 'Messages',   icon: '📢' },
                       ].find(t => t.id === activeTab)?.label}
                     </Text>
                     {/* Retained Arrow */}
@@ -2178,6 +2238,7 @@ export default function AdminScreen() {
                 { id: 'settings',  label: 'Settings',   icon: '⚙️' },
                 { id: 'kyc',       label: 'KYC Reviews',icon: '🔍' },
                 { id: 'slides',    label: 'Slides',     icon: '🖼️' },
+                { id: 'messages',  label: 'Messages',   icon: '📢' },
               ].map(tab => {
                 const isActive = activeTab === tab.id;
                 return (
@@ -4275,6 +4336,166 @@ export default function AdminScreen() {
                 </View>
               ))
             )}
+          </View>
+        )}
+
+        {/* ── MESSAGES TAB ── */}
+        {activeTab === 'messages' && isAdmin && (
+          <View>
+            <Text style={styles.formTitle}>📢 Message Users</Text>
+            <Text style={[styles.listItemMeta, { marginBottom: 16 }]}>
+              Send a message to a specific user, every user of one role, or everyone at once (customers, vendors, artisans &amp; riders). Delivered as an in-app notification, email and SMS.
+            </Text>
+
+            <View style={styles.card}>
+              {/* Target selector */}
+              <View style={styles.txFilterSection}>
+                <Text style={[styles.txFilterSectionLabel, { color: subtextColor }]}>Recipients</Text>
+                <View style={styles.txPillsRow}>
+                  {[
+                    { key: 'ALL', label: '🌍 Everyone' },
+                    { key: 'ROLE', label: '🏷️ By Role' },
+                    { key: 'USER', label: '👤 Specific User' },
+                  ].map(t => {
+                    const isSelected = adminMsgTarget === t.key;
+                    return (
+                      <TouchableOpacity
+                        key={t.key}
+                        style={[
+                          styles.txPill,
+                          { borderColor: isSelected ? theme.primary : borderColor, backgroundColor: isSelected ? theme.primary + '20' : cardBg }
+                        ]}
+                        onPress={() => setAdminMsgTarget(t.key as any)}
+                      >
+                        <Text style={[styles.txPillText, { color: isSelected ? theme.primary : subtextColor }]}>
+                          {t.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Role sub-picker */}
+              {adminMsgTarget === 'ROLE' && (
+                <View style={styles.txFilterSection}>
+                  <Text style={[styles.txFilterSectionLabel, { color: subtextColor }]}>Role</Text>
+                  <View style={styles.txPillsRow}>
+                    {[
+                      { key: 'CUSTOMER', label: '🛍️ Customers' },
+                      { key: 'VENDOR', label: '🏪 Vendors' },
+                      { key: 'HANDYMAN', label: '🛠️ Artisans' },
+                      { key: 'RIDER', label: '🏍️ Riders' },
+                    ].map(t => {
+                      const isSelected = adminMsgRole === t.key;
+                      return (
+                        <TouchableOpacity
+                          key={t.key}
+                          style={[
+                            styles.txPill,
+                            { borderColor: isSelected ? theme.primary : borderColor, backgroundColor: isSelected ? theme.primary + '20' : cardBg }
+                          ]}
+                          onPress={() => setAdminMsgRole(t.key as any)}
+                        >
+                          <Text style={[styles.txPillText, { color: isSelected ? theme.primary : subtextColor }]}>
+                            {t.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+
+              {/* Specific-user picker */}
+              {adminMsgTarget === 'USER' && (
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Search user by name or email</Text>
+                  <TextInput
+                    style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+                    value={adminMsgUserSearch}
+                    onChangeText={(t) => { setAdminMsgUserSearch(t); setAdminMsgUserId(null); }}
+                    placeholder="e.g. Jane or jane@example.com"
+                    placeholderTextColor="#9CA3AF"
+                    autoCapitalize="none"
+                  />
+                  {usersLoading ? (
+                    <ActivityIndicator color={theme.primary} style={{ marginTop: 12 }} />
+                  ) : adminMsgUserSearch.trim().length > 0 && (
+                    <View style={{ marginTop: 8, maxHeight: 260 }}>
+                      <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled">
+                        {users
+                          .filter((u: any) => u.role !== 'ADMIN')
+                          .filter((u: any) => {
+                            const q = adminMsgUserSearch.trim().toLowerCase();
+                            return u.name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q);
+                          })
+                          .slice(0, 30)
+                          .map((u: any) => {
+                            const isSelected = adminMsgUserId === u.id;
+                            return (
+                              <TouchableOpacity
+                                key={u.id}
+                                onPress={() => setAdminMsgUserId(u.id)}
+                                style={{
+                                  flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+                                  padding: 12, borderRadius: 10, marginBottom: 6,
+                                  borderWidth: 1, borderColor: isSelected ? theme.primary : borderColor,
+                                  backgroundColor: isSelected ? theme.primary + '15' : cardBg,
+                                }}
+                              >
+                                <View>
+                                  <Text style={{ fontWeight: '700', color: textColor, fontSize: 13 }}>{u.name}</Text>
+                                  <Text style={{ color: subtextColor, fontSize: 12 }}>{u.email} · {u.role}</Text>
+                                </View>
+                                {isSelected && <Text style={{ color: theme.primary, fontWeight: '800' }}>✓</Text>}
+                              </TouchableOpacity>
+                            );
+                          })}
+                      </ScrollView>
+                    </View>
+                  )}
+                  {adminMsgUserId && (
+                    <Text style={{ marginTop: 8, fontSize: 12, color: theme.primary, fontWeight: '700' }}>
+                      Selected: {users.find((u: any) => u.id === adminMsgUserId)?.name}
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* Compose */}
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Title</Text>
+                <TextInput
+                  style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+                  value={adminMsgTitle}
+                  onChangeText={setAdminMsgTitle}
+                  placeholder="e.g. Scheduled maintenance tonight"
+                  placeholderTextColor="#9CA3AF"
+                  maxLength={120}
+                />
+              </View>
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Message</Text>
+                <TextInput
+                  style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card, minHeight: 100, textAlignVertical: 'top' }]}
+                  value={adminMsgBody}
+                  onChangeText={setAdminMsgBody}
+                  placeholder="Write your message..."
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  maxLength={1000}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.saveSettingsBtn, { backgroundColor: theme.primary }]}
+                onPress={handleSendAdminMessage}
+                disabled={adminMsgSending}
+              >
+                {adminMsgSending ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveSettingsBtnText}>📢 Send Message</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 

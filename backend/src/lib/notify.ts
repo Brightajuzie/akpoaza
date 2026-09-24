@@ -24,7 +24,7 @@ export interface NotifyPayload {
   /** Longer body text */
   body: string;
   /** Notification category for deep-link routing on the client */
-  type: 'ORDER' | 'BOOKING' | 'PARCEL' | 'PAYMENT' | 'KYC' | 'CALL' | 'GENERAL';
+  type: 'ORDER' | 'BOOKING' | 'PARCEL' | 'PAYMENT' | 'KYC' | 'CALL' | 'GENERAL' | 'ADMIN_MESSAGE';
   /** Entity id the notification is about (orderId, bookingId, etc.) */
   referenceId?: string;
   /** Override email address (default: user.email from DB) */

@@ -1,9 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Role } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import prisma from '../lib/prisma';
+import { notifyMany } from '../lib/notify';
 
 const router = Router();
+
+const MESSAGEABLE_ROLES: Role[] = ['CUSTOMER', 'VENDOR', 'HANDYMAN', 'RIDER'];
 
 /**
  * Helper function to create a notification.
@@ -113,6 +116,86 @@ router.post('/', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('POST /notifications error:', error);
     res.status(500).json({ error: 'Failed to create notification' });
+  }
+});
+
+/**
+ * POST /notifications/admin/message
+ * Authenticated, ADMIN role only.
+ * Lets an admin message a single user, every user of a given role, or
+ * every customer/vendor/artisan(handyman)/rider at once. Delivered via the
+ * existing in-app + email + SMS notification pipeline (type: ADMIN_MESSAGE).
+ *
+ * Body: { title, body, target: 'USER' | 'ROLE' | 'ALL', role?, userId? }
+ */
+router.post('/admin/message', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const admin = req.user!;
+    if (admin.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Forbidden: admin access only' });
+    }
+
+    const { title, body, target, role, userId } = req.body;
+
+    if (!title || typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ error: 'Message title is required' });
+    }
+    if (!body || typeof body !== 'string' || !body.trim()) {
+      return res.status(400).json({ error: 'Message body is required' });
+    }
+    if (!['USER', 'ROLE', 'ALL'].includes(target)) {
+      return res.status(400).json({ error: 'target must be USER, ROLE, or ALL' });
+    }
+
+    let recipients: { id: string; email: string | null; phone: string | null }[];
+
+    if (target === 'USER') {
+      if (!userId || typeof userId !== 'string') {
+        return res.status(400).json({ error: 'userId is required when target is USER' });
+      }
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, email: true, phone: true },
+      });
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      recipients = [user];
+    } else if (target === 'ROLE') {
+      if (!MESSAGEABLE_ROLES.includes(role)) {
+        return res.status(400).json({ error: `role must be one of ${MESSAGEABLE_ROLES.join(', ')}` });
+      }
+      recipients = await prisma.user.findMany({
+        where: { role: role as Role },
+        select: { id: true, email: true, phone: true },
+      });
+    } else {
+      recipients = await prisma.user.findMany({
+        where: { role: { in: MESSAGEABLE_ROLES } },
+        select: { id: true, email: true, phone: true },
+      });
+    }
+
+    if (recipients.length === 0) {
+      return res.status(404).json({ error: 'No matching recipients found' });
+    }
+
+    await notifyMany(
+      recipients.map((r) => ({
+        userId: r.id,
+        title: title.trim(),
+        body: body.trim(),
+        type: 'ADMIN_MESSAGE' as const,
+        email: r.email ?? undefined,
+        phone: r.phone ?? undefined,
+        emailSubject: `📢 Message from FixMart Admin: ${title.trim()}`,
+      }))
+    );
+
+    res.json({ success: true, recipientCount: recipients.length });
+  } catch (error) {
+    console.error('POST /notifications/admin/message error:', error);
+    res.status(500).json({ error: 'Failed to send admin message' });
   }
 });
 
