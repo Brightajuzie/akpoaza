@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView, useWindowDimensions, Platform, Modal, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView, useWindowDimensions, Platform, Modal, FlatList, Linking } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from '../utils/storage';
 import { AuthContext } from '../context/AuthContext';
@@ -832,6 +832,38 @@ export default function ProfileScreen({ navigation }: any) {
             <Text style={[styles.menuItemChevron, { color: theme.primary }]}>›</Text>
           </TouchableOpacity>
         )}
+
+        {/* Legal & Account Deletion (Google Play Compliance) */}
+        <TouchableOpacity
+          style={[styles.menuItem, { borderBottomColor: borderColor }]}
+          onPress={() => Linking.openURL('https://akpoaza-3.onrender.com/privacy-policy')}
+        >
+          <Text style={styles.menuItemIcon}>📜</Text>
+          <Text style={[styles.menuItemText, { color: textColor }]}>Privacy Policy</Text>
+          <Text style={[styles.menuItemChevron, { color: subtextColor }]}>›</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.menuItem, { borderBottomColor: 'transparent' }]}
+          onPress={() => {
+            Alert.alert(
+              'Delete Account',
+              'Are you sure you want to request permanent deletion of your account and all associated personal data? This action cannot be undone.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Request Deletion',
+                  style: 'destructive',
+                  onPress: () => Linking.openURL('https://akpoaza-3.onrender.com/account-deletion')
+                }
+              ]
+            );
+          }}
+        >
+          <Text style={styles.menuItemIcon}>⚠️</Text>
+          <Text style={[styles.menuItemText, { color: '#EF4444' }]}>Delete Account & Data</Text>
+          <Text style={[styles.menuItemChevron, { color: '#EF4444' }]}>›</Text>
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity style={[styles.logoutButton, { backgroundColor: isDark ? '#1E293B' : '#FFF', borderColor: '#EF4444' }]} onPress={logout}>

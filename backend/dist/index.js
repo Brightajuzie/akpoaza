@@ -47,6 +47,7 @@ const slides_1 = __importDefault(require("./routes/slides"));
 const errorHandler_1 = require("./middleware/errorHandler");
 const prisma_1 = __importDefault(require("./lib/prisma"));
 const wallet_2 = require("./lib/wallet");
+const legal_1 = require("./lib/legal");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
 // Trust Render's (and most cloud providers') reverse proxy so that
@@ -111,6 +112,8 @@ const generateSitemap = (req, res) => __awaiter(void 0, void 0, void 0, function
             { loc: '/services', changefreq: 'daily', priority: '0.9' },
             { loc: '/login', changefreq: 'monthly', priority: '0.4' },
             { loc: '/signup', changefreq: 'monthly', priority: '0.5' },
+            { loc: '/privacy-policy', changefreq: 'monthly', priority: '0.3' },
+            { loc: '/account-deletion', changefreq: 'monthly', priority: '0.3' },
         ];
         let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
         xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
@@ -184,6 +187,15 @@ app.get('/', (req, res) => {
         message: 'Welcome to the FixMart Backend API!',
         health: `${req.protocol}://${req.get('host')}/health`
     });
+});
+// Legal & Google Play compliance routes
+app.get(['/privacy-policy', '/api/privacy-policy'], (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send((0, legal_1.renderPrivacyPolicyHtml)());
+});
+app.get(['/account-deletion', '/api/account-deletion'], (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send((0, legal_1.renderAccountDeletionHtml)());
 });
 // Basic health check route
 app.get('/health', (req, res) => {

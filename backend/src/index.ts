@@ -35,6 +35,7 @@ import slidesRoutes from './routes/slides';
 import { errorHandler } from './middleware/errorHandler';
 import prisma from './lib/prisma';
 import { triggerSplitWebhook } from './lib/wallet';
+import { renderPrivacyPolicyHtml, renderAccountDeletionHtml } from './lib/legal';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -110,6 +111,8 @@ const generateSitemap = async (req: express.Request, res: express.Response) => {
       { loc: '/services', changefreq: 'daily', priority: '0.9' },
       { loc: '/login', changefreq: 'monthly', priority: '0.4' },
       { loc: '/signup', changefreq: 'monthly', priority: '0.5' },
+      { loc: '/privacy-policy', changefreq: 'monthly', priority: '0.3' },
+      { loc: '/account-deletion', changefreq: 'monthly', priority: '0.3' },
     ];
 
     let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
@@ -194,6 +197,17 @@ app.get('/', (req, res) => {
     message: 'Welcome to the FixMart Backend API!',
     health: `${req.protocol}://${req.get('host')}/health`
   });
+});
+
+// Legal & Google Play compliance routes
+app.get(['/privacy-policy', '/api/privacy-policy'], (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(renderPrivacyPolicyHtml());
+});
+
+app.get(['/account-deletion', '/api/account-deletion'], (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(renderAccountDeletionHtml());
 });
 
 // Basic health check route

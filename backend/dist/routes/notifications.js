@@ -16,7 +16,9 @@ exports.createNotification = createNotification;
 const express_1 = require("express");
 const auth_1 = require("../middleware/auth");
 const prisma_1 = __importDefault(require("../lib/prisma"));
+const notify_1 = require("../lib/notify");
 const router = (0, express_1.Router)();
+const MESSAGEABLE_ROLES = ['CUSTOMER', 'VENDOR', 'HANDYMAN', 'RIDER'];
 /**
  * Helper function to create a notification.
  * Can be imported and used by other route files.
@@ -103,6 +105,82 @@ router.post('/', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     catch (error) {
         console.error('POST /notifications error:', error);
         res.status(500).json({ error: 'Failed to create notification' });
+    }
+}));
+/**
+ * POST /notifications/admin/message
+ * Authenticated, ADMIN role only.
+ * Lets an admin message a single user, every user of a given role, or
+ * every customer/vendor/artisan(handyman)/rider at once. Delivered via the
+ * existing in-app + email + SMS notification pipeline (type: ADMIN_MESSAGE).
+ *
+ * Body: { title, body, target: 'USER' | 'ROLE' | 'ALL', role?, userId? }
+ */
+router.post('/admin/message', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const admin = req.user;
+        if (admin.role !== 'ADMIN') {
+            return res.status(403).json({ error: 'Forbidden: admin access only' });
+        }
+        const { title, body, target, role, userId } = req.body;
+        if (!title || typeof title !== 'string' || !title.trim()) {
+            return res.status(400).json({ error: 'Message title is required' });
+        }
+        if (!body || typeof body !== 'string' || !body.trim()) {
+            return res.status(400).json({ error: 'Message body is required' });
+        }
+        if (!['USER', 'ROLE', 'ALL'].includes(target)) {
+            return res.status(400).json({ error: 'target must be USER, ROLE, or ALL' });
+        }
+        let recipients;
+        if (target === 'USER') {
+            if (!userId || typeof userId !== 'string') {
+                return res.status(400).json({ error: 'userId is required when target is USER' });
+            }
+            const user = yield prisma_1.default.user.findUnique({
+                where: { id: userId },
+                select: { id: true, email: true, phone: true },
+            });
+            if (!user) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+            recipients = [user];
+        }
+        else if (target === 'ROLE') {
+            if (!MESSAGEABLE_ROLES.includes(role)) {
+                return res.status(400).json({ error: `role must be one of ${MESSAGEABLE_ROLES.join(', ')}` });
+            }
+            recipients = yield prisma_1.default.user.findMany({
+                where: { role: role },
+                select: { id: true, email: true, phone: true },
+            });
+        }
+        else {
+            recipients = yield prisma_1.default.user.findMany({
+                where: { role: { in: MESSAGEABLE_ROLES } },
+                select: { id: true, email: true, phone: true },
+            });
+        }
+        if (recipients.length === 0) {
+            return res.status(404).json({ error: 'No matching recipients found' });
+        }
+        yield (0, notify_1.notifyMany)(recipients.map((r) => {
+            var _a, _b;
+            return ({
+                userId: r.id,
+                title: title.trim(),
+                body: body.trim(),
+                type: 'ADMIN_MESSAGE',
+                email: (_a = r.email) !== null && _a !== void 0 ? _a : undefined,
+                phone: (_b = r.phone) !== null && _b !== void 0 ? _b : undefined,
+                emailSubject: `📢 Message from FixMart Admin: ${title.trim()}`,
+            });
+        }));
+        res.json({ success: true, recipientCount: recipients.length });
+    }
+    catch (error) {
+        console.error('POST /notifications/admin/message error:', error);
+        res.status(500).json({ error: 'Failed to send admin message' });
     }
 }));
 exports.default = router;
