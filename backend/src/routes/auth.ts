@@ -269,7 +269,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Google OAuth Login / Signup
-const googleClient = new OAuth2Client(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || 'dummy-client-id');
+const googleClient = new OAuth2Client();
 
 router.post('/google', async (req, res) => {
   const { idToken, role, email: directEmail, name: directName, picture: directPicture } = req.body;
@@ -287,13 +287,14 @@ router.post('/google', async (req, res) => {
         });
         const settingsMap = dbSettings.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as Record<string, string>);
 
-        const webId     = settingsMap.google_web_client_id     || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID     || 'dummy-client-id';
-        const iosId     = settingsMap.google_ios_client_id     || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || 'dummy-ios-client-id';
-        const androidId = settingsMap.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || 'dummy-android-client-id';
+        const webId     = settingsMap.google_web_client_id     || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID     || '';
+        const iosId     = settingsMap.google_ios_client_id     || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || '';
+        const androidId = settingsMap.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '';
 
+        const validAudiences = [webId, iosId, androidId].filter(id => id && !id.startsWith('dummy-'));
         const ticket = await googleClient.verifyIdToken({
           idToken,
-          audience: [webId, iosId, androidId],
+          ...(validAudiences.length > 0 ? { audience: validAudiences } : {}),
         });
         const payload = ticket.getPayload();
         if (!payload || !payload.email) return res.status(400).json({ error: 'Invalid Google token payload' });

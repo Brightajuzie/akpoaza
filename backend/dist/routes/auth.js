@@ -237,7 +237,7 @@ router.post('/login', (req, res) => __awaiter(void 0, void 0, void 0, function* 
     }
 }));
 // Google OAuth Login / Signup
-const googleClient = new google_auth_library_1.OAuth2Client(process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || 'dummy-client-id');
+const googleClient = new google_auth_library_1.OAuth2Client();
 router.post('/google', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { idToken, role, email: directEmail, name: directName, picture: directPicture } = req.body;
     try {
@@ -251,13 +251,11 @@ router.post('/google', (req, res) => __awaiter(void 0, void 0, void 0, function*
                     where: { key: { in: ['google_web_client_id', 'google_ios_client_id', 'google_android_client_id'] } }
                 });
                 const settingsMap = dbSettings.reduce((acc, curr) => (Object.assign(Object.assign({}, acc), { [curr.key]: curr.value })), {});
-                const webId = settingsMap.google_web_client_id || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || 'dummy-client-id';
-                const iosId = settingsMap.google_ios_client_id || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || 'dummy-ios-client-id';
-                const androidId = settingsMap.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || 'dummy-android-client-id';
-                const ticket = yield googleClient.verifyIdToken({
-                    idToken,
-                    audience: [webId, iosId, androidId],
-                });
+                const webId = settingsMap.google_web_client_id || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
+                const iosId = settingsMap.google_ios_client_id || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
+                const androidId = settingsMap.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '';
+                const validAudiences = [webId, iosId, androidId].filter(id => id && !id.startsWith('dummy-'));
+                const ticket = yield googleClient.verifyIdToken(Object.assign({ idToken }, (validAudiences.length > 0 ? { audience: validAudiences } : {})));
                 const payload = ticket.getPayload();
                 if (!payload || !payload.email)
                     return res.status(400).json({ error: 'Invalid Google token payload' });

@@ -15,21 +15,108 @@ import {
   Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 import apiClient, { getImageUri } from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
 import AddressInput from '../components/AddressInput';
 
+// Required for Google OAuth to complete auth session
+WebBrowser.maybeCompleteAuthSession();
+
 export default function SignupScreen({ route, navigation }: any) {
   const { width } = useWindowDimensions();
   const isLargeScreen = width >= 768;
   const { login } = useContext(AuthContext);
-  const { theme } = useContext(SettingsContext);
+  const { theme, settings } = useContext(SettingsContext);
 
   const redirectTo: string | undefined = route?.params?.redirectTo;
   const redirectParams: any = route?.params?.redirectParams;
   const TAB_SCREENS = ['HomeTab', 'CartTab', 'NotificationsTab', 'ProfileTab'];
+
+  // ── Google Auth ──────────────────────────────────────────────────────────
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const ANDROID_ID = settings?.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || undefined;
+  const IOS_ID     = settings?.google_ios_client_id     || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || undefined;
+  const WEB_ID     = settings?.google_web_client_id     || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID      || undefined;
+  const googleConfigured = !!(ANDROID_ID || IOS_ID || WEB_ID);
+
+  const [request, response, promptAsync] = Google.useAuthRequest(
+    googleConfigured
+      ? { androidClientId: ANDROID_ID, iosClientId: IOS_ID, webClientId: WEB_ID }
+      : ({ androidClientId: 'placeholder', iosClientId: 'placeholder', webClientId: 'placeholder' } as any),
+  );
+
+  React.useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response;
+      if (authentication?.accessToken) {
+        fetchGoogleUserInfo(authentication.accessToken, authentication?.idToken);
+      } else if (authentication?.idToken) {
+        handleGoogleAuth(authentication.idToken);
+      } else {
+        setGoogleLoading(false);
+      }
+    } else if (response?.type === 'error') {
+      setGoogleLoading(false);
+      Alert.alert('Google Sign-Up', response.error?.message || 'Google sign-up was cancelled or encountered an error.');
+    } else if (response?.type === 'dismiss' || response?.type === 'cancel') {
+      setGoogleLoading(false);
+    }
+  }, [response]);
+
+  const fetchGoogleUserInfo = async (accessToken: string, idToken?: string) => {
+    setGoogleLoading(true);
+    try {
+      let userEmail = '';
+      let userName = '';
+      let userPicture = '';
+      let userGoogleSub = '';
+      try {
+        const userInfoRes = await fetch('https://www.googleapis.com/userinfo/v2/me', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const userInfo = await userInfoRes.json();
+        userEmail = userInfo.email || '';
+        userName = userInfo.name || '';
+        userPicture = userInfo.picture || '';
+        userGoogleSub = userInfo.id || '';
+      } catch (err) {
+        console.warn('Could not fetch userinfo directly from Google API:', err);
+      }
+
+      const res = await apiClient.post('/auth/google', {
+        idToken: idToken || accessToken,
+        googleSub: userGoogleSub,
+        email: userEmail,
+        name: userName,
+        picture: userPicture,
+        role: 'CUSTOMER',
+      });
+      await login(res.data.token, res.data.user);
+      handlePostAuthNavigation();
+    } catch (err: any) {
+      const msg = err.response?.data?.error || err.response?.data?.detail || 'Could not complete Google sign-up.';
+      Alert.alert('Google Sign-Up Failed', msg);
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleGoogleAuth = async (idToken: string) => {
+    setGoogleLoading(true);
+    try {
+      const res = await apiClient.post('/auth/google', { idToken, role: 'CUSTOMER' });
+      await login(res.data.token, res.data.user);
+      handlePostAuthNavigation();
+    } catch (err: any) {
+      Alert.alert('Google Sign-Up Failed', err.response?.data?.error || 'Could not complete Google sign-up.');
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   // Current Step: 1 = Essentials, 2 = Business / Service Details (Partners only)
   const [currentStep, setCurrentStep] = useState(1);
@@ -719,8 +806,48 @@ export default function SignupScreen({ route, navigation }: any) {
                 </Text>
               )}
             </TouchableOpacity>
+
+            {/* ── Google Sign-In for Customers ── */}
+            {role === 'CUSTOMER' && googleConfigured && (
+              <>
+                <View style={styles.dividerRow}>
+                  <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+                  <Text style={[styles.dividerText, { color: '#8E8E93' }]}>or continue with</Text>
+                  <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.googleBtn}
+                  onPress={async () => {
+                    if (googleLoading) return;
+                    try {
+                      setGoogleLoading(true);
+                      const res = await promptAsync();
+                      if (res?.type !== 'success') {
+                        setGoogleLoading(false);
+                      }
+                    } catch (e: any) {
+                      setGoogleLoading(false);
+                      Alert.alert('Google Sign-Up Error', e?.message || 'Could not open Google authentication.');
+                    }
+                  }}
+                  disabled={googleLoading || !request}
+                  activeOpacity={0.8}
+                >
+                  {googleLoading ? (
+                    <ActivityIndicator color="#1C1C1E" />
+                  ) : (
+                    <View style={styles.googleBtnInner}>
+                      <Text style={styles.googleIcon}>G</Text>
+                      <Text style={styles.googleBtnText}>Continue with Google</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
+
 
         {/* ── STEP 2: Professional & Business Details (Partners only) ── */}
         {currentStep === 2 && role !== 'CUSTOMER' && (
@@ -1485,4 +1612,47 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
   },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E5E5EA',
+  },
+  dividerText: {
+    marginHorizontal: 12,
+    color: '#8E8E93',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  googleBtn: {
+    height: 52,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E5E5EA',
+    backgroundColor: '#FAFAFA',
+    marginBottom: 8,
+  },
+  googleBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  googleIcon: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#4285F4',
+    fontStyle: 'italic',
+  },
+  googleBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1C1C1E',
+  },
 });
+

@@ -68,12 +68,18 @@ export default function LoginScreen({ route, navigation }: any) {
   useEffect(() => {
     if (response?.type === 'success') {
       const { authentication } = response;
-      if (authentication?.idToken) {
+      if (authentication?.accessToken) {
+        fetchGoogleUserInfo(authentication.accessToken, authentication?.idToken);
+      } else if (authentication?.idToken) {
         handleGoogleAuth(authentication.idToken);
-      } else if (authentication?.accessToken) {
-        // Fallback: fetch the ID token using the access token
-        fetchGoogleUserInfo(authentication.accessToken);
+      } else {
+        setGoogleLoading(false);
       }
+    } else if (response?.type === 'error') {
+      setGoogleLoading(false);
+      Alert.alert('Google Sign-In', response.error?.message || 'Google sign-in was cancelled or encountered an error.');
+    } else if (response?.type === 'dismiss' || response?.type === 'cancel') {
+      setGoogleLoading(false);
     }
   }, [response]);
 
@@ -193,20 +199,34 @@ export default function LoginScreen({ route, navigation }: any) {
   };
 
   // ── Google Login ──────────────────────────────────────────────────────────
-  const fetchGoogleUserInfo = async (accessToken: string) => {
+  const fetchGoogleUserInfo = async (accessToken: string, idToken?: string) => {
     setGoogleLoading(true);
     try {
-      const userInfoRes = await fetch('https://www.googleapis.com/userinfo/v2/me', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      const userInfo = await userInfoRes.json();
+      let email = '';
+      let name = '';
+      let picture = '';
+      let googleSub = '';
+      try {
+        const userInfoRes = await fetch('https://www.googleapis.com/userinfo/v2/me', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const userInfo = await userInfoRes.json();
+        email = userInfo.email || '';
+        name = userInfo.name || '';
+        picture = userInfo.picture || '';
+        googleSub = userInfo.id || '';
+      } catch (e) {
+        console.warn('Could not fetch userinfo directly from Google API:', e);
+      }
+
       // Exchange with our backend
       const res = await apiClient.post('/auth/google', {
-        idToken: accessToken, // backend will use access token flow
-        googleSub: userInfo.id,
-        email: userInfo.email,
-        name: userInfo.name,
-        picture: userInfo.picture,
+        idToken: idToken || accessToken,
+        googleSub,
+        email,
+        name,
+        picture,
+        role: 'CUSTOMER',
       });
       await login(res.data.token, res.data.user);
       navigateAfterLogin(res.data.user);
@@ -221,7 +241,7 @@ export default function LoginScreen({ route, navigation }: any) {
   const handleGoogleAuth = async (idToken: string) => {
     setGoogleLoading(true);
     try {
-      const res = await apiClient.post('/auth/google', { idToken });
+      const res = await apiClient.post('/auth/google', { idToken, role: 'CUSTOMER' });
       await login(res.data.token, res.data.user);
       navigateAfterLogin(res.data.user);
     } catch (err: any) {
@@ -304,21 +324,34 @@ export default function LoginScreen({ route, navigation }: any) {
             : <Text style={styles.buttonText}>Log In</Text>}
         </TouchableOpacity>
 
-        {/* ── Google Sign-In (only shown when client IDs are configured) ── */}
+        {/* ── Google Sign-In (for Customers) ── */}
         {googleConfigured && (
           <TouchableOpacity
             style={styles.googleBtn}
-            onPress={() => promptAsync()}
+            onPress={async () => {
+              if (googleLoading) return;
+              try {
+                setGoogleLoading(true);
+                const res = await promptAsync();
+                if (res?.type !== 'success') {
+                  setGoogleLoading(false);
+                }
+              } catch (e: any) {
+                setGoogleLoading(false);
+                Alert.alert('Google Sign-In Error', e?.message || 'Could not open Google authentication.');
+              }
+            }}
             disabled={googleLoading || !request}
+            activeOpacity={0.8}
           >
-            {googleLoading
-              ? <ActivityIndicator color="#1C1C1E" />
-              : (
-                <View style={styles.googleBtnInner}>
-                  <Text style={styles.googleIcon}>G</Text>
-                  <Text style={styles.googleBtnText}>Continue with Google</Text>
-                </View>
-              )}
+            {googleLoading ? (
+              <ActivityIndicator color="#1C1C1E" />
+            ) : (
+              <View style={styles.googleBtnInner}>
+                <Text style={styles.googleIcon}>G</Text>
+                <Text style={styles.googleBtnText}>Continue with Google</Text>
+              </View>
+            )}
           </TouchableOpacity>
         )}
 
