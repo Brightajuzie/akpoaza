@@ -1,10 +1,10 @@
-import React, { useState, useContext, useMemo } from 'react';
+import React, { useState, useContext, useMemo, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Alert,
-  ActivityIndicator, ScrollView, TextInput, Modal, useWindowDimensions, Platform
+  ActivityIndicator, ScrollView, TextInput, Modal, useWindowDimensions, Platform, Image
 } from 'react-native';
 import { useStripe } from '@stripe/stripe-react-native';
-import apiClient from '../api/client';
+import apiClient, { getImageUri } from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { CartContext } from '../context/CartContext';
 import { SettingsContext } from '../context/SettingsContext';
@@ -37,7 +37,7 @@ export default function CheckoutScreen({ route, navigation }: any) {
   } = route.params || {};
 
   const { userToken, userInfo, login } = useContext(AuthContext);
-  const { clearCart } = useContext(CartContext);
+  const { cart, updateQuantity, updateSize, removeFromCart, clearCart } = useContext(CartContext);
   const { theme, settings, colorMode } = useContext(SettingsContext);
   const { fmt, toLocal, currency } = useCurrency();
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
@@ -53,6 +53,139 @@ export default function CheckoutScreen({ route, navigation }: any) {
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const [isSplit, setIsSplit] = useState(false);
 
+  // Products list for order checkout
+  const [items, setItems] = useState<any[]>(() => {
+    if (cartItems && cartItems.length > 0) {
+      return cartItems.map((i: any) => ({
+        id: i.id || i.productId,
+        name: i.name || 'Product',
+        price: Number(i.price) || 0,
+        quantity: Math.max(1, Number(i.quantity) || 1),
+        imageUrl: i.imageUrl || i.images?.[0]?.url,
+        size: i.size || 'M',
+        availableSizes: i.availableSizes && i.availableSizes.length > 0 ? i.availableSizes : ['S', 'M', 'L', 'XL', 'XXL'],
+      }));
+    }
+    if (cart && cart.length > 0) {
+      return cart
+        .filter((c: any) => c.type === 'product')
+        .map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          price: Number(c.price) || 0,
+          quantity: Math.max(1, Number(c.quantity) || 1),
+          imageUrl: c.imageUrl,
+          size: c.size || 'M',
+          availableSizes: c.availableSizes && c.availableSizes.length > 0 ? c.availableSizes : ['S', 'M', 'L', 'XL', 'XXL'],
+        }));
+    }
+    return [];
+  });
+
+  // If initialId was given and items is empty, fetch order details from backend
+  useEffect(() => {
+    if (checkoutType === 'order' && activeRecordId && items.length === 0) {
+      apiClient.get(`/orders/${activeRecordId}`)
+        .then((res) => {
+          if (res.data?.items && res.data.items.length > 0) {
+            const fetchedItems = res.data.items.map((oi: any) => ({
+              id: oi.product?.id || oi.productId,
+              name: oi.product?.name || 'Product',
+              price: oi.price || oi.product?.price || 0,
+              quantity: oi.quantity || 1,
+              imageUrl: oi.product?.imageUrl || oi.product?.images?.[0]?.url,
+              size: oi.product?.size || 'M',
+              availableSizes: ['S', 'M', 'L', 'XL', 'XXL'],
+            }));
+            setItems(fetchedItems);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [activeRecordId, checkoutType]);
+
+  const orderItemsTotal = useMemo(() => {
+    if (checkoutType === 'order' && items.length > 0) {
+      return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    }
+    return amount;
+  }, [checkoutType, items, amount]);
+
+  const currentAmount = checkoutType === 'order' && items.length > 0 && !isRemainingPayment ? orderItemsTotal : amount;
+  const displayAmount = isRemainingPayment ? currentAmount : isSplit ? currentAmount / 2 : currentAmount;
+  const localAmount = toLocal(displayAmount);
+
+  // Item modification handlers
+  const handleIncreaseQuantity = (productId: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === productId ? { ...item, quantity: item.quantity + 1 } : item
+      )
+    );
+    const existing = items.find((i) => i.id === productId);
+    if (existing) {
+      updateQuantity(productId, existing.quantity + 1);
+    }
+  };
+
+  const handleDecreaseQuantity = (productId: string) => {
+    const existing = items.find((i) => i.id === productId);
+    if (!existing) return;
+    if (existing.quantity <= 1) {
+      handleRemoveItem(productId);
+      return;
+    }
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === productId ? { ...item, quantity: item.quantity - 1 } : item
+      )
+    );
+    updateQuantity(productId, existing.quantity - 1);
+  };
+
+  const handleSelectSize = (productId: string, newSize: string) => {
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === productId ? { ...item, size: newSize } : item
+      )
+    );
+    updateSize(productId, newSize);
+  };
+
+  const handleNextSize = (productId: string) => {
+    const item = items.find((i) => i.id === productId);
+    if (!item) return;
+    const sizes = item.availableSizes && item.availableSizes.length > 0 ? item.availableSizes : ['S', 'M', 'L', 'XL', 'XXL'];
+    const currentIndex = sizes.indexOf(item.size);
+    const nextIndex = currentIndex >= 0 && currentIndex < sizes.length - 1 ? currentIndex + 1 : 0;
+    handleSelectSize(productId, sizes[nextIndex]);
+  };
+
+  const handleRemoveItem = (productId: string) => {
+    if (items.length <= 1) {
+      Alert.alert(
+        'Cannot Remove',
+        'You must have at least one product in your order. To cancel checkout, please return to your cart.',
+        [
+          { text: 'Stay Here', style: 'cancel' },
+          { text: 'Return to Cart', onPress: () => navigation.goBack() },
+        ]
+      );
+      return;
+    }
+    Alert.alert('Remove Product', 'Remove this product from your checkout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          setItems((prev) => prev.filter((i) => i.id !== productId));
+          removeFromCart(productId);
+        },
+      },
+    ]);
+  };
+
   // Guest inputs
   const [guestName, setGuestName] = useState(userInfo?.name || '');
   const [guestEmail, setGuestEmail] = useState(userInfo?.email || '');
@@ -67,9 +200,6 @@ export default function CheckoutScreen({ route, navigation }: any) {
   const [registerPassword, setRegisterPassword] = useState('');
   const [registerLoading, setRegisterLoading] = useState(false);
 
-  const displayAmount = isRemainingPayment ? amount : isSplit ? amount / 2 : amount;
-  const localAmount = toLocal(displayAmount);
-
   const availableMethods = useMemo(() => {
     if (!settings || Object.keys(settings).length === 0) return ALL_PAYMENT_METHODS;
     return ALL_PAYMENT_METHODS.filter(m => {
@@ -79,14 +209,21 @@ export default function CheckoutScreen({ route, navigation }: any) {
   }, [settings, userToken]);
 
   const ensureRecordCreated = async (provider: string): Promise<string | null> => {
+    const orderItemsPayload = items.map((i) => ({
+      productId: i.id,
+      quantity: i.quantity,
+      size: i.size,
+    }));
+
     if (activeRecordId) {
-      if (checkoutType === 'order' && guestAddress.trim()) {
+      if (checkoutType === 'order') {
         await apiClient.patch(`/orders/${activeRecordId}/checkout-details`, {
-          deliveryAddress: guestAddress.trim(),
+          deliveryAddress: guestAddress.trim() || undefined,
           paymentProvider: provider,
           guestName: guestName.trim() || undefined,
           guestPhone: guestPhone.trim() || undefined,
-        }).catch(() => {});
+          items: orderItemsPayload.length > 0 ? orderItemsPayload : undefined,
+        }).catch((err) => console.warn('[Checkout] Order details update error:', err));
       }
       return activeRecordId;
     }
@@ -98,15 +235,27 @@ export default function CheckoutScreen({ route, navigation }: any) {
     try {
       if (checkoutType === 'order') {
         const endpoint = userToken ? '/orders/checkout' : '/orders/guest-checkout';
-        const payload: any = { items: cartItems, paymentProvider: provider, deliveryAddress: guestAddress.trim() || undefined };
-        if (!userToken) { payload.guestName = guestName.trim(); payload.guestEmail = guestEmail.trim(); payload.guestPhone = guestPhone.trim(); }
+        const payload: any = {
+          items: orderItemsPayload.length > 0 ? orderItemsPayload : cartItems,
+          paymentProvider: provider,
+          deliveryAddress: guestAddress.trim() || undefined,
+        };
+        if (!userToken) {
+          payload.guestName = guestName.trim();
+          payload.guestEmail = guestEmail.trim();
+          payload.guestPhone = guestPhone.trim();
+        }
 
         const res = await apiClient.post(endpoint, payload);
         const createdId = res.data?.order?.id;
         if (createdId) {
-          setActiveRecordId(createdId); clearCart();
+          setActiveRecordId(createdId);
+          clearCart();
           if (res.data?.riderDistance !== undefined || res.data?.order?.rider?.name) {
-            setAssignedProviderInfo({ name: res.data?.order?.rider?.name, distance: res.data?.riderDistance });
+            setAssignedProviderInfo({
+              name: res.data?.order?.rider?.name,
+              distance: res.data?.riderDistance,
+            });
           }
           return createdId;
         }
@@ -514,6 +663,187 @@ export default function CheckoutScreen({ route, navigation }: any) {
         </View>
       )}
 
+      {/* Purchased Products & Options to Increase Purchased Size */}
+      {checkoutType === 'order' && items.length > 0 && (
+        <View style={[styles.card, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardHeaderIcon}>🛍️</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.cardHeaderTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
+                Purchased Products
+              </Text>
+              <Text style={[styles.cardSubText, { color: isDark ? '#64748B' : '#94A3B8', marginBottom: 0 }]}>
+                Review items, increase size/quantity & verify total before checkout
+              </Text>
+            </View>
+            <View style={[styles.countBadge, { backgroundColor: theme.primary + '18' }]}>
+              <Text style={[styles.countBadgeText, { color: theme.primary }]}>
+                {items.reduce((s, i) => s + i.quantity, 0)} item{items.reduce((s, i) => s + i.quantity, 0) !== 1 ? 's' : ''}
+              </Text>
+            </View>
+          </View>
+
+          <View style={[styles.itemsDivider, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]} />
+
+          {items.map((item, idx) => {
+            const lineTotal = item.price * item.quantity;
+            const availableSizes = item.availableSizes && item.availableSizes.length > 0 ? item.availableSizes : ['S', 'M', 'L', 'XL', 'XXL'];
+            const imgUri = item.imageUrl ? (getImageUri(item.imageUrl) || item.imageUrl) : null;
+
+            return (
+              <View
+                key={item.id + '-' + idx}
+                style={[
+                  styles.productItemCard,
+                  {
+                    backgroundColor: isDark ? '#0F172A' : '#F8FAFC',
+                    borderColor: isDark ? '#334155' : '#E2E8F0',
+                  },
+                  idx > 0 && { marginTop: 12 },
+                ]}
+              >
+                {/* Top: Image & Info */}
+                <View style={styles.productItemTop}>
+                  {imgUri ? (
+                    <Image
+                      source={{ uri: imgUri }}
+                      style={styles.productItemImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[styles.productImageFallback, { backgroundColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
+                      <Text style={{ fontSize: 24 }}>📦</Text>
+                    </View>
+                  )}
+
+                  <View style={styles.productItemMeta}>
+                    <Text
+                      style={[styles.productItemName, { color: isDark ? '#F1F5F9' : '#0F172A' }]}
+                      numberOfLines={2}
+                    >
+                      {item.name}
+                    </Text>
+                    <Text style={[styles.productItemPrice, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      {fmt(item.price)} each
+                    </Text>
+                    <Text style={[styles.productItemLineTotal, { color: theme.primary }]}>
+                      Subtotal: {fmt(lineTotal)}
+                    </Text>
+                  </View>
+
+                  {items.length > 1 && (
+                    <TouchableOpacity
+                      onPress={() => handleRemoveItem(item.id)}
+                      style={styles.removeItemBtn}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.removeItemBtnText}>✕</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Middle: Size Selector & Increase Size Options */}
+                <View style={[styles.sizeSelectorRow, { borderColor: isDark ? '#1E293B' : '#EDF2F7' }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={[styles.sizeSelectorLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      📐 Size:
+                    </Text>
+                    <Text style={[styles.currentSizeBadgeText, { color: theme.primary }]}>
+                      {item.size || 'M'}
+                    </Text>
+                  </View>
+
+                  <View style={styles.sizeChipsWrap}>
+                    {availableSizes.map((s: string) => {
+                      const isSelected = (item.size || '').toUpperCase() === s.toUpperCase();
+                      return (
+                        <TouchableOpacity
+                          key={s}
+                          style={[
+                            styles.sizeChip,
+                            isSelected
+                              ? { backgroundColor: theme.primary, borderColor: theme.primary }
+                              : {
+                                  backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+                                  borderColor: isDark ? '#334155' : '#CBD5E1',
+                                },
+                          ]}
+                          onPress={() => handleSelectSize(item.id, s)}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[
+                              styles.sizeChipText,
+                              { color: isSelected ? '#FFFFFF' : (isDark ? '#F1F5F9' : '#334155') },
+                            ]}
+                          >
+                            {s}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+
+                    <TouchableOpacity
+                      style={[styles.nextSizeBtn, { borderColor: theme.primary + '50', backgroundColor: theme.primary + '12' }]}
+                      onPress={() => handleNextSize(item.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.nextSizeBtnText, { color: theme.primary }]}>+ Next Size</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Bottom: Quantity Controls to increase purchased size */}
+                <View style={styles.qtyControlRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.qtyLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                      Purchased Qty:
+                    </Text>
+                  </View>
+
+                  <View style={[styles.stepperContainer, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#CBD5E1' }]}>
+                    <TouchableOpacity
+                      style={styles.stepperBtn}
+                      onPress={() => handleDecreaseQuantity(item.id)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={[styles.stepperBtnText, { color: isDark ? '#94A3B8' : '#475569' }]}>−</Text>
+                    </TouchableOpacity>
+
+                    <Text style={[styles.stepperValue, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>
+                      {item.quantity}
+                    </Text>
+
+                    <TouchableOpacity
+                      style={[styles.stepperBtn, { backgroundColor: theme.primary + '15' }]}
+                      onPress={() => handleIncreaseQuantity(item.id)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={[styles.stepperBtnText, { color: theme.primary, fontWeight: '900' }]}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+
+          {/* Subtotal Banner */}
+          <View style={[styles.orderItemsFooter, { borderTopColor: isDark ? '#334155' : '#E2E8F0' }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.orderItemsFooterLabel, { color: isDark ? '#94A3B8' : '#64748B' }]}>
+                Products Subtotal
+              </Text>
+              <Text style={{ fontSize: 11, color: '#10B981', fontWeight: '600', marginTop: 2 }}>
+                ✓ Total updates automatically
+              </Text>
+            </View>
+            <Text style={[styles.orderItemsFooterAmount, { color: theme.primary }]}>
+              {fmt(orderItemsTotal)}
+            </Text>
+          </View>
+        </View>
+      )}
+
       {/* Amount Card */}
       <View style={[styles.amountCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
         <Text style={[styles.amountLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>
@@ -638,6 +968,158 @@ const styles = StyleSheet.create({
   cardHeaderIcon: { fontSize: 20 },
   cardHeaderTitle: { fontSize: 16, fontWeight: '800' },
   cardSubText: { fontSize: 12, marginBottom: 14 },
+
+  countBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  countBadgeText: { fontSize: 11, fontWeight: '800' },
+  itemsDivider: { height: 1, marginVertical: 12 },
+
+  productItemCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+  },
+  productItemTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  productItemImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  productImageFallback: {
+    width: 60,
+    height: 60,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productItemMeta: {
+    flex: 1,
+    gap: 2,
+  },
+  productItemName: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  productItemPrice: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  productItemLineTotal: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  removeItemBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EF444415',
+  },
+  removeItemBtnText: {
+    color: '#EF4444',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  sizeSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 10,
+    marginTop: 10,
+    borderTopWidth: 1,
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  sizeSelectorLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  currentSizeBadgeText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  sizeChipsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  sizeChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    minWidth: 28,
+    alignItems: 'center',
+  },
+  sizeChipText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  nextSizeBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  nextSizeBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  qtyControlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  qtyLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  stepperBtn: {
+    width: 32,
+    height: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  stepperValue: {
+    paddingHorizontal: 12,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  orderItemsFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    marginTop: 14,
+    borderTopWidth: 1,
+  },
+  orderItemsFooterLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  orderItemsFooterAmount: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
 
   inputGroup: { marginBottom: 12 },
   inputLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 },

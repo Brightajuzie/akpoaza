@@ -121,11 +121,16 @@ export default function ProductDetailScreen({ route, navigation }: any) {
 
   const handleAddToCart = () => {
     if (product) {
+      const rawImgUrl = product.images?.[0]?.url || product.imageUrl;
       addToCart({
         id: product.id,
         name: product.name,
         price: product.price,
-        type: 'product'
+        type: 'product',
+        imageUrl: rawImgUrl,
+        size: product.size || 'M',
+        availableSizes: ['S', 'M', 'L', 'XL'],
+        stock: product.stock,
       });
       setAddedModalVisible(true);
     }

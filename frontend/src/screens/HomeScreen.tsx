@@ -986,8 +986,17 @@ export default function HomeScreen({ navigation }: any) {
                       ]}
                       onPress={(e) => {
                         e.stopPropagation();
-                        if ((product.stock ?? 0) <= 0) return;
-                        addToCart({ id: product.id, name: product.name, price: product.price, type: 'product' });
+                        const rawImgUrl = product.images?.[0]?.url || product.imageUrl;
+                        addToCart({
+                          id: product.id,
+                          name: product.name,
+                          price: product.price,
+                          type: 'product',
+                          imageUrl: rawImgUrl,
+                          size: product.size || 'M',
+                          availableSizes: ['S', 'M', 'L', 'XL'],
+                          stock: product.stock,
+                        });
                         setAddedCartFeedback(`Added "${product.name}" to cart!`);
                         setTimeout(() => setAddedCartFeedback(null), 2500);
                       }}

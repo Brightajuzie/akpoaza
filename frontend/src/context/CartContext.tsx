@@ -6,13 +6,18 @@ export interface CartItem {
   price: number;
   quantity: number;
   type: 'product' | 'service';
+  imageUrl?: string;
+  size?: string;
+  availableSizes?: string[];
+  stock?: number;
 }
 
 interface CartContextData {
   cart: CartItem[];
-  addToCart: (item: Omit<CartItem, 'quantity'>) => void;
+  addToCart: (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => void;
   removeFromCart: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
+  updateSize: (id: string, size: string) => void;
   clearCart: () => void;
   cartTotal: number;
 }
@@ -22,6 +27,7 @@ export const CartContext = createContext<CartContextData>({
   addToCart: () => {},
   removeFromCart: () => {},
   updateQuantity: () => {},
+  updateSize: () => {},
   clearCart: () => {},
   cartTotal: 0,
 });
@@ -29,15 +35,23 @@ export const CartContext = createContext<CartContextData>({
 export const CartProvider = ({ children }: { children: ReactNode }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
 
-  const addToCart = (item: Omit<CartItem, 'quantity'>) => {
+  const addToCart = (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => {
     setCart((prevCart) => {
       const existingItem = prevCart.find((i) => i.id === item.id);
       if (existingItem) {
         return prevCart.map((i) =>
-          i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i
+          i.id === item.id ? { ...i, quantity: i.quantity + (item.quantity || 1) } : i
         );
       }
-      return [...prevCart, { ...item, quantity: 1 }];
+      return [
+        ...prevCart,
+        {
+          ...item,
+          quantity: item.quantity || 1,
+          size: item.size || 'M',
+          availableSizes: item.availableSizes || ['S', 'M', 'L', 'XL'],
+        },
+      ];
     });
   };
 
@@ -55,6 +69,12 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     );
   };
 
+  const updateSize = (id: string, size: string) => {
+    setCart((prevCart) =>
+      prevCart.map((i) => (i.id === id ? { ...i, size } : i))
+    );
+  };
+
   const clearCart = () => {
     setCart([]);
   };
@@ -68,6 +88,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         addToCart,
         removeFromCart,
         updateQuantity,
+        updateSize,
         clearCart,
         cartTotal,
       }}

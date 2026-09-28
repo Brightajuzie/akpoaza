@@ -585,10 +585,36 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
-// Update checkout details (delivery address, contact info, payment provider) for an existing order
+// Get a single order by ID (for checkout / order review)
+router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  const { id } = req.params;
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id },
+      include: {
+        items: {
+          include: {
+            product: {
+              include: {
+                images: { orderBy: { position: 'asc' } },
+              },
+            },
+          },
+        },
+        user: { select: { id: true, name: true, email: true, phone: true } },
+      },
+    });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    res.json(order);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Update checkout details (delivery address, contact info, payment provider, and items) for an existing order
 router.patch('/:id/checkout-details', async (req: Request, res: Response, next: NextFunction) => {
   const { id } = req.params;
-  const { deliveryAddress, guestName, guestEmail, guestPhone, paymentProvider } = req.body;
+  const { deliveryAddress, guestName, guestEmail, guestPhone, paymentProvider, items } = req.body;
 
   try {
     const order = await prisma.order.findUnique({
@@ -607,6 +633,35 @@ router.patch('/:id/checkout-details', async (req: Request, res: Response, next: 
       updatedData.paymentProvider = sanitizePaymentProvider(paymentProvider);
       if (isPOD && (!order.paymentRef || !order.paymentRef.startsWith('POD_'))) {
         updatedData.paymentRef = `POD_${order.id.slice(-6).toUpperCase()}_${Date.now()}`;
+      }
+    }
+
+    if (items && Array.isArray(items) && items.length > 0) {
+      const productIds = items.map((i: any) => String(i.productId || i.id));
+      const dbProducts = await prisma.product.findMany({
+        where: { id: { in: productIds } },
+      });
+      const dbProductsMap = new Map(dbProducts.map(p => [p.id, p]));
+      let newTotal = 0;
+      const newItemsData: { orderId: string; productId: string; quantity: number; price: number }[] = [];
+      for (const item of items) {
+        const pId = item.productId || item.id;
+        const dbProduct = dbProductsMap.get(pId);
+        if (dbProduct) {
+          const qty = Math.max(1, Number(item.quantity) || 1);
+          newTotal += dbProduct.price * qty;
+          newItemsData.push({
+            orderId: id,
+            productId: dbProduct.id,
+            quantity: qty,
+            price: dbProduct.price,
+          });
+        }
+      }
+      if (newItemsData.length > 0) {
+        await prisma.orderItem.deleteMany({ where: { orderId: id } });
+        await prisma.orderItem.createMany({ data: newItemsData });
+        updatedData.totalAmount = newTotal;
       }
     }
 

@@ -133,7 +133,17 @@ export default function ProductsScreen({ navigation, route }: any) {
   });
 
   const handleAddToCart = (product: any) => {
-    addToCart({ id: product.id, name: product.name, price: product.price, type: 'product' });
+    const rawImgUrl = product.images?.[0]?.url || product.imageUrl;
+    addToCart({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      type: 'product',
+      imageUrl: rawImgUrl,
+      size: product.size || 'M',
+      availableSizes: ['S', 'M', 'L', 'XL'],
+      stock: product.stock,
+    });
     setAddedItem(product);
   };
 

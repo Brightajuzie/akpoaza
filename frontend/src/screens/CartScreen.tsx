@@ -1,14 +1,14 @@
 import React, { useContext, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, Modal, Platform, ScrollView,
+  ActivityIndicator, Alert, Modal, Platform, ScrollView, Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CartContext } from '../context/CartContext';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
-import apiClient from '../api/client';
+import apiClient, { getImageUri } from '../api/client';
 
 const TYPE_CONFIG: Record<string, { icon: string; label: string; color: string }> = {
   product: { icon: '📦', label: 'Product', color: '#F59E0B' },
@@ -31,33 +31,17 @@ export default function CartScreen({ route, navigation }: any) {
     }
   }, [userToken, route?.params?.autoProceed, cart.length]);
 
-  const handleCheckout = async () => {
+  const handleCheckout = () => {
     if (cart.length === 0) return;
     const products = cart.filter(i => i.type === 'product');
-    const productItems = products.map(i => ({ productId: i.id, quantity: i.quantity }));
     const productTotal = products.reduce((s, i) => s + i.price * i.quantity, 0);
 
-    if (!userToken) {
-      navigation.navigate('Checkout', {
-        checkoutType: 'order', isGuest: true,
-        cartItems: productItems, amount: productTotal,
-      });
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await apiClient.post('/orders/checkout', { paymentProvider: 'NONE', items: productItems });
-      const orderId = res.data?.order?.id;
-      if (!orderId) {
-        Alert.alert('Error', 'Failed to initialize order checkout.');
-        return;
-      }
-      navigation.navigate('Checkout', { checkoutType: 'order', id: orderId, amount: productTotal });
-    } catch (e) {
-      Alert.alert('Error', 'Failed to initialize checkout.');
-    } finally {
-      setLoading(false);
-    }
+    navigation.navigate('Checkout', {
+      checkoutType: 'order',
+      isGuest: !userToken,
+      cartItems: products,
+      amount: productTotal,
+    });
   };
 
   const itemCount = cart.reduce((s, i) => s + i.quantity, 0);
@@ -154,15 +138,30 @@ export default function CartScreen({ route, navigation }: any) {
           const lineTotal = item.price * item.quantity;
           return (
             <View style={[styles.cartCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-              {/* Left: Type icon */}
-              <View style={[styles.cartCardIcon, { backgroundColor: conf.color + '15' }]}>
-                <Text style={styles.cartCardIconText}>{conf.icon}</Text>
-              </View>
+              {/* Left: Product image or Type icon */}
+              {item.imageUrl ? (
+                <Image
+                  source={{ uri: getImageUri(item.imageUrl) || item.imageUrl }}
+                  style={{ width: 54, height: 54, borderRadius: 12, marginRight: 12 }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={[styles.cartCardIcon, { backgroundColor: conf.color + '15' }]}>
+                  <Text style={styles.cartCardIconText}>{conf.icon}</Text>
+                </View>
+              )}
 
               {/* Middle: Info */}
               <View style={styles.cartCardInfo}>
-                <View style={[styles.cartTypeBadge, { backgroundColor: conf.color + '18' }]}>
-                  <Text style={[styles.cartTypeBadgeText, { color: conf.color }]}>{conf.label}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={[styles.cartTypeBadge, { backgroundColor: conf.color + '18' }]}>
+                    <Text style={[styles.cartTypeBadgeText, { color: conf.color }]}>{conf.label}</Text>
+                  </View>
+                  {item.size ? (
+                    <View style={[styles.cartTypeBadge, { backgroundColor: isDark ? '#334155' : '#E2E8F0' }]}>
+                      <Text style={[styles.cartTypeBadgeText, { color: isDark ? '#F1F5F9' : '#475569' }]}>Size: {item.size}</Text>
+                    </View>
+                  ) : null}
                 </View>
                 <Text style={[styles.cartItemName, { color: isDark ? '#F1F5F9' : '#0F172A' }]} numberOfLines={2}>
                   {item.name}
