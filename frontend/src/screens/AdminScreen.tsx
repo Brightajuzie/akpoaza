@@ -271,6 +271,7 @@ export default function AdminScreen() {
   const [uSpecialty, setUSpecialty]           = useState('');
   const [uAddress, setUAddress]               = useState('');
   const [uState, setUState]                   = useState('');
+  const [uAgentId, setUAgentId]               = useState<string | null>(null);
   const [uVerificationStatus, setUVerificationStatus] = useState<'UNVERIFIED' | 'VERIFIED' | 'PENDING_REVIEW' | 'REJECTED'>('UNVERIFIED');
 
   // KYC Reviews state (Admin only)
@@ -400,7 +401,7 @@ export default function AdminScreen() {
     setEditingUserId(null);
     setUName(''); setUEmail(''); setUPassword('');
     setURole('CUSTOMER'); setUPhone(''); setUOpayPhone('');
-    setUSpecialty(''); setUAddress(''); setUState(''); setUVerificationStatus('UNVERIFIED');
+    setUSpecialty(''); setUAddress(''); setUState(''); setUAgentId(null); setUVerificationStatus('UNVERIFIED');
   };
 
   const openUserCreate = () => {
@@ -419,6 +420,7 @@ export default function AdminScreen() {
     setUSpecialty(u.specialty || '');
     setUAddress(u.address || '');
     setUState(u.state || '');
+    setUAgentId(u.agentId || null);
     setUVerificationStatus(u.verificationStatus || 'UNVERIFIED');
     setShowUserFormModal(true);
   };
@@ -444,6 +446,7 @@ export default function AdminScreen() {
         phone: uPhone || null, opayPhone: uOpayPhone || null,
         specialty: uSpecialty || null, address: uAddress || null,
         state: uState || null,
+        agentId: uAgentId || null,
         verificationStatus: uVerificationStatus,
       };
       if (uPassword) payload.password = uPassword;
@@ -1995,26 +1998,31 @@ export default function AdminScreen() {
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <TouchableOpacity
-                    onPress={() => setUState('')}
+                    onPress={() => { setUAgentId(null); }}
                     style={[
                       styles.userRolePill,
-                      !uState && { backgroundColor: '#8E8E93', borderColor: 'transparent' },
+                      !uAgentId && { backgroundColor: '#8E8E93', borderColor: 'transparent' },
                     ]}
                   >
-                    <Text style={[styles.userRolePillText, !uState && { color: '#fff' }]}>None</Text>
+                    <Text style={[styles.userRolePillText, !uAgentId && { color: '#fff' }]}>None</Text>
                   </TouchableOpacity>
                   {users
                     .filter((u: any) => u.role === 'AGENT')
                     .map((agent: any) => (
                       <TouchableOpacity
                         key={agent.id}
-                        onPress={() => setUState(agent.state || '')}
+                        onPress={() => {
+                          setUAgentId(agent.id);
+                          if (!uState && agent.state) setUState(agent.state);
+                        }}
                         style={[
                           styles.userRolePill,
-                          { borderColor: '#6C47FF' },
+                          uAgentId === agent.id
+                            ? { backgroundColor: '#6C47FF', borderColor: 'transparent' }
+                            : { borderColor: '#6C47FF' },
                         ]}
                       >
-                        <Text style={[styles.userRolePillText, { color: '#6C47FF' }]}>
+                        <Text style={[styles.userRolePillText, uAgentId === agent.id ? { color: '#fff' } : { color: '#6C47FF' }]}>
                           🏘️ {agent.name}{agent.state ? ` (${agent.state})` : ''}
                         </Text>
                       </TouchableOpacity>
