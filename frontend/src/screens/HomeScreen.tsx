@@ -51,14 +51,14 @@ const PROMO_SLIDES = [
 const QUICK_ACTIONS = [
   { icon: '🛍️', label: 'Buy', screen: 'Products', bgLight: '#E8F5E9', bgDark: '#1B3E2B', accent: '#22A45D' },
   { icon: '🏷️', label: 'Sell', screen: '__sell__', bgLight: '#FFF8E1', bgDark: '#3D3010', accent: '#F59E0B' },
-  { icon: '🛠️', label: 'Services', screen: 'Services', bgLight: '#E3F2FD', bgDark: '#0D2540', accent: '#3B82F6' },
+  { icon: '🛠️', label: 'Book Workman', screen: 'Services', bgLight: '#E3F2FD', bgDark: '#0D2540', accent: '#3B82F6' },
   { icon: '🛵', label: 'Book Rider', screen: 'BookParcel', bgLight: '#F0FFF4', bgDark: '#0F2820', accent: '#10B981' },
 ];
 
 const NAV_LINKS = [
   { label: 'Home', screen: 'HomeTab' },
   { label: 'Products', screen: 'Products' },
-  { label: 'Services', screen: 'Services' },
+  { label: 'Book Workman', screen: 'Services' },
   { label: 'Book Rider', screen: 'BookParcel' },
   { label: 'My Bookings', screen: 'History' },
 ];
@@ -483,7 +483,7 @@ export default function HomeScreen({ navigation }: any) {
                   { icon: '📋', label: 'My Bookings & Orders', screen: 'History' },
                   { icon: '🏷️', label: 'Sell on FixMart', screen: '__sell__' },
                   { icon: '📦', label: 'Products', screen: 'Products' },
-                  { icon: '⚡', label: 'Services', screen: 'Services' },
+                  { icon: '⚡', label: 'Book Workman', screen: 'Services' },
                   { icon: '🚚', label: 'Book Rider', screen: 'BookParcel' },
                   { icon: '🛒', label: 'Cart', screen: 'CartTab' },
                   { icon: '🔔', label: 'Alerts', screen: 'NotificationsTab' },
@@ -628,7 +628,7 @@ export default function HomeScreen({ navigation }: any) {
                   { color: theme.primary },
                   isCompactHeight && styles.heroCtaTextCompact,
                   isVeryCompact && styles.heroCtaTextVeryCompact
-                ]}>⚡ Book Services</Text>
+                ]}>⚡ Book Workman</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -766,7 +766,7 @@ export default function HomeScreen({ navigation }: any) {
             <>
               {searchResults.services.length > 0 && (
                 <View>
-                  <Text style={[styles.searchGroupLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>⚡ SERVICES</Text>
+                  <Text style={[styles.searchGroupLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>⚡ BOOK WORKMAN</Text>
                   {searchResults.services.map(item => (
                     <TouchableOpacity
                       key={item.id}
