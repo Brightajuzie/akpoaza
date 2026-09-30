@@ -29,15 +29,21 @@ router.get('/', authenticateToken, async (req: AuthRequest, res, next) => {
   }
 });
 
-// Admin: Get ALL bookings across all users
+// Admin/Agent: Get ALL bookings across all users (Agent filtered to their state)
 // NOTE: Declared before /:id routes so Express never risks shadowing this static path.
 router.get('/admin/all', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const role = req.user?.role;
-  if (role !== 'ADMIN') {
-    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  if (role !== 'ADMIN' && role !== 'AGENT') {
+    return res.status(403).json({ error: 'Forbidden. Admin or Agent access required.' });
   }
   try {
+    let whereClause: any = {};
+    if (role === 'AGENT') {
+      const agentUser = await prisma.user.findUnique({ where: { id: req.user!.userId }, select: { state: true } });
+      if (agentUser?.state) whereClause.state = agentUser.state;
+    }
     const bookings = await prisma.booking.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'desc' },
       include: {
         service: true,
@@ -73,7 +79,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response, ne
 
 // Guest Booking for unauthenticated users
 router.post('/guest-booking', async (req, res, next) => {
-  const { serviceId, scheduledAt, address, latitude, longitude, autoAssign, handymanId: reqHandymanId, guestEmail, guestName, guestPhone } = req.body;
+  const { serviceId, scheduledAt, address, state: reqState, latitude, longitude, autoAssign, handymanId: reqHandymanId, guestEmail, guestName, guestPhone } = req.body;
 
   if (!guestEmail || !guestName) {
     return res.status(400).json({ error: 'Guest email and name are required' });
@@ -91,6 +97,7 @@ router.post('/guest-booking', async (req, res, next) => {
           name: guestName.trim(),
           phone: guestPhone ? guestPhone.trim() : null,
           address: address.trim(),
+          state: reqState ? String(reqState).trim() : null,
           role: 'CUSTOMER',
           verificationStatus: 'VERIFIED',
         },
@@ -98,6 +105,7 @@ router.post('/guest-booking', async (req, res, next) => {
     }
 
     const customerId = user.id;
+    const bookingState = reqState ? String(reqState).trim() : (user.state || null);
     let service = await prisma.service.findUnique({ where: { id: serviceId } });
     if (!service) {
       service = await prisma.service.findFirst({
@@ -158,23 +166,27 @@ router.post('/guest-booking', async (req, res, next) => {
         }))
         .sort((a, b) => a.dist - b.dist);
 
-      let best = availableWithDist.find(
-        (x) => x.hm.specialty === service.category && x.dist <= MAX_RADIUS_KM
+      const sameStateAvailable = bookingState
+        ? availableWithDist.filter((x) => x.hm.state === bookingState)
+        : availableWithDist;
+
+      // 1st pass: same state, matching specialty within primary radius
+      let best = sameStateAvailable.find(
+        (x) => x.hm.specialty === service!.category && x.dist <= MAX_RADIUS_KM
       );
-
-      if (!best) {
-        best = availableWithDist.find((x) => x.dist <= MAX_RADIUS_KM);
-      }
-
-      if (!best) {
-        best = availableWithDist.find(
-          (x) => x.hm.specialty === service.category && x.dist <= FALLBACK_RADIUS_KM
-        );
-      }
-
-      if (!best) {
-        best = availableWithDist.find((x) => x.dist <= FALLBACK_RADIUS_KM);
-      }
+      // 2nd pass: same state, any specialty within primary radius
+      if (!best) best = sameStateAvailable.find((x) => x.dist <= MAX_RADIUS_KM);
+      // 3rd pass: any state, matching specialty within primary radius
+      if (!best) best = availableWithDist.find(
+        (x) => x.hm.specialty === service!.category && x.dist <= MAX_RADIUS_KM
+      );
+      // 4th pass: any state, any specialty within primary radius
+      if (!best) best = availableWithDist.find((x) => x.dist <= MAX_RADIUS_KM);
+      // 5th pass: fallback radius
+      if (!best) best = sameStateAvailable.find(
+        (x) => x.hm.specialty === service!.category && x.dist <= FALLBACK_RADIUS_KM
+      );
+      if (!best) best = availableWithDist.find((x) => x.dist <= FALLBACK_RADIUS_KM);
 
       if (best) {
         handymanId = best.hm.id;
@@ -190,6 +202,7 @@ router.post('/guest-booking', async (req, res, next) => {
         handymanId,
         scheduledAt: new Date(scheduledAt),
         address,
+        state: bookingState,
         latitude: customerLat,
         longitude: customerLng,
         totalPrice: service.basePrice,
@@ -198,7 +211,18 @@ router.post('/guest-booking', async (req, res, next) => {
       include: { handyman: true, service: true },
     });
 
-    res.status(201).json({ ...newBooking, matchDistance, isGuest: true, guestEmail: user.email });
+    const noWorkmanAvailable = !handymanId;
+    if (noWorkmanAvailable) {
+      sendNotification({
+        userId: customerId,
+        title: '⚠️ No Workman Currently Available',
+        body: `No workman is currently available in ${bookingState || 'your area'}. Your booking is pending and our regional agent will assign one shortly.`,
+        type: 'BOOKING',
+        referenceId: newBooking.id,
+      }).catch(() => {});
+    }
+
+    res.status(201).json({ ...newBooking, matchDistance, isGuest: true, guestEmail: user.email, noWorkmanAvailable });
   } catch (error) {
     next(error);
   }
@@ -207,7 +231,7 @@ router.post('/guest-booking', async (req, res, next) => {
 // Create a new booking
 router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const customerId = req.user?.userId;
-  const { serviceId, scheduledAt, address, latitude, longitude, autoAssign, handymanId: reqHandymanId } = req.body;
+  const { serviceId, scheduledAt, address, state: reqState, latitude, longitude, autoAssign, handymanId: reqHandymanId } = req.body;
   
   if (!customerId) return res.status(401).json({ error: 'Unauthorized' });
   if (!serviceId || !scheduledAt || !address) {
@@ -215,6 +239,10 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
   }
 
   try {
+    // Get customer's state
+    const customerUser = await prisma.user.findUnique({ where: { id: customerId }, select: { state: true } });
+    const bookingState = reqState ? String(reqState).trim() : (customerUser?.state || null);
+
     // Look up service in DB to retrieve verified price
     let service = await prisma.service.findUnique({ where: { id: serviceId } });
     if (!service) {
@@ -253,8 +281,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
       const MAX_RADIUS_KM = 50;   // primary search radius
       const FALLBACK_RADIUS_KM = 100; // wider fallback radius
 
-      // Find handymen actively IN_PROGRESS (on-site at a job) — ACCEPTED just means paid/confirmed
-      // but does not mean the handyman is currently occupied.
+      // Find handymen actively IN_PROGRESS
       const busyHandymanRecords = await prisma.booking.findMany({
         where: { status: 'IN_PROGRESS' },
         select: { handymanId: true },
@@ -282,24 +309,38 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
         }))
         .sort((a, b) => a.dist - b.dist);
 
-      // 1st pass — matching specialty within primary radius
-      let best = availableWithDist.find(
-        (x) => x.hm.specialty === service.category && x.dist <= MAX_RADIUS_KM
+      const sameStateAvailable = bookingState
+        ? availableWithDist.filter((x) => x.hm.state === bookingState)
+        : availableWithDist;
+
+      // 1st pass — same state, matching specialty within primary radius
+      let best = sameStateAvailable.find(
+        (x) => x.hm.specialty === service!.category && x.dist <= MAX_RADIUS_KM
       );
 
-      // 2nd pass — any specialty within primary radius
+      // 2nd pass — same state, any specialty within primary radius
+      if (!best) {
+        best = sameStateAvailable.find((x) => x.dist <= MAX_RADIUS_KM);
+      }
+
+      // 3rd pass — any state, matching specialty within primary radius
+      if (!best) {
+        best = availableWithDist.find(
+          (x) => x.hm.specialty === service!.category && x.dist <= MAX_RADIUS_KM
+        );
+      }
+
+      // 4th pass — any state, any verified available handyman within primary radius
       if (!best) {
         best = availableWithDist.find((x) => x.dist <= MAX_RADIUS_KM);
       }
 
-      // 3rd pass — matching specialty within fallback radius
+      // 5th pass — fallback radius
       if (!best) {
-        best = availableWithDist.find(
-          (x) => x.hm.specialty === service.category && x.dist <= FALLBACK_RADIUS_KM
+        best = sameStateAvailable.find(
+          (x) => x.hm.specialty === service!.category && x.dist <= FALLBACK_RADIUS_KM
         );
       }
-
-      // 4th pass — any verified available handyman within fallback radius
       if (!best) {
         best = availableWithDist.find((x) => x.dist <= FALLBACK_RADIUS_KM);
       }
@@ -318,6 +359,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
         handymanId,
         scheduledAt: new Date(scheduledAt),
         address,
+        state: bookingState,
         latitude: customerLat,
         longitude: customerLng,
         totalPrice: service.basePrice,
@@ -325,6 +367,17 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response, next
       },
       include: { handyman: true, service: true, customer: true }
     });
+
+    const noWorkmanAvailable = !handymanId;
+    if (noWorkmanAvailable) {
+      sendNotification({
+        userId: customerId,
+        title: '⚠️ No Workman Currently Available',
+        body: `No workman is currently available in ${bookingState || 'your area'}. Your booking is pending and our regional agent will assign one shortly.`,
+        type: 'BOOKING',
+        referenceId: newBooking.id,
+      }).catch(() => {});
+    }
 
     // ── Multi-channel notifications on service request ──────────────────────
     const scheduledStr = new Date(scheduledAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });

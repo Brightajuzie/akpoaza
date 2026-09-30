@@ -32,6 +32,7 @@ import uploadRoutes from './routes/upload';
 import walletRoutes from './routes/wallet';
 import parcelsRoutes from './routes/parcels';
 import slidesRoutes from './routes/slides';
+import agentsRoutes from './routes/agents';
 import { errorHandler } from './middleware/errorHandler';
 import prisma from './lib/prisma';
 import { triggerSplitWebhook } from './lib/wallet';
@@ -234,6 +235,7 @@ app.use('/api/kyc', kycRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/parcels', parcelsRoutes);
 app.use('/api/slides', slidesRoutes);
+app.use('/api/agents', agentsRoutes);
 
 // Fallback 404 handler for undefined routes / incorrect HTTP methods
 app.use((req, res, next) => {

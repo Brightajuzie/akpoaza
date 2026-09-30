@@ -354,6 +354,7 @@ export default function ProfileScreen({ navigation }: any) {
         <Text style={[styles.name, { color: textColor }]}>{profile.name}</Text>
         <Text style={[styles.email, { color: subtextColor }]}>{profile.email}</Text>
         {profile.phone ? <Text style={[styles.phoneText, { color: subtextColor }]}>📞 {profile.phone}</Text> : null}
+        {profile.state ? <Text style={[styles.phoneText, { color: subtextColor }]}>📍 {profile.state}{profile.country ? `, ${profile.country}` : ''}</Text> : null}
         <View style={styles.badgeRow}>
           <View style={[styles.roleBadge, { backgroundColor: theme.primary + '20' }]}>
             <Text style={[styles.roleText, { color: theme.primary }]}>{profile.role}</Text>
@@ -440,6 +441,28 @@ export default function ProfileScreen({ navigation }: any) {
               { icon: '🚗', label: 'Vehicle', sub: 'Registration info', onPress: () => {} },
               { icon: '🛡️', label: 'KYC Status', sub: 'Verify identity', onPress: () => navigation.navigate('KYCStatus') },
               { icon: '📍', label: 'Location', sub: 'Live sharing', onPress: () => {} },
+            ].map((item, i) => (
+              <TouchableOpacity key={i} style={[styles.quickTile, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: borderColor }]} onPress={item.onPress} activeOpacity={0.75}>
+                <Text style={styles.quickTileIcon}>{item.icon}</Text>
+                <Text style={[styles.quickTileLabel, { color: textColor }]}>{item.label}</Text>
+                <Text style={[styles.quickTileSub, { color: subtextColor }]}>{item.sub}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {profile.role === 'AGENT' && (
+        <View style={[styles.dashboardSection, { backgroundColor: cardBg, borderColor: borderColor }]}>
+          <Text style={[styles.dashboardTitle, { color: textColor }]}>Agent Hub (Regional Admin)</Text>
+          <View style={styles.quickGrid}>
+            {[
+              { icon: '🏘️', label: 'Agent Dashboard', sub: 'Regional overview', onPress: () => navigation.navigate('AgentDashboard') },
+              { icon: '📅', label: 'Bookings', sub: 'Regional jobs', onPress: () => navigation.navigate('AgentDashboard') },
+              { icon: '📦', label: 'Orders', sub: 'Regional orders', onPress: () => navigation.navigate('AgentDashboard') },
+              { icon: '🔧', label: 'Workmen', sub: 'Manage handymen', onPress: () => navigation.navigate('AgentDashboard') },
+              { icon: '🏍️', label: 'Riders', sub: 'Manage couriers', onPress: () => navigation.navigate('AgentDashboard') },
+              { icon: '💳', label: 'Wallet', sub: 'Earnings & balance', onPress: () => navigation.navigate('Wallet') },
             ].map((item, i) => (
               <TouchableOpacity key={i} style={[styles.quickTile, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC', borderColor: borderColor }]} onPress={item.onPress} activeOpacity={0.75}>
                 <Text style={styles.quickTileIcon}>{item.icon}</Text>

@@ -47,7 +47,7 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 6 characters long' });
   }
 
-  const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER'];
+  const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER', 'AGENT'];
   if (role && !allowedRoles.includes(role)) {
     return res.status(400).json({ error: 'Invalid role specified' });
   }
@@ -133,6 +133,13 @@ router.post('/register', async (req, res) => {
       } else {
         verificationStatus = 'UNVERIFIED';
       }
+    } else if (role === 'AGENT') {
+      // Agents are regional admins — must be approved by main Admin
+      if (hasContact) {
+        verificationStatus = 'PENDING_REVIEW';
+      } else {
+        verificationStatus = 'UNVERIFIED';
+      }
     }
 
     const newUser = await prisma.user.create({
@@ -159,6 +166,7 @@ router.post('/register', async (req, res) => {
         verificationStatus,
         country: country || 'Nigeria',
         currency: currency || 'NGN',
+        state: req.body.state ? String(req.body.state).trim() : null,
       },
     });
 
@@ -193,7 +201,7 @@ router.post('/register', async (req, res) => {
     // Send welcome notification to user on account creation
     sendWelcomeNotification(newUser).catch(() => {});
 
-    const requiresKYC = (newUser.role === 'VENDOR' || newUser.role === 'HANDYMAN' || newUser.role === 'RIDER') && newUser.verificationStatus === 'UNVERIFIED';
+    const requiresKYC = (newUser.role === 'VENDOR' || newUser.role === 'HANDYMAN' || newUser.role === 'RIDER' || newUser.role === 'AGENT') && newUser.verificationStatus === 'UNVERIFIED';
     
     const { passwordHash: _, ...userResponse } = newUser;
 
@@ -399,6 +407,7 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res) => {
         riderStatus: true,
         country: true,
         currency: true,
+        state: true,
         createdAt: true,
       },
     });
@@ -452,7 +461,7 @@ router.patch('/profile', authenticateToken, async (req: AuthRequest, res) => {
   const userId = req.user?.userId;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { name, phone, address, country, currency, passportPhoto, actionPhoto, profileImage } = req.body;
+  const { name, phone, address, country, currency, state, passportPhoto, actionPhoto, profileImage } = req.body;
 
   try {
     const updatedUser = await prisma.user.update({
@@ -463,6 +472,7 @@ router.patch('/profile', authenticateToken, async (req: AuthRequest, res) => {
         address: address !== undefined ? address : undefined,
         country: country || undefined,
         currency: currency || undefined,
+        state: state !== undefined ? state : undefined,
         passportPhoto: passportPhoto !== undefined ? passportPhoto : undefined,
         actionPhoto: actionPhoto !== undefined ? actionPhoto : undefined,
         profileImage: profileImage !== undefined ? profileImage : (passportPhoto || undefined),
@@ -479,6 +489,7 @@ router.patch('/profile', authenticateToken, async (req: AuthRequest, res) => {
         actionPhoto: true,
         country: true,
         currency: true,
+        state: true,
         verificationStatus: true,
       },
     });

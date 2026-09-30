@@ -123,7 +123,7 @@ export default function SignupScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(false);
 
   // Step 1: Account setup
-  const [role, setRole] = useState<'CUSTOMER' | 'HANDYMAN' | 'VENDOR' | 'RIDER'>(
+  const [role, setRole] = useState<'CUSTOMER' | 'HANDYMAN' | 'VENDOR' | 'RIDER' | 'AGENT'>(
     route?.params?.role || route?.params?.initialRole || 'CUSTOMER'
   );
   const [name, setName] = useState('');
@@ -133,13 +133,14 @@ export default function SignupScreen({ route, navigation }: any) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [state, setState] = useState(''); // State/Province for all roles
 
   // Country & Currency
   const { activeCountry, setCountry, countries } = useCurrency();
   const [selectedCountry, setSelectedCountry] = useState(activeCountry);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
 
-  // Step 2: Professional Details (Handyman/Vendor/Rider)
+  // Step 2: Professional Details (Handyman/Vendor/Rider/Agent)
   const [specialty, setSpecialty] = useState('Plumbing');
   const [address, setAddress] = useState('');
   const [latitude, setLatitude] = useState<number | null>(null);
@@ -406,6 +407,7 @@ export default function SignupScreen({ route, navigation }: any) {
           role: 'CUSTOMER',
           country: selectedCountry.country,
           currency: selectedCountry.currency,
+          state: state.trim() || null,
         });
 
         await setCountry(selectedCountry.country);
@@ -430,8 +432,12 @@ export default function SignupScreen({ route, navigation }: any) {
 
   // Step 2 Submission: Atomic registration for Partners
   const handlePartnerSubmit = async () => {
-    if (!address.trim()) {
+    if (role !== 'AGENT' && !address.trim()) {
       Alert.alert('Address Required', 'Please provide your workshop, store, or base operating address.');
+      return;
+    }
+    if (role === 'AGENT' && !state.trim()) {
+      Alert.alert('State Required', 'Please enter the state you will manage as a Regional Agent.');
       return;
     }
     if (role === 'RIDER' && !licensePlate.trim()) {
@@ -458,10 +464,11 @@ export default function SignupScreen({ route, navigation }: any) {
         role,
         country: selectedCountry.country,
         currency: selectedCountry.currency,
+        state: state.trim() || null,
         specialty: role === 'HANDYMAN' ? specialty : null,
-        address: address.trim(),
-        latitude: finalLat,
-        longitude: finalLng,
+        address: address.trim() || null,
+        latitude: role !== 'AGENT' ? finalLat : null,
+        longitude: role !== 'AGENT' ? finalLng : null,
         vehicleType: role === 'RIDER' ? vehicleType : null,
         licensePlate: role === 'RIDER' ? licensePlate.trim() : null,
         passportPhoto: passportPhoto || null,
@@ -474,12 +481,15 @@ export default function SignupScreen({ route, navigation }: any) {
 
       const isPending = response.data.user?.verificationStatus === 'PENDING_REVIEW';
       const roleTitle =
-        role === 'HANDYMAN' ? 'Services Pro' : role === 'RIDER' ? 'Courier Rider' : 'Store Vendor';
+        role === 'HANDYMAN' ? 'Services Pro'
+        : role === 'RIDER' ? 'Courier Rider'
+        : role === 'AGENT' ? 'Regional Agent'
+        : 'Store Vendor';
 
       Alert.alert(
         '🎉 Registration Successful',
         isPending
-          ? `Welcome, ${name.trim()}! Your ${roleTitle} account has been created and submitted for Admin verification. You can now explore the app and track your verification status.`
+          ? `Welcome, ${name.trim()}! Your ${roleTitle} account has been submitted for Admin verification. You will be notified once approved.`
           : `Welcome, ${name.trim()}! Your ${roleTitle} account is active and ready to use.`,
         [
           {
@@ -669,6 +679,29 @@ export default function SignupScreen({ route, navigation }: any) {
                 </Text>
                 <Text style={styles.roleCardSub}>Courier</Text>
               </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.roleCard,
+                  role === 'AGENT' && {
+                    borderColor: BRAND_GREEN,
+                    backgroundColor: BRAND_GREEN + '10',
+                  },
+                ]}
+                onPress={() => setRole('AGENT')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.roleCardIcon}>🏘️</Text>
+                <Text
+                  style={[
+                    styles.roleCardTitle,
+                    role === 'AGENT' && { color: BRAND_GREEN, fontWeight: '700' },
+                  ]}
+                >
+                  Agent
+                </Text>
+                <Text style={styles.roleCardSub}>Regional Admin</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Informative Banner for Partners */}
@@ -680,6 +713,8 @@ export default function SignupScreen({ route, navigation }: any) {
                     ? 'FixMart connects you with local service jobs. In Step 2 you will specify your specialty trade and work base.'
                     : role === 'RIDER'
                     ? 'FixMart dispatches package delivery orders to your phone. In Step 2 you will specify your vehicle details.'
+                    : role === 'AGENT'
+                    ? 'As a Regional Agent you manage bookings, orders, workmen and riders in your state. In Step 2 you will confirm your managed state/region.'
                     : 'FixMart allows you to list inventory and reach thousands of buyers. In Step 2 you will set up your store address.'}
                 </Text>
               </View>
@@ -788,6 +823,19 @@ export default function SignupScreen({ route, navigation }: any) {
               <Text style={{ color: '#8E8E93', marginLeft: 'auto', fontSize: 18 }}>›</Text>
             </TouchableOpacity>
 
+            {/* State / Province */}
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>
+              State / Province <Text style={styles.fieldNote}>(for local service matching)</Text>
+            </Text>
+            <TextInput
+              style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+              placeholder="e.g. Rivers State, Lagos, Abuja"
+              value={state}
+              onChangeText={setState}
+              placeholderTextColor="#8E8E93"
+              autoCapitalize="words"
+            />
+
             {/* Step 1 Action Button */}
             <TouchableOpacity
               style={[
@@ -862,6 +910,35 @@ export default function SignupScreen({ route, navigation }: any) {
                 ← Back to Account Details
               </Text>
             </TouchableOpacity>
+
+            {/* Agent Managed Region */}
+            {role === 'AGENT' && (
+              <View style={styles.fieldSection}>
+                <View style={[styles.infoBanner, { marginBottom: 16 }]}>
+                  <Text style={styles.infoBannerIcon}>🏘️</Text>
+                  <Text style={styles.infoBannerText}>
+                    As a Regional Agent, you will manage bookings, orders, workmen and riders in your designated state. An Admin will verify and activate your account.
+                  </Text>
+                </View>
+                <Text style={[styles.fieldLabel, { color: theme.text }]}>State / Region You Will Manage *</Text>
+                <TextInput
+                  style={[styles.input, { borderColor: BRAND_GREEN, color: theme.text }]}
+                  placeholder="e.g. Rivers State, Lagos, Abuja FCT"
+                  value={state}
+                  onChangeText={setState}
+                  placeholderTextColor="#8E8E93"
+                  autoCapitalize="words"
+                />
+                <Text style={[styles.fieldLabel, { color: theme.text }]}>Country</Text>
+                <TextInput
+                  style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+                  placeholder="e.g. Nigeria"
+                  value={selectedCountry.country}
+                  editable={false}
+                  placeholderTextColor="#8E8E93"
+                />
+              </View>
+            )}
 
             {/* Handyman Specialty Selector */}
             {role === 'HANDYMAN' && (

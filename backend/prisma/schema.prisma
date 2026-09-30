@@ -39,6 +39,10 @@ model User {
   vehicleType        String?
   country            String?            @default("Nigeria")
   currency           String?            @default("NGN")
+  state              String?            // e.g. "Rivers State", "Lagos"
+  agentId            String?            // agent who manages this user's region
+  agent              User?              @relation("AgentUsers", fields: [agentId], references: [id])
+  managedUsers       User[]             @relation("AgentUsers")
   bookings           Booking[]          @relation("CustomerBookings")
   jobs               Booking[]          @relation("HandymanJobs")
   escrows            Escrow[]           @relation("ProviderEscrows")
@@ -95,6 +99,7 @@ model Order {
   isSplitPayment  Boolean         @default(false)
   riderId         String?
   deliveryAddress String?
+  state           String?  // state where order is delivered
   currency        String          @default("NGN")
   escrows         Escrow[]
   rider           User?           @relation("RiderDeliveries", fields: [riderId], references: [id])
@@ -133,6 +138,7 @@ model Booking {
   status            String   @default("PENDING")
   scheduledAt       DateTime
   address           String
+  state             String?  // state where booking is placed
   totalPrice        Float
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -304,6 +310,7 @@ enum Role {
   HANDYMAN
   ADMIN
   VENDOR
+  AGENT
   RIDER
 }
 

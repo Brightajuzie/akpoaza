@@ -534,6 +534,23 @@ export default function HomeScreen({ navigation }: any) {
                     <Text style={{ color: '#34C759' }}>›</Text>
                   </TouchableOpacity>
                 )}
+                {userInfo?.role === 'AGENT' && (
+                  <TouchableOpacity
+                    style={[
+                      styles.drawerItem,
+                      { backgroundColor: '#3B82F615', borderBottomColor: 'transparent' },
+                      isVeryCompact && { paddingVertical: 8, paddingHorizontal: 12 }
+                    ]}
+                    onPress={() => {
+                      setMenuOpen(false);
+                      navigation.navigate('AgentDashboard');
+                    }}
+                  >
+                    <Text style={[styles.drawerItemIcon, isVeryCompact && { fontSize: 14, width: 20 }]}>🏘️</Text>
+                    <Text style={[styles.drawerItemLabel, { color: '#3B82F6', fontWeight: '800' }, isVeryCompact && { fontSize: 13 }]}>Agent Dashboard</Text>
+                    <Text style={{ color: '#3B82F6' }}>›</Text>
+                  </TouchableOpacity>
+                )}
               </ScrollView>
             </View>
           </TouchableWithoutFeedback>

@@ -113,6 +113,7 @@ import WalletScreen from '../screens/WalletScreen';
 import BookParcelScreen from '../screens/BookParcelScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import RiderEarningsScreen from '../screens/RiderEarningsScreen';
+import AgentScreen from '../screens/AgentScreen';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import apiClient from '../api/client';
@@ -247,7 +248,7 @@ const navStyles = StyleSheet.create({
 export default function AppNavigator() {
   const { isLoading, userInfo } = React.useContext(AuthContext);
   const { theme } = React.useContext(SettingsContext);
-  const isVendorOrAdmin = userInfo?.role === 'ADMIN' || userInfo?.role === 'VENDOR';
+  const isVendorOrAdmin = userInfo?.role === 'ADMIN' || userInfo?.role === 'VENDOR' || userInfo?.role === 'AGENT';
   const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -375,6 +376,11 @@ export default function AppNavigator() {
           name="RiderEarnings" 
           component={RiderEarningsScreen} 
           options={{ title: '💰 My Earnings' }} 
+        />
+        <Stack.Screen 
+          name="AgentDashboard" 
+          component={AgentScreen} 
+          options={{ headerShown: false }} 
         />
       </Stack.Navigator>
     </NavigationContainer>

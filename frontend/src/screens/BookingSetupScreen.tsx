@@ -35,6 +35,7 @@ export default function BookingSetupScreen({ route, navigation }: any) {
   const isDark = colorMode === 'dark';
 
   const [address, setAddress] = useState(route.params?.savedAddress || '');
+  const [state, setState] = useState(route.params?.savedState || '');
   const [latitude, setLatitude] = useState(route.params?.savedLatitude || 6.5244);
   const [longitude, setLongitude] = useState(route.params?.savedLongitude || 3.3792);
   const [selectedDate, setSelectedDate] = useState<string>(route.params?.savedDate || 'Tomorrow');
@@ -50,7 +51,7 @@ export default function BookingSetupScreen({ route, navigation }: any) {
   ];
 
   const bookingRedirectParams = {
-    service, preselectedHandyman, savedAddress: address, savedLatitude: latitude,
+    service, preselectedHandyman, savedAddress: address, savedState: state, savedLatitude: latitude,
     savedLongitude: longitude, savedDate: selectedDate,
     savedTimeSlot: selectedTimeSlot, autoProceed: true,
   };
@@ -87,7 +88,7 @@ export default function BookingSetupScreen({ route, navigation }: any) {
         bookingParams: {
           serviceId: service.id,
           scheduledAt: scheduledDate.toISOString(),
-          address, latitude, longitude,
+          address, state, latitude, longitude,
           autoAssign: preselectedHandyman ? false : autoAssign,
           handymanId: preselectedHandyman?.id || undefined,
         },
@@ -101,7 +102,7 @@ export default function BookingSetupScreen({ route, navigation }: any) {
       const res = await apiClient.post('/bookings', {
         serviceId: service.id,
         scheduledAt: scheduledDate.toISOString(),
-        address, latitude, longitude,
+        address, state, latitude, longitude,
         autoAssign: preselectedHandyman ? false : autoAssign,
         handymanId: preselectedHandyman?.id || undefined,
       });
@@ -118,9 +119,9 @@ export default function BookingSetupScreen({ route, navigation }: any) {
         );
       } else {
         Alert.alert(
-          '📋 Booking Placed',
-          'No verified handyman is available near your location right now. You will be notified when one accepts.',
-          [{ text: 'Continue', onPress: () => navigation.navigate('Checkout', { checkoutType: 'booking', id: res.data.id, amount: res.data.totalPrice }) }]
+          '⚠️ No Workman Available in Area',
+          'No verified workman is currently available in your state/area. Your booking is saved and our regional agent will assign one shortly.',
+          [{ text: 'Continue to Payment', onPress: () => navigation.navigate('Checkout', { checkoutType: 'booking', id: res.data.id, amount: res.data.totalPrice }) }]
         );
       }
     } catch (e: any) {

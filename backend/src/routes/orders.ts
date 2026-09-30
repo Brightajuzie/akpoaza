@@ -82,7 +82,7 @@ router.get('/vendor', authenticateToken, async (req: AuthRequest, res, next) => 
 
 // Guest Checkout for unauthenticated users
 router.post('/guest-checkout', async (req: Request, res: Response, next: NextFunction) => {
-  const { items, paymentProvider, guestEmail, guestName, guestPhone, deliveryAddress, latitude, longitude } = req.body;
+  const { items, paymentProvider, guestEmail, guestName, guestPhone, deliveryAddress, state: reqState, latitude, longitude } = req.body;
 
   if (!guestEmail || !guestName) {
     return res.status(400).json({ error: 'Guest email and name are required for checkout' });
@@ -102,6 +102,7 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
           name: guestName.trim(),
           phone: guestPhone ? guestPhone.trim() : null,
           address: deliveryAddress ? deliveryAddress.trim() : null,
+          state: reqState ? String(reqState).trim() : null,
           role: 'CUSTOMER',
           verificationStatus: 'VERIFIED',
         },
@@ -109,6 +110,7 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
     }
 
     const userId = user.id;
+    const orderState = reqState ? String(reqState).trim() : (user.state || null);
 
     // 2. Validate products and calculate total amount
     const productIds = items.map((i: any) => String(i.productId));
@@ -141,7 +143,7 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
       });
     }
 
-    // 3. Proximity Rider Assignment
+    // 3. Proximity & Regional Rider Assignment
     let assignedRiderId: string | null = null;
     let riderDistance: number | null = null;
     const cLat = latitude ? parseFloat(latitude) : null;
@@ -170,9 +172,17 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
         })
         .sort((a, b) => a.dist - b.dist);
 
-      if (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100) {
-        assignedRiderId = ridersWithDist[0].rider.id;
-        riderDistance = Math.round(ridersWithDist[0].dist * 10) / 10;
+      const sameStateRiders = orderState
+        ? ridersWithDist.filter((r) => r.rider.state === orderState)
+        : ridersWithDist;
+
+      const chosen = (sameStateRiders.length > 0 && sameStateRiders[0].dist <= 100)
+        ? sameStateRiders[0]
+        : (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100 ? ridersWithDist[0] : null);
+
+      if (chosen) {
+        assignedRiderId = chosen.rider.id;
+        riderDistance = Math.round(chosen.dist * 10) / 10;
       }
     }
 
@@ -193,6 +203,7 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
           userId,
           riderId: assignedRiderId,
           deliveryAddress: deliveryAddress || user?.address || null,
+          state: orderState,
           totalAmount: computedTotalAmount,
           paymentProvider: sanitizePaymentProvider(paymentProvider),
           paymentRef: isPOD ? `POD_${user.id.slice(0, 6)}_${Date.now()}` : undefined,
@@ -204,6 +215,17 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
         include: { items: true, rider: true },
       });
     });
+
+    const noRiderAvailable = !assignedRiderId;
+    if (noRiderAvailable) {
+      sendNotification({
+        userId,
+        title: '⚠️ No Delivery Rider Currently Available',
+        body: `No rider is currently available in ${orderState || 'your area'}. Your order has been placed and our regional agent will assign a rider shortly.`,
+        type: 'ORDER',
+        referenceId: order.id,
+      }).catch(() => {});
+    }
 
     // ── Multi-channel notifications for guest checkout ──────────────────
     try {
@@ -343,7 +365,7 @@ router.post('/guest-checkout', async (req: Request, res: Response, next: NextFun
 // Create an order (Checkout with Stock Verification and Backend Price Calculation)
 router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const userId = req.user?.userId;
-  const { items, paymentProvider, deliveryAddress, latitude, longitude } = req.body;
+  const { items, paymentProvider, deliveryAddress, state: reqState, latitude, longitude } = req.body;
 
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   if (!items || !Array.isArray(items) || items.length === 0) {
@@ -351,6 +373,9 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
   }
 
   try {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { state: true } });
+    const orderState = reqState ? String(reqState).trim() : (user?.state || null);
+
     // 1. Gather all product IDs to query
     const productIds = items.map((i: any) => String(i.productId));
     const dbProducts = await prisma.product.findMany({
@@ -384,7 +409,7 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
       });
     }
 
-    // 2.5 Proximity Rider Assignment
+    // 2.5 Proximity & Regional Rider Assignment
     let assignedRiderId: string | null = null;
     let riderDistance: number | null = null;
     const cLat = latitude ? parseFloat(latitude) : null;
@@ -413,9 +438,17 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
         })
         .sort((a, b) => a.dist - b.dist);
 
-      if (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100) {
-        assignedRiderId = ridersWithDist[0].rider.id;
-        riderDistance = Math.round(ridersWithDist[0].dist * 10) / 10;
+      const sameStateRiders = orderState
+        ? ridersWithDist.filter((r) => r.rider.state === orderState)
+        : ridersWithDist;
+
+      const chosen = (sameStateRiders.length > 0 && sameStateRiders[0].dist <= 100)
+        ? sameStateRiders[0]
+        : (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100 ? ridersWithDist[0] : null);
+
+      if (chosen) {
+        assignedRiderId = chosen.rider.id;
+        riderDistance = Math.round(chosen.dist * 10) / 10;
       }
     }
 
@@ -440,6 +473,7 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
           userId,
           riderId: assignedRiderId,
           deliveryAddress: deliveryAddress || null,
+          state: orderState,
           totalAmount: computedTotalAmount,
           paymentProvider: sanitizePaymentProvider(paymentProvider),
           paymentRef: isPOD ? `POD_${userId.slice(0, 6)}_${Date.now()}` : undefined,
@@ -451,6 +485,17 @@ router.post('/checkout', authenticateToken, async (req: AuthRequest, res: Respon
         include: { items: true, rider: true },
       });
     });
+
+    const noRiderAvailable = !assignedRiderId;
+    if (noRiderAvailable) {
+      sendNotification({
+        userId,
+        title: '⚠️ No Delivery Rider Currently Available',
+        body: `No rider is currently available in ${orderState || 'your area'}. Your order has been placed and our regional agent will assign a rider shortly.`,
+        type: 'ORDER',
+        referenceId: order.id,
+      }).catch(() => {});
+    }
 
     // ── Multi-channel notifications ──────────────────────────────────────
     try {
