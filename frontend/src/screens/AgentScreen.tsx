@@ -29,6 +29,7 @@ export default function AgentScreen({ navigation }: any) {
 
   // Data
   const [region, setRegion] = useState<any>(null);
+  const [wallet, setWallet] = useState<any>(null);
   const [bookings, setBookings] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [workmen, setWorkmen] = useState<any[]>([]);
@@ -41,6 +42,7 @@ export default function AgentScreen({ navigation }: any) {
 
   useEffect(() => {
     fetchRegion();
+    fetchWallet();
   }, []);
 
   useEffect(() => {
@@ -49,6 +51,13 @@ export default function AgentScreen({ navigation }: any) {
     else if (activeTab === 'workmen') fetchWorkmen();
     else if (activeTab === 'riders') fetchRiders();
   }, [activeTab]);
+
+  const fetchWallet = async () => {
+    try {
+      const res = await apiClient.get('/wallet/me');
+      setWallet(res.data);
+    } catch (e) {}
+  };
 
   const fetchRegion = async () => {
     try {
@@ -208,6 +217,28 @@ export default function AgentScreen({ navigation }: any) {
                     </View>
                   )}
                 </View>
+
+                {/* Agent Wallet Card */}
+                <TouchableOpacity
+                  style={[styles.walletCard, { backgroundColor: theme.primary }]}
+                  onPress={() => navigation.navigate('Wallet')}
+                  activeOpacity={0.9}
+                >
+                  <View style={styles.walletHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.walletLabel}>Agent Commission Wallet</Text>
+                      <Text style={styles.walletBalance}>
+                        {wallet ? fmt(wallet.wallet?.balance || 0) : '₦0.00'}
+                      </Text>
+                    </View>
+                    <View style={styles.walletBtn}>
+                      <Text style={styles.walletBtnText}>Open Wallet →</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.walletSub}>
+                    💰 Automatic commission credited from regional sales & completed tasks
+                  </Text>
+                </TouchableOpacity>
 
                 <Text style={[styles.sectionTitle, { color: textColor }]}>Regional Stats</Text>
                 <View style={styles.statsGrid}>
@@ -715,4 +746,30 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
   },
+  walletCard: {
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 20,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+  },
+  walletHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  walletLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' },
+  walletBalance: { color: '#FFF', fontSize: 26, fontWeight: '900', marginTop: 2 },
+  walletBtn: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  walletBtnText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  walletSub: { color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: '500' },
 });

@@ -1,4 +1,5 @@
 import prisma from './prisma';
+import { sendNotification } from './notify';
 
 export async function getOrCreateWallet(userId: string) {
   let wallet = await prisma.wallet.findUnique({
@@ -14,6 +15,80 @@ export async function getOrCreateWallet(userId: string) {
     });
   }
   return wallet;
+}
+
+/**
+ * Calculates and credits commission to regional agents when a user (vendor, customer, rider, handyman)
+ * under their management makes a sale, completes a booking, or performs a delivery task.
+ */
+export async function creditAgentCommission(
+  userId: string,
+  transactionAmount: number,
+  category: 'BOOKING' | 'ORDER' | 'PARCEL',
+  referenceId: string,
+  description: string
+) {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, role: true, state: true, country: true, agentId: true },
+    });
+    if (!user) return;
+
+    let agentId = user.agentId;
+    if (!agentId && user.state) {
+      const stateAgent = await prisma.user.findFirst({
+        where: { role: 'AGENT', state: user.state, verificationStatus: 'VERIFIED' },
+        select: { id: true },
+      });
+      if (stateAgent) {
+        agentId = stateAgent.id;
+      }
+    }
+
+    if (!agentId) return;
+
+    const agentWallet = await getOrCreateWallet(agentId);
+
+    // Prevent duplicate commission for same referenceId & agentId
+    const existingTx = await prisma.transaction.findFirst({
+      where: { walletId: agentWallet.id, referenceId, type: 'AGENT_COMMISSION' },
+    });
+    if (existingTx) return;
+
+    // Default agent commission rate is 5.0%
+    const setting = await prisma.appSetting.findUnique({ where: { key: 'agent_commission_rate' } });
+    const commissionRate = setting ? parseFloat(setting.value) : 0.05;
+
+    const commissionAmount = Math.round(transactionAmount * commissionRate * 100) / 100;
+    if (commissionAmount <= 0) return;
+
+    await prisma.wallet.update({
+      where: { id: agentWallet.id },
+      data: { balance: { increment: commissionAmount } },
+    });
+
+    await prisma.transaction.create({
+      data: {
+        walletId: agentWallet.id,
+        amount: commissionAmount,
+        type: 'AGENT_COMMISSION',
+        status: 'COMPLETED',
+        description: `Regional Agent Commission (${(commissionRate * 100).toFixed(1)}%): ${description} by ${user.name} (${user.role})`,
+        referenceId,
+      },
+    });
+
+    sendNotification({
+      userId: agentId,
+      title: `💰 Agent Commission Earned: ₦${commissionAmount.toLocaleString()}`,
+      body: `You earned ₦${commissionAmount.toLocaleString()} commission from a ${category.toLowerCase()} transaction by ${user.name} (${user.role}) in your region.`,
+      type: 'PAYMENT',
+      referenceId,
+    }).catch(() => {});
+  } catch (err) {
+    console.error('[creditAgentCommission error]', err);
+  }
 }
 
 export async function createEscrowForPaidItem(checkoutType: 'booking' | 'order' | 'parcel', id: string, paidAmount?: number) {
@@ -327,6 +402,11 @@ export async function releaseEscrow(escrowId: string) {
         },
       });
     }
+
+    // Trigger Regional Agent commission payout for the provider and customer
+    const refCat = escrow.bookingId ? 'BOOKING' : escrow.parcelDeliveryId ? 'PARCEL' : 'ORDER';
+    const refId = escrow.bookingId || escrow.orderId || escrow.parcelDeliveryId || escrow.id;
+    creditAgentCommission(escrow.providerId, escrow.amount, refCat, refId, 'Provider task/sale completed').catch(() => {});
 
     return updatedEscrow;
   }, {

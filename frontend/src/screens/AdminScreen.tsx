@@ -172,8 +172,10 @@ export default function AdminScreen() {
   // Rider Delivery Pricing (Admin only)
   const [riderBaseFare, setRiderBaseFare]           = useState('1000');
   const [riderPricePerKm, setRiderPricePerKm]       = useState('200');
-  const [riderPlatformFee, setRiderPlatformFee]     = useState('10');
-  const [pricingSaving, setPricingSaving]           = useState(false);
+  const [riderPlatformFee, setRiderPlatformFee]       = useState('10');
+  const [pricingSaving, setPricingSaving]             = useState(false);
+  const [agentCommissionRate, setAgentCommissionRate] = useState('5');
+  const [agentCommissionSaving, setAgentCommissionSaving] = useState(false);
 
   const [loading, setLoading]               = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -241,11 +243,11 @@ export default function AdminScreen() {
   // Users state (Admin only)
   const [users, setUsers]                   = useState<any[]>([]);
   const [usersLoading, setUsersLoading]     = useState(false);
-  const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | 'ADMIN' | 'HANDYMAN' | 'VENDOR' | 'RIDER' | 'CUSTOMER'>('ALL');
+  const [userRoleFilter, setUserRoleFilter] = useState<'ALL' | 'ADMIN' | 'AGENT' | 'HANDYMAN' | 'VENDOR' | 'RIDER' | 'CUSTOMER'>('ALL');
 
   // Admin messaging — compose & send state
   const [adminMsgTarget, setAdminMsgTarget] = useState<'ALL' | 'ROLE' | 'USER'>('ALL');
-  const [adminMsgRole, setAdminMsgRole]     = useState<'CUSTOMER' | 'VENDOR' | 'HANDYMAN' | 'RIDER'>('CUSTOMER');
+  const [adminMsgRole, setAdminMsgRole]     = useState<'CUSTOMER' | 'VENDOR' | 'HANDYMAN' | 'RIDER' | 'AGENT'>('CUSTOMER');
   const [adminMsgUserId, setAdminMsgUserId] = useState<string | null>(null);
   const [adminMsgUserSearch, setAdminMsgUserSearch] = useState('');
   const [adminMsgTitle, setAdminMsgTitle]   = useState('');
@@ -258,16 +260,17 @@ export default function AdminScreen() {
   const [editingUserId, setEditingUserId]           = useState<string | null>(null);
   const [selectedUserDetails, setSelectedUserDetails] = useState<any | null>(null);
   const [userFormSaving, setUserFormSaving]         = useState(false);
- 
+
   // User form fields
   const [uName, setUName]                     = useState('');
   const [uEmail, setUEmail]                   = useState('');
   const [uPassword, setUPassword]             = useState('');
-  const [uRole, setURole]                     = useState<'CUSTOMER' | 'HANDYMAN' | 'VENDOR' | 'RIDER'>('CUSTOMER');
+  const [uRole, setURole]                     = useState<'CUSTOMER' | 'HANDYMAN' | 'VENDOR' | 'RIDER' | 'AGENT' | 'ADMIN'>('CUSTOMER');
   const [uPhone, setUPhone]                   = useState('');
   const [uOpayPhone, setUOpayPhone]           = useState('');
   const [uSpecialty, setUSpecialty]           = useState('');
   const [uAddress, setUAddress]               = useState('');
+  const [uState, setUState]                   = useState('');
   const [uVerificationStatus, setUVerificationStatus] = useState<'UNVERIFIED' | 'VERIFIED' | 'PENDING_REVIEW' | 'REJECTED'>('UNVERIFIED');
 
   // KYC Reviews state (Admin only)
@@ -397,7 +400,7 @@ export default function AdminScreen() {
     setEditingUserId(null);
     setUName(''); setUEmail(''); setUPassword('');
     setURole('CUSTOMER'); setUPhone(''); setUOpayPhone('');
-    setUSpecialty(''); setUAddress(''); setUVerificationStatus('UNVERIFIED');
+    setUSpecialty(''); setUAddress(''); setUState(''); setUVerificationStatus('UNVERIFIED');
   };
 
   const openUserCreate = () => {
@@ -415,6 +418,7 @@ export default function AdminScreen() {
     setUOpayPhone(u.opayPhone || '');
     setUSpecialty(u.specialty || '');
     setUAddress(u.address || '');
+    setUState(u.state || '');
     setUVerificationStatus(u.verificationStatus || 'UNVERIFIED');
     setShowUserFormModal(true);
   };
@@ -439,6 +443,7 @@ export default function AdminScreen() {
         name: uName, email: uEmail, role: uRole,
         phone: uPhone || null, opayPhone: uOpayPhone || null,
         specialty: uSpecialty || null, address: uAddress || null,
+        state: uState || null,
         verificationStatus: uVerificationStatus,
       };
       if (uPassword) payload.password = uPassword;
@@ -976,6 +981,8 @@ export default function AdminScreen() {
       setRiderBaseFare(settings.rider_base_fare || '1000');
       setRiderPricePerKm(settings.rider_price_per_km || '200');
       setRiderPlatformFee(settings.rider_platform_fee_pct || '10');
+      // Agent commission
+      setAgentCommissionRate(settings.agent_commission_rate || '5');
       // Outgoing Email & SMTP
       setSmtpHost(settings.smtp_host || 'smtp.gmail.com');
       setSmtpPort(settings.smtp_port || '465');
@@ -1908,17 +1915,17 @@ export default function AdminScreen() {
           {/* Role */}
           <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>Role *</Text>
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-            {(['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER'] as const).map(r => (
+            {(['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER', 'AGENT'] as const).map(r => (
               <TouchableOpacity
                 key={r}
                 onPress={() => setURole(r)}
                 style={[
                   styles.userRolePill,
-                  uRole === r && { backgroundColor: theme.primary, borderColor: theme.primary },
+                  uRole === r && { backgroundColor: r === 'AGENT' ? '#6C47FF' : theme.primary, borderColor: 'transparent' },
                 ]}
               >
                 <Text style={[styles.userRolePillText, uRole === r && { color: '#fff' }]}>
-                  {r === 'CUSTOMER' ? '👤 Customer' : r === 'HANDYMAN' ? '🛠️ Services' : r === 'VENDOR' ? '🏪 Vendor' : '🚚 Rider'}
+                  {r === 'CUSTOMER' ? '👤 Customer' : r === 'HANDYMAN' ? '🛠️ Services' : r === 'VENDOR' ? '🏪 Vendor' : r === 'RIDER' ? '🚚 Rider' : '🏘️ Agent'}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1968,6 +1975,54 @@ export default function AdminScreen() {
           <TextInput style={[styles.input, styles.textArea, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
             value={uAddress} onChangeText={setUAddress} placeholder="Street, City, State"
             multiline numberOfLines={2} placeholderTextColor="#9CA3AF" />
+
+          {/* State */}
+          <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>State / Region</Text>
+          <TextInput
+            style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.card }]}
+            value={uState} onChangeText={setUState}
+            placeholder="e.g. Rivers State, Lagos"
+            placeholderTextColor="#9CA3AF"
+          />
+
+          {/* Assign to Agent (not shown for AGENT/ADMIN roles) */}
+          {uRole !== 'AGENT' && uRole !== 'ADMIN' && (
+            <>
+              <Text style={[styles.label, { color: theme.lightText, marginTop: 12 }]}>Assign to Agent (optional)</Text>
+              <Text style={{ fontSize: 11, color: theme.lightText, marginBottom: 6 }}>
+                Assign this user to a regional agent so the agent earns commission from their activity.
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => setUState('')}
+                    style={[
+                      styles.userRolePill,
+                      !uState && { backgroundColor: '#8E8E93', borderColor: 'transparent' },
+                    ]}
+                  >
+                    <Text style={[styles.userRolePillText, !uState && { color: '#fff' }]}>None</Text>
+                  </TouchableOpacity>
+                  {users
+                    .filter((u: any) => u.role === 'AGENT')
+                    .map((agent: any) => (
+                      <TouchableOpacity
+                        key={agent.id}
+                        onPress={() => setUState(agent.state || '')}
+                        style={[
+                          styles.userRolePill,
+                          { borderColor: '#6C47FF' },
+                        ]}
+                      >
+                        <Text style={[styles.userRolePillText, { color: '#6C47FF' }]}>
+                          🏘️ {agent.name}{agent.state ? ` (${agent.state})` : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                </View>
+              </ScrollView>
+            </>
+          )}
         </ScrollView>
 
         {/* Save Button */}
@@ -3273,66 +3328,9 @@ export default function AdminScreen() {
                 </View>
               )}
 
-              <Text style={styles.sectionHeading}>4. Mobile App Distribution & Download Links</Text>
-              <View style={styles.subSettingsCard}>
-                <Text style={styles.subCardTitle}>📱 Google Play Store & Android APK</Text>
-                <Text style={styles.subCardNote}>
-                  Download links served by the website, client portals, and mobile app download banners.
-                </Text>
+              {/* 4. Google Optimization, SEO & Analytics */}
+              <Text style={styles.sectionHeading}>4. Google Optimization, SEO & Analytics</Text>
 
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Google Play Store Link</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={playstoreUrlInput}
-                    onChangeText={setPlaystoreUrlInput}
-                    placeholder="https://play.google.com/store/apps/details?id=com.akpoaza.kachlinks&pcampaignid=web_share&pli=1"
-                    autoCapitalize="none"
-                  />
-                  <TouchableOpacity
-                    style={{ marginTop: 6, alignSelf: 'flex-start' }}
-                    onPress={() => Linking.openURL(playstoreUrlInput || playstoreUrl)}
-                  >
-                    <Text style={{ fontSize: 12, color: '#0284C7', fontWeight: '700' }}>▶ Open Play Store Listing ↗</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Android APK Direct Download URL</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={apkUrlInput}
-                    onChangeText={setApkUrlInput}
-                    placeholder="https://akpoaza-3.onrender.com/uploads/fixmart-latest.apk"
-                    autoCapitalize="none"
-                  />
-                  <TouchableOpacity
-                    style={{ marginTop: 6, alignSelf: 'flex-start' }}
-                    onPress={() => Linking.openURL(apkUrlInput || apkUrl)}
-                  >
-                    <Text style={{ fontSize: 12, color: '#16A34A', fontWeight: '700' }}>📥 Test APK Download Link</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.formGroup}>
-                  <Text style={styles.label}>Android AAB (App Bundle) Download URL</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={aabUrlInput}
-                    onChangeText={setAabUrlInput}
-                    placeholder="https://akpoaza-3.onrender.com/uploads/fixmart-latest.aab"
-                    autoCapitalize="none"
-                  />
-                  <TouchableOpacity
-                    style={{ marginTop: 6, alignSelf: 'flex-start' }}
-                    onPress={() => Linking.openURL(aabUrlInput || aabUrl)}
-                  >
-                    <Text style={{ fontSize: 12, color: theme.primary, fontWeight: '700' }}>📦 Test AAB Download Link</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* 5. Google Optimization, SEO & Analytics */}
-              <Text style={styles.sectionHeading}>5. Google Optimization, SEO & Analytics</Text>
               <View style={styles.subSettingsCard}>
                 <Text style={styles.subCardTitle}>🚀 Google Search & Webmaster Tools</Text>
                 <Text style={styles.subCardNote}>
@@ -3628,6 +3626,50 @@ export default function AdminScreen() {
                     </TouchableOpacity>
                   </View>
                 </View>
+              </View>
+
+              {/* 5. Agent Commission Rate */}
+              <Text style={styles.sectionHeading}>5. Agent Commission Rate</Text>
+              <View style={styles.subSettingsCard}>
+                <Text style={styles.subCardTitle}>🏘️ Regional Agent Commission</Text>
+                <Text style={styles.subCardNote}>
+                  Set the percentage (%) that agents earn from every sale or task completed by vendors, customers, and riders in their region. Default is 5%.
+                </Text>
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Commission Rate (%)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={agentCommissionRate}
+                    onChangeText={setAgentCommissionRate}
+                    placeholder="e.g. 5"
+                    keyboardType="numeric"
+                  />
+                  <Text style={{ fontSize: 11, color: '#8E8E93', marginTop: 4 }}>
+                    e.g. a value of 5 means agents earn 5% on every successful transaction in their state.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.saveSettingsBtn, { backgroundColor: '#6C47FF' }, agentCommissionSaving && { opacity: 0.7 }]}
+                  disabled={agentCommissionSaving}
+                  onPress={async () => {
+                    const rate = parseFloat(agentCommissionRate);
+                    if (isNaN(rate) || rate < 0 || rate > 100) {
+                      Alert.alert('Invalid Value', 'Commission rate must be between 0 and 100.');
+                      return;
+                    }
+                    setAgentCommissionSaving(true);
+                    try {
+                      await updateSettings({ agent_commission_rate: String(rate) });
+                      Alert.alert('✅ Commission Rate Saved', `Agents will now earn ${rate}% commission on all transactions in their region.`);
+                    } catch {
+                      Alert.alert('Error', 'Failed to save agent commission rate.');
+                    } finally {
+                      setAgentCommissionSaving(false);
+                    }
+                  }}
+                >
+                  {agentCommissionSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveSettingsBtnText}>💾 Save Commission Rate</Text>}
+                </TouchableOpacity>
               </View>
 
               <TouchableOpacity
@@ -3935,7 +3977,7 @@ export default function AdminScreen() {
 
             {/* Filter Pills */}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-              {(['ALL', 'ADMIN', 'HANDYMAN', 'VENDOR', 'RIDER', 'CUSTOMER'] as const).map((roleOpt) => (
+              {(['ALL', 'ADMIN', 'AGENT', 'HANDYMAN', 'VENDOR', 'RIDER', 'CUSTOMER'] as const).map((roleOpt) => (
                 <TouchableOpacity
                   key={roleOpt}
                   onPress={() => setUserRoleFilter(roleOpt)}
@@ -3947,7 +3989,7 @@ export default function AdminScreen() {
                   }}
                 >
                   <Text style={{ color: userRoleFilter === roleOpt ? '#fff' : '#1C1C1E', fontWeight: '700', fontSize: 12 }}>
-                    {roleOpt === 'ALL' ? 'All' : roleOpt === 'ADMIN' ? '🔑 Admins' : roleOpt === 'HANDYMAN' ? '🛠️ Services' : roleOpt === 'VENDOR' ? '🏪 Vendors' : roleOpt === 'RIDER' ? '🚚 Riders' : '👤 Customers'}
+                    {roleOpt === 'ALL' ? 'All' : roleOpt === 'ADMIN' ? '🔑 Admins' : roleOpt === 'AGENT' ? '🏘️ Agents' : roleOpt === 'HANDYMAN' ? '🛠️ Services' : roleOpt === 'VENDOR' ? '🏪 Vendors' : roleOpt === 'RIDER' ? '🚚 Riders' : '👤 Customers'}
                   </Text>
                 </TouchableOpacity>
               ))}
