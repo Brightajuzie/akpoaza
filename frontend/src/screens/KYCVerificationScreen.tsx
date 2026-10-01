@@ -259,24 +259,29 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
 
   // Step 1 handler
   const handleVerifyBVN = async () => {
+    const cleanBvn = bvn.trim().replace(/[^0-9]/g, '');
     if (!consent) {
-      Alert.alert('Consent Required', 'You must agree to verify your BVN against official records.');
+      Alert.alert('Consent Required', 'Please check the consent box to authorize identity verification against official records.');
       return;
     }
-    if (bvn.length !== 11 || !/^\d+$/.test(bvn)) {
-      Alert.alert('Invalid BVN', 'BVN must be exactly 11 digits.');
+    if (cleanBvn.length !== 11) {
+      Alert.alert(
+        'Invalid BVN',
+        `The BVN you entered is incorrect. A Bank Verification Number must be exactly 11 numeric digits without letters or spaces.\n\nYou entered ${cleanBvn.length} digit${cleanBvn.length === 1 ? '' : 's'}. Please check your bank app or dial *565*0# to retrieve your BVN.`
+      );
       return;
     }
 
     setLoading(true);
     try {
-      const res = await apiClient.post('/kyc/bvn', { bvn, consent });
+      const res = await apiClient.post('/kyc/bvn', { bvn: cleanBvn, consent });
       if (res.data.success) {
         setBvnMatchedData(res.data.data);
-        Alert.alert('BVN Linked', `Verified as ${res.data.data.formatted_name}. Proceed to next step.`);
+        Alert.alert('✅ BVN Verified', `Identity matched as ${res.data.data.formatted_name}. You can now proceed.`);
       }
     } catch (err: any) {
-      Alert.alert('Verification Failed', err.response?.data?.error || 'Could not verify BVN.');
+      const errMsg = err.response?.data?.error || 'Could not verify BVN. Please ensure you entered the correct 11-digit BVN.';
+      Alert.alert('BVN Verification Failed', errMsg);
     } finally {
       setLoading(false);
     }
@@ -284,21 +289,26 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
 
   // Step 2 handler
   const handleVerifyNIN = async () => {
-    if (nin.length !== 11 || !/^\d+$/.test(nin)) {
-      Alert.alert('Invalid NIN', 'NIN must be exactly 11 digits.');
+    const cleanNin = nin.trim().replace(/[^0-9]/g, '');
+    if (cleanNin.length !== 11) {
+      Alert.alert(
+        'Invalid NIN',
+        `The NIN you entered is incorrect. A National Identity Number must be exactly 11 numeric digits.\n\nYou entered ${cleanNin.length} digit${cleanNin.length === 1 ? '' : 's'}. Please check your NIMC slip or dial *346# to retrieve your NIN.`
+      );
       return;
     }
 
     setLoading(true);
     try {
-      const res = await apiClient.post('/kyc/nin', { nin });
+      const res = await apiClient.post('/kyc/nin', { nin: cleanNin });
       if (res.data.success) {
         setNinMatchedData(res.data.data);
-        Alert.alert('NIN Verified', 'NIN verified successfully. Proceeding to liveness selfie scan.');
+        Alert.alert('✅ NIN Verified', 'National Identity Number verified successfully. Proceeding to liveness selfie scan.');
         setCurrentStep(3);
       }
     } catch (err: any) {
-      Alert.alert('Verification Failed', err.response?.data?.error || 'Could not verify NIN.');
+      const errMsg = err.response?.data?.error || 'Could not verify NIN. Please ensure you entered the correct 11-digit NIN.';
+      Alert.alert('NIN Verification Failed', errMsg);
     } finally {
       setLoading(false);
     }
@@ -445,14 +455,35 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
             {!bvnMatchedData ? (
               <View>
                 <TextInput
-                  style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+                  style={[
+                    styles.input,
+                    {
+                      borderColor:
+                        bvn.length > 0 && bvn.length !== 11
+                          ? '#EF4444'
+                          : bvn.length === 11
+                          ? '#10B981'
+                          : theme.border,
+                      color: theme.text,
+                    },
+                  ]}
                   placeholder="Enter 11-digit BVN"
                   keyboardType="numeric"
                   maxLength={11}
                   value={bvn}
-                  onChangeText={setBvn}
+                  onChangeText={(val) => setBvn(val.replace(/[^0-9]/g, ''))}
                   placeholderTextColor={theme.lightText}
                 />
+                {bvn.length > 0 && bvn.length < 11 && (
+                  <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 4, marginBottom: 8 }}>
+                    ⚠️ BVN must be 11 numeric digits ({bvn.length}/11 entered)
+                  </Text>
+                )}
+                {bvn.length === 11 && (
+                  <Text style={{ fontSize: 12, color: '#10B981', marginTop: 4, marginBottom: 8 }}>
+                    ✓ 11-digit BVN entered
+                  </Text>
+                )}
 
                 <TouchableOpacity 
                   style={styles.consentBox} 
@@ -508,14 +539,35 @@ export default function KYCVerificationScreen({ route, navigation }: any) {
             </Text>
 
             <TextInput
-              style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+              style={[
+                styles.input,
+                {
+                  borderColor:
+                    nin.length > 0 && nin.length !== 11
+                      ? '#EF4444'
+                      : nin.length === 11
+                      ? '#10B981'
+                      : theme.border,
+                  color: theme.text,
+                },
+              ]}
               placeholder="Enter 11-digit NIN"
               keyboardType="numeric"
               maxLength={11}
               value={nin}
-              onChangeText={setNin}
+              onChangeText={(val) => setNin(val.replace(/[^0-9]/g, ''))}
               placeholderTextColor={theme.lightText}
             />
+            {nin.length > 0 && nin.length < 11 && (
+              <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 4, marginBottom: 8 }}>
+                ⚠️ NIN must be 11 numeric digits ({nin.length}/11 entered)
+              </Text>
+            )}
+            {nin.length === 11 && (
+              <Text style={{ fontSize: 12, color: '#10B981', marginTop: 4, marginBottom: 8 }}>
+                ✓ 11-digit NIN entered
+              </Text>
+            )}
 
             <TouchableOpacity 
               style={[styles.btn, { backgroundColor: theme.primary }]} 

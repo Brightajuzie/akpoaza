@@ -444,9 +444,15 @@ export default function SignupScreen({ route, navigation }: any) {
       Alert.alert('License Plate Required', 'Please enter your delivery vehicle license plate number.');
       return;
     }
-    if (identityNumber.trim() && identityNumber.trim().length !== 11) {
-      Alert.alert('Invalid ID', `${identityType} must be exactly 11 digits.`);
-      return;
+    if (identityNumber.trim()) {
+      const cleanId = identityNumber.trim().replace(/[^0-9]/g, '');
+      if (cleanId.length !== 11) {
+        Alert.alert(
+          `Invalid ${identityType}`,
+          `The ${identityType} you provided is incorrect. A valid ${identityType} must be exactly 11 numeric digits (you entered ${cleanId.length} digit${cleanId.length === 1 ? '' : 's'}).\n\nPlease check your document and re-enter, or clear this field to complete registration now and verify later in your profile.`
+        );
+        return;
+      }
     }
 
     setLoading(true);
@@ -1086,14 +1092,35 @@ export default function SignupScreen({ route, navigation }: any) {
               </View>
 
               <TextInput
-                style={[styles.input, { borderColor: theme.border, color: theme.text }]}
+                style={[
+                  styles.input,
+                  {
+                    borderColor:
+                      identityNumber.length > 0 && identityNumber.length !== 11
+                        ? '#EF4444'
+                        : identityNumber.length === 11
+                        ? '#10B981'
+                        : theme.border,
+                    color: theme.text,
+                  },
+                ]}
                 placeholder={`Enter 11-digit ${identityType} (Optional)`}
                 value={identityNumber}
-                onChangeText={setIdentityNumber}
+                onChangeText={(val) => setIdentityNumber(val.replace(/[^0-9]/g, ''))}
                 keyboardType="numeric"
                 maxLength={11}
                 placeholderTextColor="#8E8E93"
               />
+              {identityNumber.length > 0 && identityNumber.length < 11 && (
+                <Text style={{ fontSize: 12, color: '#EF4444', marginTop: 4 }}>
+                  ⚠️ Invalid {identityType}: Must be 11 numeric digits ({identityNumber.length}/11 entered)
+                </Text>
+              )}
+              {identityNumber.length === 11 && (
+                <Text style={{ fontSize: 12, color: '#10B981', marginTop: 4 }}>
+                  ✓ Valid 11-digit {identityType} format
+                </Text>
+              )}
             </View>
 
             {/* Verification Photos */}

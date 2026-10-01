@@ -62,7 +62,25 @@ router.post('/register', async (req, res) => {
 
         let bvnHash = null;
         if (identityNumber) {
-          bvnHash = crypto.createHash('sha256').update(identityNumber).digest('hex');
+          const cleanIdentity = String(identityNumber).trim();
+          if (!/^\d{11}$/.test(cleanIdentity)) {
+            return res.status(400).json({
+              error: 'Invalid BVN/NIN: Identification number must be exactly 11 numeric digits.',
+            });
+          }
+          bvnHash = crypto.createHash('sha256').update(cleanIdentity).digest('hex');
+          const duplicateIdentity = await prisma.user.findFirst({
+            where: {
+              bvnHash,
+              verificationStatus: 'VERIFIED',
+              NOT: { email: cleanEmail },
+            },
+          });
+          if (duplicateIdentity) {
+            return res.status(400).json({
+              error: 'This BVN or NIN is already verified on another account.',
+            });
+          }
         }
 
         const updatedUser = await prisma.user.update({
@@ -99,10 +117,27 @@ router.post('/register', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);
 
-    // Hash the identityNumber (BVN or NIN) if provided
+    // Validate identityNumber (BVN or NIN) if provided
     let bvnHash = null;
     if (identityNumber) {
-      bvnHash = crypto.createHash('sha256').update(identityNumber).digest('hex');
+      const cleanIdentity = String(identityNumber).trim();
+      if (!/^\d{11}$/.test(cleanIdentity)) {
+        return res.status(400).json({
+          error: 'Invalid BVN/NIN: Identification number must be exactly 11 numeric digits.',
+        });
+      }
+      bvnHash = crypto.createHash('sha256').update(cleanIdentity).digest('hex');
+      const duplicateIdentity = await prisma.user.findFirst({
+        where: {
+          bvnHash,
+          verificationStatus: 'VERIFIED',
+        },
+      });
+      if (duplicateIdentity) {
+        return res.status(400).json({
+          error: 'This BVN or NIN is already verified on another account.',
+        });
+      }
     }
 
     // Determine verification status
