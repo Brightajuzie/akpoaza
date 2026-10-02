@@ -283,6 +283,16 @@ export default function AdminScreen() {
   // Slides state (Admin only)
   const [slides, setSlides]                         = useState<any[]>([]);
   const [slidesLoading, setSlidesLoading]           = useState(false);
+
+  // Bulk CSV Upload state
+  const [showBulkCsvModal, setShowBulkCsvModal]     = useState(false);
+  const [bulkCsvType, setBulkCsvType]               = useState<'PRODUCTS' | 'VENDORS' | 'SERVICES'>('PRODUCTS');
+  const [csvRawText, setCsvRawText]                 = useState('');
+  const [csvFileName, setCsvFileName]               = useState('');
+  const [csvParsedRows, setCsvParsedRows]           = useState<any[]>([]);
+  const [csvParseError, setCsvParseError]           = useState('');
+  const [csvImporting, setCsvImporting]             = useState(false);
+  const [csvImportResult, setCsvImportResult]       = useState<any | null>(null);
   const [slideImageUrl, setSlideImageUrl]           = useState('');
   const [slideCaption, setSlideCaption]             = useState('');
   const [slideOrder, setSlideOrder]                 = useState('');
@@ -485,53 +495,55 @@ export default function AdminScreen() {
     }
   };
 
+  // Cross-platform action confirmation helper (works seamlessly on React Native Web and mobile)
+  const confirmAction = (title: string, message: string, onConfirm: () => void) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      if (window.confirm(`${title}\n\n${message}`)) {
+        onConfirm();
+      }
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: onConfirm },
+    ]);
+  };
+
   const handleBulkDeleteUsers = async () => {
     if (selectedUserIds.length === 0) return;
-    Alert.alert(
+    confirmAction(
       '⚠️ Delete Selected Users',
       `Permanently delete ${selectedUserIds.length} selected user(s) and all their associated data? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: `Delete (${selectedUserIds.length})`,
-          style: 'destructive',
-          onPress: async () => {
-            setBulkDeleting(true);
-            try {
-              const res = await apiClient.post('/users/bulk-delete', { ids: selectedUserIds });
-              Alert.alert('✅ Deleted', res.data?.message || `${selectedUserIds.length} user(s) removed.`);
-              setSelectedUserIds([]);
-              fetchUsers();
-            } catch (e: any) {
-              Alert.alert('Error', e.response?.data?.error || 'Failed to bulk delete users.');
-            } finally {
-              setBulkDeleting(false);
-            }
-          },
-        },
-      ]
+      async () => {
+        setBulkDeleting(true);
+        try {
+          const res = await apiClient.post('/users/bulk-delete', { ids: selectedUserIds });
+          Alert.alert('✅ Deleted', res.data?.message || `${selectedUserIds.length} user(s) removed.`);
+          setSelectedUserIds([]);
+          fetchUsers();
+        } catch (e: any) {
+          Alert.alert('Error', e.response?.data?.error || 'Failed to bulk delete users.');
+        } finally {
+          setBulkDeleting(false);
+        }
+      }
     );
   };
 
   const handleDeleteUser = (u: any) => {
-    Alert.alert(
+    confirmAction(
       '⚠️ Delete User',
       `Permanently delete "${u.name}" and all their associated data (orders, bookings, reviews, wallet)? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete', style: 'destructive', onPress: async () => {
-            try {
-              await apiClient.delete(`/users/${u.id}`);
-              Alert.alert('Deleted', 'User and all related records removed.');
-              setSelectedUserIds(prev => prev.filter(id => id !== u.id));
-              fetchUsers();
-            } catch (e: any) {
-              Alert.alert('Error', e.response?.data?.error || 'Failed to delete user.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await apiClient.delete(`/users/${u.id}`);
+          Alert.alert('Deleted', 'User and all related records removed.');
+          setSelectedUserIds(prev => prev.filter(id => id !== u.id));
+          fetchUsers();
+        } catch (e: any) {
+          Alert.alert('Error', e.response?.data?.error || 'Failed to delete user.');
+        }
+      }
     );
   };
 
@@ -1258,85 +1270,68 @@ export default function AdminScreen() {
 
   const handleDeleteAllProducts = async () => {
     if (products.length === 0) return;
-    Alert.alert(
+    confirmAction(
       '🚨 Remove All Products',
       `Are you sure you want to permanently delete all ${products.length} product(s)? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: `Delete All (${products.length})`,
-          style: 'destructive',
-          onPress: async () => {
-            setBulkDeleting(true);
-            try {
-              const res = await apiClient.post('/products/delete-all');
-              Alert.alert('✅ All Products Deleted', res.data?.message || 'All products have been removed.');
-              resetProductForm();
-              setSelectedProductIds([]);
-              fetchData();
-            } catch (err: any) {
-              Alert.alert('Error', err.response?.data?.error || 'Failed to delete all products.');
-            } finally {
-              setBulkDeleting(false);
-            }
-          }
+      async () => {
+        setBulkDeleting(true);
+        try {
+          const res = await apiClient.post('/products/delete-all');
+          Alert.alert('✅ All Products Deleted', res.data?.message || 'All products have been removed.');
+          resetProductForm();
+          setSelectedProductIds([]);
+          fetchData();
+        } catch (err: any) {
+          Alert.alert('Error', err.response?.data?.error || 'Failed to delete all products.');
+        } finally {
+          setBulkDeleting(false);
         }
-      ]
+      }
     );
   };
 
   const handleBulkDeleteProducts = async () => {
     if (selectedProductIds.length === 0) return;
-    Alert.alert(
+    confirmAction(
       '⚠️ Delete Selected Products',
       `Are you sure you want to permanently delete ${selectedProductIds.length} selected product(s)? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: `Delete (${selectedProductIds.length})`,
-          style: 'destructive',
-          onPress: async () => {
-            setBulkDeleting(true);
-            try {
-              const res = await apiClient.post('/products/bulk-delete', { ids: selectedProductIds });
-              Alert.alert('✅ Deleted', res.data?.message || `${selectedProductIds.length} product(s) deleted.`);
-              if (editingId && selectedProductIds.includes(editingId)) {
-                resetProductForm();
-              }
-              setSelectedProductIds([]);
-              fetchData();
-            } catch (err: any) {
-              Alert.alert('Error', err.response?.data?.error || 'Failed to delete selected products.');
-            } finally {
-              setBulkDeleting(false);
-            }
+      async () => {
+        setBulkDeleting(true);
+        try {
+          const res = await apiClient.post('/products/bulk-delete', { ids: selectedProductIds });
+          Alert.alert('✅ Deleted', res.data?.message || `${selectedProductIds.length} product(s) deleted.`);
+          if (editingId && selectedProductIds.includes(editingId)) {
+            resetProductForm();
           }
+          setSelectedProductIds([]);
+          fetchData();
+        } catch (err: any) {
+          Alert.alert('Error', err.response?.data?.error || 'Failed to delete selected products.');
+        } finally {
+          setBulkDeleting(false);
         }
-      ]
+      }
     );
   };
 
   const handleDeleteProduct = async (id: string) => {
-    Alert.alert('Delete Product', 'Are you sure you want to delete this product? This action cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            const res = await apiClient.delete(`/products/${id}`);
-            Alert.alert('✅ Deleted', res.data?.message || 'Product deleted successfully.');
-            setSelectedProductIds(prev => prev.filter(item => item !== id));
-            if (editingId === id) {
-              resetProductForm();
-            }
-            fetchData();
-          } catch (e: any) {
-            Alert.alert('Error', e.response?.data?.error || 'Failed to delete product.');
+    confirmAction(
+      'Delete Product',
+      'Are you sure you want to delete this product? This action cannot be undone.',
+      async () => {
+        try {
+          const res = await apiClient.delete(`/products/${id}`);
+          Alert.alert('✅ Deleted', res.data?.message || 'Product deleted successfully.');
+          setSelectedProductIds(prev => prev.filter(item => item !== id));
+          if (editingId === id) {
+            resetProductForm();
           }
+          fetchData();
+        } catch (e: any) {
+          Alert.alert('Error', e.response?.data?.error || 'Failed to delete product.');
         }
       }
-    ]);
+    );
   };
 
   const handleBoostProduct = async (id: string) => {
@@ -1370,6 +1365,180 @@ export default function AdminScreen() {
     setUploadedSizeKB(null);
   };
 
+  // ─── Bulk CSV Import Handlers ─────────────────────────────────────────────
+  const CSV_SAMPLES = {
+    PRODUCTS: `name,description,price,stock,category,size,weight,imageUrl,vendorEmail
+Power Drill 20V,Heavy-duty cordless power drill with rechargeable battery,45000,15,Tools,Medium,2kg,https://picsum.photos/400/400?1,
+PVC Pipe 1/2 Inch,High-pressure plumbing pipe 3-meter length,3500,50,Plumbing,3m,1kg,https://picsum.photos/400/400?2,
+Industrial Safety Helmet,Standard industrial safety hard hat yellow,7500,30,Safety,Standard,400g,,
+Wall Paint Brilliant White 20L,Anti-fungal emulsion interior and exterior wall paint,28000,12,Painting,20L,22kg,,`,
+
+    VENDORS: `name,email,password,phone,role,state,address,specialty
+FixMart Hardware Hub,hardware.hub@fixmart.ng,FixMart@123,08012345678,VENDOR,Rivers State,12 Aba Road Port Harcourt,Building & Hardware
+Chidi Electrical Stores,chidi.elect@fixmart.ng,FixMart@123,08098765432,VENDOR,Lagos State,45 Ikeja Plaza Lagos,Electrical Supplies
+Prime Tools Nigeria,primetools@fixmart.ng,FixMart@123,08022223333,VENDOR,Abuja,Plot 100 Garki Abuja,Power & Hand Tools
+Emeka Plumbing Service,emeka.plumber@fixmart.ng,FixMart@123,08055551234,HANDYMAN,Rivers State,10 Stadium Road PH,Plumbing`,
+
+    SERVICES: `name,description,category,basePrice
+Emergency Plumbing & Pipe Leak Repair,Rapid on-demand pipe repair drain clearing and leakage fixing,Plumbing,7500
+Air Conditioner Service & Gas Refill,Professional AC installation filter cleaning and refrigerant refill,Cooling & AC,15000
+Electrical Fault Diagnostics & Repair,Circuit breaker diagnostic switch replacement and safety check,Electrical,10000
+Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor scrubbing,Cleaning,12000`,
+  };
+
+  const openBulkCsv = (type: 'PRODUCTS' | 'VENDORS' | 'SERVICES') => {
+    setBulkCsvType(type);
+    setCsvFileName('');
+    setCsvRawText('');
+    setCsvParsedRows([]);
+    setCsvParseError('');
+    setCsvImportResult(null);
+    setShowBulkCsvModal(true);
+  };
+
+  const parseCSVText = (text: string) => {
+    if (!text || !text.trim()) {
+      setCsvParsedRows([]);
+      setCsvParseError('');
+      return;
+    }
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length < 2) {
+      setCsvParsedRows([]);
+      setCsvParseError('CSV must include at least 1 header row and 1 data row.');
+      return;
+    }
+
+    const splitLine = (line: string): string[] => {
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim());
+      return result;
+    };
+
+    const headers = splitLine(lines[0]).map(h => h.replace(/^["']|["']$/g, '').trim());
+    const rows: any[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = splitLine(lines[i]).map(v => v.replace(/^["']|["']$/g, '').trim());
+      if (values.every(v => v === '')) continue;
+      const row: any = {};
+      headers.forEach((h, idx) => {
+        row[h] = values[idx] !== undefined ? values[idx] : '';
+      });
+      rows.push(row);
+    }
+
+    if (rows.length === 0) {
+      setCsvParsedRows([]);
+      setCsvParseError('No valid data rows found in CSV.');
+    } else {
+      setCsvParsedRows(rows);
+      setCsvParseError('');
+    }
+  };
+
+  const handlePickCsvFile = () => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.csv,text/csv,text/plain';
+      input.onchange = (e: any) => {
+        const file = e.target?.files?.[0];
+        if (!file) return;
+        setCsvFileName(file.name);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const content = String(event.target?.result || '');
+          setCsvRawText(content);
+          parseCSVText(content);
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    } else {
+      Alert.alert('Upload CSV', 'Please paste your CSV rows into the text area below.');
+    }
+  };
+
+  const handleLoadSampleTemplate = () => {
+    const sample = CSV_SAMPLES[bulkCsvType] || '';
+    setCsvRawText(sample);
+    setCsvFileName(`sample_${bulkCsvType.toLowerCase()}.csv`);
+    parseCSVText(sample);
+  };
+
+  const handleDownloadCsvSample = () => {
+    const sample = CSV_SAMPLES[bulkCsvType] || '';
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const blob = new Blob([sample], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `fixmart_${bulkCsvType.toLowerCase()}_template.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      handleLoadSampleTemplate();
+      Alert.alert('Template Loaded', 'Sample CSV template has been loaded into the editor.');
+    }
+  };
+
+  const handleExecuteBulkImport = async () => {
+    if (csvParsedRows.length === 0) {
+      Alert.alert('No Data', 'Please select a CSV file or paste valid CSV rows first.');
+      return;
+    }
+
+    setCsvImporting(true);
+    setCsvImportResult(null);
+
+    try {
+      let endpoint = '/products/bulk-csv';
+      let payloadKey = 'products';
+
+      if (bulkCsvType === 'VENDORS') {
+        endpoint = '/users/bulk-csv';
+        payloadKey = 'users';
+      } else if (bulkCsvType === 'SERVICES') {
+        endpoint = '/services/bulk-csv';
+        payloadKey = 'services';
+      }
+
+      const res = await apiClient.post(endpoint, { [payloadKey]: csvParsedRows });
+      setCsvImportResult(res.data);
+      Alert.alert('🎉 Import Complete', res.data?.message || `Successfully imported ${res.data?.count || 0} items.`);
+
+      // Refresh appropriate lists
+      if (bulkCsvType === 'PRODUCTS') fetchData();
+      else if (bulkCsvType === 'VENDORS') fetchUsers();
+      else if (bulkCsvType === 'SERVICES') fetchData();
+    } catch (err: any) {
+      const msg = err.response?.data?.error || 'Failed to complete bulk import.';
+      Alert.alert('Import Error', msg);
+    } finally {
+      setCsvImporting(false);
+    }
+  };
+
   // ─── Service Actions ──────────────────────────────────────────────────────
   const toggleSelectService = (id: string) => {
     setSelectedServiceIds(prev =>
@@ -1387,57 +1556,43 @@ export default function AdminScreen() {
 
   const handleDeleteAllServices = async () => {
     if (services.length === 0) return;
-    Alert.alert(
+    confirmAction(
       '🚨 Remove All Services',
       `Are you sure you want to permanently delete all ${services.length} service(s) from the database? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: `Delete All (${services.length})`,
-          style: 'destructive',
-          onPress: async () => {
-            setBulkDeleting(true);
-            try {
-              const res = await apiClient.post('/services/delete-all');
-              Alert.alert('✅ All Services Deleted', res.data?.message || 'All services have been removed.');
-              setSelectedServiceIds([]);
-              fetchData();
-            } catch (err: any) {
-              Alert.alert('Error', err.response?.data?.error || 'Failed to delete all services.');
-            } finally {
-              setBulkDeleting(false);
-            }
-          }
+      async () => {
+        setBulkDeleting(true);
+        try {
+          const res = await apiClient.post('/services/delete-all');
+          Alert.alert('✅ All Services Deleted', res.data?.message || 'All services have been removed.');
+          setSelectedServiceIds([]);
+          fetchData();
+        } catch (err: any) {
+          Alert.alert('Error', err.response?.data?.error || 'Failed to delete all services.');
+        } finally {
+          setBulkDeleting(false);
         }
-      ]
+      }
     );
   };
 
   const handleBulkDeleteServices = async () => {
     if (selectedServiceIds.length === 0) return;
-    Alert.alert(
+    confirmAction(
       '⚠️ Delete Selected Services',
       `Are you sure you want to permanently delete ${selectedServiceIds.length} selected service(s)?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: `Delete (${selectedServiceIds.length})`,
-          style: 'destructive',
-          onPress: async () => {
-            setBulkDeleting(true);
-            try {
-              const res = await apiClient.post('/services/bulk-delete', { ids: selectedServiceIds });
-              Alert.alert('✅ Deleted', res.data?.message || `${selectedServiceIds.length} service(s) deleted.`);
-              setSelectedServiceIds([]);
-              fetchData();
-            } catch (err: any) {
-              Alert.alert('Error', err.response?.data?.error || 'Failed to delete selected services.');
-            } finally {
-              setBulkDeleting(false);
-            }
-          }
+      async () => {
+        setBulkDeleting(true);
+        try {
+          const res = await apiClient.post('/services/bulk-delete', { ids: selectedServiceIds });
+          Alert.alert('✅ Deleted', res.data?.message || `${selectedServiceIds.length} service(s) deleted.`);
+          setSelectedServiceIds([]);
+          fetchData();
+        } catch (err: any) {
+          Alert.alert('Error', err.response?.data?.error || 'Failed to delete selected services.');
+        } finally {
+          setBulkDeleting(false);
         }
-      ]
+      }
     );
   };
 
@@ -1461,23 +1616,20 @@ export default function AdminScreen() {
   };
 
   const handleDeleteService = (id: string) => {
-    Alert.alert('Delete Service', 'Are you sure you want to delete this service? This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await apiClient.delete(`/services/${id}`);
-            Alert.alert('Deleted', 'Service deleted successfully.');
-            setSelectedServiceIds(prev => prev.filter(item => item !== id));
-            fetchData();
-          } catch (e: any) {
-            Alert.alert('Error', e.response?.data?.error || 'Failed to delete service.');
-          }
-        },
-      },
-    ]);
+    confirmAction(
+      'Delete Service',
+      'Are you sure you want to delete this service? This cannot be undone.',
+      async () => {
+        try {
+          await apiClient.delete(`/services/${id}`);
+          Alert.alert('Deleted', 'Service deleted successfully.');
+          setSelectedServiceIds(prev => prev.filter(item => item !== id));
+          fetchData();
+        } catch (e: any) {
+          Alert.alert('Error', e.response?.data?.error || 'Failed to delete service.');
+        }
+      }
+    );
   };
 
   const handleSaveService = async () => {
@@ -2157,12 +2309,220 @@ export default function AdminScreen() {
     );
   };
 
+  // ─── Bulk CSV Modal ──────────────────────────────────────────────────────
+  const renderBulkCsvModal = () => {
+    const typeLabels: Record<string, string> = {
+      PRODUCTS: '📦 Products',
+      VENDORS: '👥 Vendors/Users',
+      SERVICES: '🛠️ Services',
+    };
+    const previewHeaders = csvParsedRows.length > 0 ? Object.keys(csvParsedRows[0]) : [];
+
+    return (
+      <Modal
+        visible={showBulkCsvModal}
+        animationType="slide"
+        onRequestClose={() => !csvImporting && setShowBulkCsvModal(false)}
+      >
+        <View style={[styles.userModalContainer, { backgroundColor: theme.background }]}>
+          {/* Header */}
+          <View style={styles.userModalHeader}>
+            <TouchableOpacity
+              onPress={() => !csvImporting && setShowBulkCsvModal(false)}
+              style={styles.userModalCloseBtn}
+            >
+              <Text style={styles.userModalCloseText}>✕</Text>
+            </TouchableOpacity>
+            <Text style={[styles.userModalTitle, { color: theme.text }]}>📁 Bulk CSV Import</Text>
+            <View style={{ width: 36 }} />
+          </View>
+
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }} keyboardShouldPersistTaps="handled">
+
+            {/* Type Switcher */}
+            <Text style={[styles.label, { color: theme.lightText, marginBottom: 6 }]}>Import Type</Text>
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+              {(['PRODUCTS', 'VENDORS', 'SERVICES'] as const).map(t => (
+                <TouchableOpacity
+                  key={t}
+                  onPress={() => {
+                    setBulkCsvType(t);
+                    setCsvRawText('');
+                    setCsvFileName('');
+                    setCsvParsedRows([]);
+                    setCsvParseError('');
+                    setCsvImportResult(null);
+                  }}
+                  style={[
+                    styles.userRolePill,
+                    bulkCsvType === t && { backgroundColor: theme.primary, borderColor: 'transparent' },
+                  ]}
+                >
+                  <Text style={[styles.userRolePillText, bulkCsvType === t && { color: '#fff' }]}>
+                    {typeLabels[t]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+              <TouchableOpacity
+                onPress={handlePickCsvFile}
+                style={[styles.userRolePill, { backgroundColor: '#2563EB', borderColor: 'transparent', flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>📂 Pick File</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleDownloadCsvSample}
+                style={[styles.userRolePill, { backgroundColor: '#059669', borderColor: 'transparent', flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>📥 Sample Template</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleLoadSampleTemplate}
+                style={[styles.userRolePill, { backgroundColor: '#7C3AED', borderColor: 'transparent', flexDirection: 'row', alignItems: 'center', gap: 4 }]}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>📋 Load Template</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* File name indicator */}
+            {csvFileName ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 6 }}>
+                <Text style={{ fontSize: 12, color: '#059669', fontWeight: '700' }}>📄 {csvFileName}</Text>
+              </View>
+            ) : null}
+
+            {/* CSV Text Area */}
+            <Text style={[styles.label, { color: theme.lightText, marginBottom: 4 }]}>CSV Content (paste or edit below)</Text>
+            <TextInput
+              multiline
+              numberOfLines={8}
+              value={csvRawText}
+              onChangeText={text => {
+                setCsvRawText(text);
+                parseCSVText(text);
+              }}
+              placeholder={`Paste CSV here...\ne.g. name,price,category\nProduct A,5000,Electronics`}
+              placeholderTextColor="#9CA3AF"
+              style={[
+                styles.input,
+                {
+                  color: theme.text,
+                  borderColor: csvParseError ? '#EF4444' : theme.border,
+                  backgroundColor: theme.card,
+                  height: 160,
+                  textAlignVertical: 'top',
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  paddingTop: 10,
+                },
+              ]}
+            />
+            {csvParseError ? (
+              <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, marginBottom: 8 }}>⚠️ {csvParseError}</Text>
+            ) : null}
+
+            {/* Parse Preview */}
+            {csvParsedRows.length > 0 && (
+              <View style={{ marginTop: 12, marginBottom: 8 }}>
+                <Text style={{ fontSize: 13, fontWeight: '700', color: '#059669', marginBottom: 8 }}>
+                  ✅ {csvParsedRows.length} row{csvParsedRows.length !== 1 ? 's' : ''} ready to import
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={true}>
+                  <View>
+                    {/* Header row */}
+                    <View style={{ flexDirection: 'row', backgroundColor: theme.primary, borderRadius: 6, marginBottom: 2 }}>
+                      {previewHeaders.map((h, i) => (
+                        <Text key={i} style={{ color: '#fff', fontWeight: '700', fontSize: 11, paddingHorizontal: 10, paddingVertical: 6, minWidth: 80 }}>
+                          {h}
+                        </Text>
+                      ))}
+                    </View>
+                    {/* Data rows (first 5) */}
+                    {csvParsedRows.slice(0, 5).map((row, ri) => (
+                      <View key={ri} style={{ flexDirection: 'row', backgroundColor: ri % 2 === 0 ? theme.card : (isDark ? '#1e293b' : '#F8FAFC'), borderRadius: 4, marginBottom: 1 }}>
+                        {previewHeaders.map((h, ci) => (
+                          <Text key={ci} style={{ fontSize: 11, color: theme.text, paddingHorizontal: 10, paddingVertical: 5, minWidth: 80 }} numberOfLines={1}>
+                            {String(row[h] ?? '')}
+                          </Text>
+                        ))}
+                      </View>
+                    ))}
+                    {csvParsedRows.length > 5 && (
+                      <Text style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4, marginLeft: 4 }}>
+                        ... and {csvParsedRows.length - 5} more row{csvParsedRows.length - 5 !== 1 ? 's' : ''}
+                      </Text>
+                    )}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Import Result Banner */}
+            {csvImportResult && (
+              <View style={{
+                marginTop: 12,
+                padding: 14,
+                borderRadius: 12,
+                backgroundColor: csvImportResult.errors?.length > 0 ? '#FEF3C7' : '#D1FAE5',
+                borderWidth: 1,
+                borderColor: csvImportResult.errors?.length > 0 ? '#F59E0B' : '#059669',
+              }}>
+                <Text style={{ fontWeight: '800', fontSize: 13, color: csvImportResult.errors?.length > 0 ? '#92400E' : '#065F46', marginBottom: 4 }}>
+                  🎉 Import Complete
+                </Text>
+                {csvImportResult.count !== undefined && (
+                  <Text style={{ fontSize: 12, color: '#065F46', fontWeight: '600' }}>✅ Imported: {csvImportResult.count}</Text>
+                )}
+                {csvImportResult.skipped !== undefined && csvImportResult.skipped > 0 && (
+                  <Text style={{ fontSize: 12, color: '#78350F', fontWeight: '600' }}>⏭️ Skipped: {csvImportResult.skipped}</Text>
+                )}
+                {csvImportResult.errors?.length > 0 && (
+                  <Text style={{ fontSize: 12, color: '#DC2626', fontWeight: '600', marginTop: 4 }}>
+                    ❌ Errors: {csvImportResult.errors.join(', ')}
+                  </Text>
+                )}
+              </View>
+            )}
+          </ScrollView>
+
+          {/* Footer: Import Button */}
+          <View style={[styles.userModalFooter, { borderTopColor: theme.border }]}>
+            <TouchableOpacity
+              style={[
+                styles.userModalSaveBtn,
+                {
+                  backgroundColor: csvParsedRows.length > 0 && !csvImporting ? theme.primary : '#9CA3AF',
+                  borderRadius: 14,
+                },
+              ]}
+              onPress={handleExecuteBulkImport}
+              disabled={csvParsedRows.length === 0 || csvImporting}
+              activeOpacity={0.8}
+            >
+              {csvImporting ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.userModalSaveBtnText}>
+                  🚀 Import {csvParsedRows.length > 0 ? `${csvParsedRows.length} ${typeLabels[bulkCsvType]}` : 'Items'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <View style={[styles.mainContainer, { backgroundColor: theme.background }]}>
       {renderImageModal()}
       {renderUserFormModal()}
       {renderUserDetailsModal()}
+      {renderBulkCsvModal()}
 
       {/* Navigation bar for Admins (Fixed on top, aligned on the same line) */}
       {isAdmin && (
@@ -2649,6 +3009,12 @@ export default function AdminScreen() {
 
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
               <Text style={styles.sectionHeader}>Listed Items ({products.length})</Text>
+              <TouchableOpacity
+                onPress={() => openBulkCsv('PRODUCTS')}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#2563EB' }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>📁 Import CSV</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Batch Selection Toolbar for Products */}
@@ -2830,6 +3196,12 @@ export default function AdminScreen() {
 
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
               <Text style={styles.sectionHeader}>Active Services Catalog ({services.length})</Text>
+              <TouchableOpacity
+                onPress={() => openBulkCsv('SERVICES')}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, backgroundColor: '#059669' }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>📁 Import CSV</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Batch Selection Toolbar for Services */}
@@ -3975,12 +4347,20 @@ export default function AdminScreen() {
             {/* Header row */}
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <Text style={styles.formTitle}>👥 All Users</Text>
-              <TouchableOpacity
-                onPress={openUserCreate}
-                style={[styles.userAddBtn, { backgroundColor: theme.primary }]}
-              >
-                <Text style={styles.userAddBtnText}>➕ Add User</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                <TouchableOpacity
+                  onPress={() => openBulkCsv('VENDORS')}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: '#7C3AED' }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>📁 Import CSV</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={openUserCreate}
+                  style={[styles.userAddBtn, { backgroundColor: theme.primary }]}
+                >
+                  <Text style={styles.userAddBtnText}>➕ Add User</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Filter Pills */}

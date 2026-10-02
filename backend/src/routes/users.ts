@@ -391,5 +391,127 @@ router.post('/bulk-delete', authenticateToken, async (req: AuthRequest, res: Res
   }
 });
 
+/**
+ * POST /users/bulk-csv
+ * ADMIN only.
+ * Bulk imports users (vendors, riders, handymen, etc.) from CSV rows.
+ */
+router.post('/bulk-csv', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const admin = req.user!;
+    if (admin.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Forbidden: admin access only' });
+    }
+
+    const { users } = req.body;
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(400).json({ error: 'No users provided. A non-empty "users" array is required.' });
+    }
+
+    const created: any[] = [];
+    const skipped: any[] = [];
+    const errors: any[] = [];
+
+    // Pre-hash default password once for speed
+    const defaultSalt = await bcrypt.genSalt(10);
+    const defaultHash = await bcrypt.hash('FixMart@123', defaultSalt);
+
+    const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER', 'AGENT', 'ADMIN'];
+
+    for (let i = 0; i < users.length; i++) {
+      const row = users[i];
+      const name = String(row.name || row.Name || '').trim();
+      const email = String(row.email || row.Email || '').trim().toLowerCase();
+
+      if (!name) {
+        errors.push({ row: i + 1, error: 'User name is required' });
+        continue;
+      }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errors.push({ row: i + 1, name, error: 'Valid email address is required' });
+        continue;
+      }
+
+      // Check if user with this email already exists
+      const existing = await prisma.user.findUnique({ where: { email } });
+      if (existing) {
+        skipped.push({ row: i + 1, name, email, reason: 'Email already registered' });
+        continue;
+      }
+
+      let rawRole = String(row.role || row.Role || 'VENDOR').trim().toUpperCase();
+      if (!allowedRoles.includes(rawRole)) {
+        rawRole = 'VENDOR';
+      }
+
+      const phone = row.phone || row.Phone ? String(row.phone || row.Phone).trim() : null;
+      const opayPhone = row.opayPhone || row.opay_phone || row.OpayPhone ? String(row.opayPhone || row.opay_phone || row.OpayPhone).trim() : phone;
+      const address = row.address || row.Address ? String(row.address || row.Address).trim() : null;
+      const state = row.state || row.State ? String(row.state || row.State).trim() : null;
+      const specialty = row.specialty || row.Specialty ? String(row.specialty || row.Specialty).trim() : null;
+      const vehicleType = row.vehicleType || row.vehicle_type || row.VehicleType ? String(row.vehicleType || row.vehicle_type || row.VehicleType).trim() : null;
+
+      let passwordHash = defaultHash;
+      const rawPassword = row.password || row.Password;
+      if (rawPassword && String(rawPassword).trim().length >= 6) {
+        const salt = await bcrypt.genSalt(10);
+        passwordHash = await bcrypt.hash(String(rawPassword).trim(), salt);
+      }
+
+      // Determine verification status: Vendors with phone/address auto-verify; workmen/riders pending review
+      let verificationStatus: any = 'VERIFIED';
+      if (rawRole === 'HANDYMAN' || rawRole === 'RIDER') {
+        verificationStatus = 'PENDING_REVIEW';
+      } else if (rawRole === 'AGENT') {
+        verificationStatus = 'PENDING_REVIEW';
+      }
+
+      try {
+        const newUser = await prisma.user.create({
+          data: {
+            name,
+            email,
+            passwordHash,
+            role: rawRole as any,
+            phone,
+            opayPhone,
+            address,
+            state,
+            specialty: rawRole === 'HANDYMAN' ? specialty : null,
+            vehicleType: rawRole === 'RIDER' ? vehicleType : null,
+            verificationStatus,
+          },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            phone: true,
+            state: true,
+            address: true,
+            verificationStatus: true,
+            createdAt: true,
+          },
+        });
+        created.push(newUser);
+      } catch (err: any) {
+        errors.push({ row: i + 1, name, email, error: err.message || 'Database error creating user' });
+      }
+    }
+
+    res.json({
+      success: true,
+      count: created.length,
+      message: `Successfully imported ${created.length} user(s).${skipped.length > 0 ? ` (${skipped.length} existing skipped)` : ''}${errors.length > 0 ? ` (${errors.length} failed)` : ''}`,
+      created,
+      skipped,
+      errors,
+    });
+  } catch (error: any) {
+    console.error('POST /users/bulk-csv error:', error);
+    res.status(500).json({ error: error?.message || 'Failed to bulk import users from CSV' });
+  }
+});
+
 export default router;
 
