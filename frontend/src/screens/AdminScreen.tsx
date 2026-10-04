@@ -253,6 +253,14 @@ export default function AdminScreen() {
   const [adminMsgTitle, setAdminMsgTitle]   = useState('');
   const [adminMsgBody, setAdminMsgBody]     = useState('');
   const [adminMsgSending, setAdminMsgSending] = useState(false);
+  const [adminMsgFeedback, setAdminMsgFeedback] = useState<{
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+    recipientCount?: number;
+    stats?: { total: number; inApp: number; emailQueued: number; smsQueued: number; pushQueued: number };
+    timestamp?: string;
+  } | null>(null);
 
   // User management – form/modal state
   const [showUserFormModal, setShowUserFormModal]   = useState(false);
@@ -900,48 +908,66 @@ export default function AdminScreen() {
 
   const handleSendAdminMessage = async () => {
     if (!adminMsgTitle.trim() || !adminMsgBody.trim()) {
-      Alert.alert('Missing info', 'Please enter both a title and a message.');
+      Alert.alert('Missing Info', 'Please enter both a title and a message body.');
       return;
     }
     if (adminMsgTarget === 'USER' && !adminMsgUserId) {
-      Alert.alert('Pick a recipient', 'Please select a user to message.');
+      Alert.alert('Pick Recipient', 'Please search and select a specific user to message.');
       return;
     }
 
     const targetLabel =
-      adminMsgTarget === 'ALL' ? 'ALL customers, vendors, artisans & riders' :
-      adminMsgTarget === 'ROLE' ? `every ${adminMsgRole.toLowerCase()}` :
-      users.find(u => u.id === adminMsgUserId)?.name || 'this user';
+      adminMsgTarget === 'ALL' ? 'ALL registered users (Customers, Vendors, Artisans, Riders & Agents)' :
+      adminMsgTarget === 'ROLE' ? `every registered ${adminMsgRole.toLowerCase()}` :
+      users.find(u => u.id === adminMsgUserId)?.name || 'this selected user';
 
-    Alert.alert(
-      'Send Message',
-      `Send this message to ${targetLabel}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send', style: 'default', onPress: async () => {
-            setAdminMsgSending(true);
-            try {
-              const res = await apiClient.post('/notifications/admin/message', {
-                title: adminMsgTitle.trim(),
-                body: adminMsgBody.trim(),
-                target: adminMsgTarget,
-                role: adminMsgTarget === 'ROLE' ? adminMsgRole : undefined,
-                userId: adminMsgTarget === 'USER' ? adminMsgUserId : undefined,
-              });
-              Alert.alert('Sent', `Message delivered to ${res.data.recipientCount} recipient${res.data.recipientCount !== 1 ? 's' : ''}.`);
-              setAdminMsgTitle('');
-              setAdminMsgBody('');
-              setAdminMsgUserId(null);
-              setAdminMsgUserSearch('');
-            } catch (e: any) {
-              Alert.alert('Error', e.response?.data?.error || 'Failed to send message.');
-            } finally {
-              setAdminMsgSending(false);
-            }
-          }
-        },
-      ]
+    confirmAction(
+      '📢 Send Broadcast Message',
+      `Dispatch message "${adminMsgTitle.trim()}" to ${targetLabel}?\n\nThis will be delivered to their app dashboard, phone push notification, email, and SMS.`,
+      async () => {
+        setAdminMsgSending(true);
+        setAdminMsgFeedback(null);
+        try {
+          const res = await apiClient.post('/notifications/admin/message', {
+            title: adminMsgTitle.trim(),
+            body: adminMsgBody.trim(),
+            target: adminMsgTarget,
+            role: adminMsgTarget === 'ROLE' ? adminMsgRole : undefined,
+            userId: adminMsgTarget === 'USER' ? adminMsgUserId : undefined,
+          });
+
+          const count = res.data?.recipientCount ?? 0;
+          const stats = res.data?.stats;
+          const successTitle = '🎉 Message Dispatched Successfully!';
+          const successMsg = res.data?.message || `Dispatched to ${count} recipient(s). In-App: ${stats?.inApp ?? count}, Emails: ${stats?.emailQueued ?? 0}, SMS: ${stats?.smsQueued ?? 0}, Phone Push: ${stats?.pushQueued ?? 0}.`;
+
+          Alert.alert(successTitle, successMsg);
+          setAdminMsgFeedback({
+            type: 'success',
+            title: successTitle,
+            message: successMsg,
+            recipientCount: count,
+            stats,
+            timestamp: new Date().toLocaleTimeString(),
+          });
+
+          setAdminMsgTitle('');
+          setAdminMsgBody('');
+          setAdminMsgUserId(null);
+          setAdminMsgUserSearch('');
+        } catch (e: any) {
+          const errorMsg = e.response?.data?.error || e.message || 'Failed to dispatch message. Please check your connection and SMTP/SMS settings.';
+          Alert.alert('❌ Error Dispatching Message', errorMsg);
+          setAdminMsgFeedback({
+            type: 'error',
+            title: '❌ Message Dispatch Failed',
+            message: errorMsg,
+            timestamp: new Date().toLocaleTimeString(),
+          });
+        } finally {
+          setAdminMsgSending(false);
+        }
+      }
     );
   };
 
@@ -4816,6 +4842,7 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                       { key: 'VENDOR', label: '🏪 Vendors' },
                       { key: 'HANDYMAN', label: '🛠️ Artisans' },
                       { key: 'RIDER', label: '🏍️ Riders' },
+                      { key: 'AGENT', label: '🏘️ Regional Agents' },
                     ].map(t => {
                       const isSelected = adminMsgRole === t.key;
                       return (
@@ -4917,6 +4944,66 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                   maxLength={1000}
                 />
               </View>
+
+              {/* Multi-channel Delivery Status Indicator */}
+              <View style={{
+                backgroundColor: isDark ? '#1E293B' : '#EFF6FF',
+                borderColor: isDark ? '#3B82F6' : '#93C5FD',
+                borderWidth: 1,
+                borderRadius: 10,
+                padding: 12,
+                marginBottom: 16,
+              }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: isDark ? '#60A5FA' : '#1D4ED8', marginBottom: 4 }}>
+                  📡 Live Multi-Channel Delivery:
+                </Text>
+                <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#3B82F6', lineHeight: 16 }}>
+                  • In-App User Dashboard & Notification Bell{'\n'}
+                  • Mobile Push Notifications (Lockscreen alert on phone){'\n'}
+                  • Official FixMart HTML Email (via SMTP Server){'\n'}
+                  • Direct SMS Delivery (via Twilio when configured)
+                </Text>
+              </View>
+
+              {/* Status Feedback Banner */}
+              {adminMsgFeedback && (
+                <View style={{
+                  backgroundColor: adminMsgFeedback.type === 'success' ? (isDark ? '#064E3B' : '#ECFDF5') : (isDark ? '#7F1D1D' : '#FEF2F2'),
+                  borderColor: adminMsgFeedback.type === 'success' ? '#10B981' : '#EF4444',
+                  borderWidth: 1.5,
+                  borderRadius: 12,
+                  padding: 14,
+                  marginBottom: 16,
+                }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <Text style={{
+                      fontWeight: '800',
+                      fontSize: 13,
+                      color: adminMsgFeedback.type === 'success' ? (isDark ? '#34D399' : '#065F46') : (isDark ? '#FCA5A5' : '#991B1B')
+                    }}>
+                      {adminMsgFeedback.title}
+                    </Text>
+                    {adminMsgFeedback.timestamp && (
+                      <Text style={{ fontSize: 11, color: subtextColor }}>{adminMsgFeedback.timestamp}</Text>
+                    )}
+                  </View>
+                  <Text style={{
+                    fontSize: 12,
+                    lineHeight: 18,
+                    color: adminMsgFeedback.type === 'success' ? (isDark ? '#D1FAE5' : '#047857') : (isDark ? '#FEE2E2' : '#B91C1C'),
+                  }}>
+                    {adminMsgFeedback.message}
+                  </Text>
+                  {adminMsgFeedback.stats && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: theme.primary }}>📊 Dashboard: {adminMsgFeedback.stats.inApp}</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#059669' }}>📱 Mobile Push: {adminMsgFeedback.stats.pushQueued}</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#2563EB' }}>✉️ Email: {adminMsgFeedback.stats.emailQueued}</Text>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: '#7C3AED' }}>💬 SMS: {adminMsgFeedback.stats.smsQueued}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[styles.saveSettingsBtn, { backgroundColor: theme.primary }]}

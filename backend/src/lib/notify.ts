@@ -63,7 +63,10 @@ async function getSmtpConfig(): Promise<{
   const now = Date.now();
   if (!_cachedSettings || now - _lastSettingsFetch > 30000) {
     try {
-      const keys = ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from'];
+      const keys = [
+        'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from',
+        'twilio_account_sid', 'twilio_auth_token', 'twilio_from_number',
+      ];
       const dbSettings = await prisma.appSetting.findMany({
         where: { key: { in: keys } },
       });
@@ -174,11 +177,26 @@ export async function sendTestEmail(recipientEmail: string): Promise<{ success: 
   };
 }
 
-function getTwilio(): twilio.Twilio | null {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!sid || !token) return null;
-  return twilio(sid, token);
+export function normalizePhoneNumber(phone: string, defaultCountryCode = '234'): string {
+  if (!phone) return '';
+  const clean = phone.trim().replace(/[^\d+]/g, '');
+  if (clean.startsWith('+')) return clean;
+  if (clean.startsWith('0')) {
+    return `+${defaultCountryCode}${clean.substring(1)}`;
+  }
+  if (clean.length === 10) {
+    return `+${defaultCountryCode}${clean}`;
+  }
+  return `+${clean}`;
+}
+
+async function getTwilioClient(): Promise<{ client: twilio.Twilio | null; fromNumber: string | null }> {
+  const s = _cachedSettings || {};
+  const sid = s['twilio_account_sid'] || process.env.TWILIO_ACCOUNT_SID;
+  const token = s['twilio_auth_token'] || process.env.TWILIO_AUTH_TOKEN;
+  const fromNumber = s['twilio_from_number'] || process.env.TWILIO_FROM_NUMBER;
+  if (!sid || !token || !fromNumber) return { client: null, fromNumber: null };
+  return { client: twilio(sid, token), fromNumber };
 }
 
 // ─── Expo Push Notification ───────────────────────────────────────────────────
@@ -349,15 +367,18 @@ export async function sendNotification(payload: NotifyPayload) {
   }
 
   // 5. SMS (fire-and-forget — skipped in test mode)
-  const twilioClient = getTwilio();
-  const fromNumber = process.env.TWILIO_FROM_NUMBER;
-  if (!isTest && twilioClient && fromNumber && userPhone) {
-    const smsBody = `[FixMart] ${title}\n${body}`;
-    twilioClient.messages.create({
-      body: smsBody.substring(0, 160), // Standard SMS limit
-      from: fromNumber,
-      to: userPhone,
-    }).catch((e) => console.error('[notify] SMS send failed:', e));
+  if (!isTest && userPhone) {
+    getTwilioClient().then(({ client, fromNumber }) => {
+      if (client && fromNumber) {
+        const toPhone = normalizePhoneNumber(userPhone!);
+        const smsBody = `[FixMart] ${title}\n${body}`;
+        client.messages.create({
+          body: smsBody.substring(0, 160),
+          from: fromNumber,
+          to: toPhone,
+        }).catch((e) => console.error('[notify] SMS send failed to', toPhone, e?.message));
+      }
+    }).catch((e) => console.error('[notify] getTwilioClient error:', e));
   }
 
   return notification;

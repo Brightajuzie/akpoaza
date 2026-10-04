@@ -204,7 +204,31 @@ router.post('/admin/message', authenticateToken, async (req: AuthRequest, res: R
       }))
     );
 
-    res.json({ success: true, recipientCount: recipients.length });
+    // Also notify the admin who dispatched it so it shows in their dashboard & alerts
+    const targetDesc = target === 'ALL' ? 'All Users' : target === 'ROLE' ? `All ${role}s` : (recipients[0].email || '1 user');
+    await prisma.notification.create({
+      data: {
+        userId: admin.userId,
+        title: `✅ Dispatched: ${title.trim()}`,
+        body: `Broadcast delivered to ${recipients.length} user(s) (${targetDesc}). Channels: In-App, Push Notifications, Email, SMS.`,
+        type: 'ADMIN_MESSAGE',
+      },
+    }).catch((e) => console.error('[admin/message] Admin self-notify error:', e));
+
+    const stats = {
+      total: recipients.length,
+      inApp: recipients.length,
+      emailQueued: recipients.filter((r) => !!r.email).length,
+      smsQueued: recipients.filter((r) => !!r.phone).length,
+      pushQueued: recipients.filter((r) => !!r.pushToken).length,
+    };
+
+    res.json({
+      success: true,
+      recipientCount: recipients.length,
+      stats,
+      message: `Message dispatched successfully to ${recipients.length} recipient(s). In-app: ${stats.inApp}, Emails: ${stats.emailQueued}, SMS: ${stats.smsQueued}, Phone Push: ${stats.pushQueued}.`,
+    });
   } catch (error) {
     console.error('POST /notifications/admin/message error:', error);
     res.status(500).json({ error: 'Failed to send admin message' });
