@@ -39,6 +39,7 @@ model User {
   vehicleType        String?
   country            String?            @default("Nigeria")
   currency           String?            @default("NGN")
+  pushToken          String?            // Expo push notification token
   state              String?            // e.g. "Rivers State", "Lagos"
   agentId            String?            // agent who manages this user's region
   agent              User?              @relation("AgentUsers", fields: [agentId], references: [id])

@@ -47,6 +47,13 @@
         {
           "locationWhenInUsePermission": "FixMart uses your location to show nearby vendors and services."
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#007AFF"
+        }
       ]
     ],
     "ios": {

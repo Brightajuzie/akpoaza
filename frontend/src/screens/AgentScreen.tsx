@@ -216,6 +216,13 @@ export default function AgentScreen({ navigation }: any) {
             {region?.agent?.state ? `${region.agent.state} Locality` : 'Regional Admin'}
           </Text>
         </View>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('NotificationsTab')}
+          style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' }}
+          accessibilityLabel="View Alerts & Messages"
+        >
+          <Text style={{ fontSize: 18 }}>🔔</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Tab Bar */}

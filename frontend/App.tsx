@@ -60,6 +60,8 @@ function RootWrapper({ children }: { children: React.ReactNode }) {
   return <View style={styles.gradient}>{children}</View>;
 }
 
+import { setupNotificationListeners } from './src/utils/pushNotifications';
+
 // ── AppContent: reads AuthContext + SettingsContext (provided above) ───────────
 function AppContent() {
   const { userInfo } = useContext(AuthContext);
@@ -71,6 +73,16 @@ function AppContent() {
       document.body.style.backgroundColor = theme.background;
     }
   }, [theme.background]);
+
+  // Push notification tap listener
+  useEffect(() => {
+    const unsubscribe = setupNotificationListeners((data) => {
+      console.log('[App] Push notification response received:', data);
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, []);
 
   return (
     <CurrencyProvider userCountry={userInfo?.country}>

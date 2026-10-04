@@ -2,6 +2,7 @@ import React, { createContext, useState, useEffect } from 'react';
 import Toast from 'react-native-toast-message';
 import * as SecureStore from '../utils/storage';
 import apiClient, { setUnauthorizedHandler } from '../api/client';
+import { registerForPushNotificationsAsync, unregisterPushTokenAsync } from '../utils/pushNotifications';
 
 export const AuthContext = createContext<any>(null);
 
@@ -13,6 +14,8 @@ export const AuthProvider = ({ children }: any) => {
   // The logout function
   const logout = async () => {
     setIsLoading(true);
+    // Unregister push token before deleting user token
+    await unregisterPushTokenAsync().catch(() => {});
     setUserToken(null);
     setUserInfo(null);
     await SecureStore.deleteItemAsync('userToken');
@@ -33,6 +36,8 @@ export const AuthProvider = ({ children }: any) => {
           setUserToken(token);
           setUserInfo(JSON.parse(user));
           apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          // Register device for push notifications in background
+          registerForPushNotificationsAsync().catch(() => {});
         }
       } catch (e) {
         console.error('Failed to load token', e);
@@ -50,6 +55,8 @@ export const AuthProvider = ({ children }: any) => {
     await SecureStore.setItemAsync('userToken', token);
     await SecureStore.setItemAsync('userInfo', JSON.stringify(user));
     apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    // Register device for push notifications in background
+    registerForPushNotificationsAsync().catch(() => {});
     setIsLoading(false);
     Toast.show({ type: 'success', text1: 'Login successful' });
   };

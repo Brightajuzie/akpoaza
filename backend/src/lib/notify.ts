@@ -12,6 +12,7 @@
 
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
+import https from 'https';
 import prisma from './prisma';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -31,6 +32,8 @@ export interface NotifyPayload {
   email?: string;
   /** Override phone number for SMS (default: user.phone from DB) */
   phone?: string;
+  /** Override push notification token (default: user.pushToken from DB) */
+  pushToken?: string;
   /** Email subject line (default: title) */
   emailSubject?: string;
   /** Rich HTML email body (default: plain text body) */
@@ -178,7 +181,65 @@ function getTwilio(): twilio.Twilio | null {
   return twilio(sid, token);
 }
 
-// ─── Email HTML template ──────────────────────────────────────────────────────
+// ─── Expo Push Notification ───────────────────────────────────────────────────
+
+/**
+ * sendExpoPush — sends a push notification to a device via Expo's push service.
+ * Docs: https://docs.expo.dev/push-notifications/sending-notifications/
+ * Fire-and-forget; failures are logged but never thrown.
+ */
+function sendExpoPush(
+  pushToken: string,
+  title: string,
+  body: string,
+  data?: Record<string, unknown>
+): void {
+  // Only valid Expo push tokens (ExponentPushToken[...]) or FCM/APNs tokens
+  if (!pushToken || (!pushToken.startsWith('ExponentPushToken') && !pushToken.startsWith('ExpoPushToken'))) return;
+
+  const message = JSON.stringify({
+    to: pushToken,
+    sound: 'default',
+    title,
+    body,
+    data: data || {},
+    priority: 'high',
+    channelId: 'default',
+  });
+
+  const options: https.RequestOptions = {
+    hostname: 'exp.host',
+    path: '/--/api/v2/push/send',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip, deflate',
+      'Content-Length': Buffer.byteLength(message),
+    },
+  };
+
+  const req = https.request(options, (res) => {
+    let raw = '';
+    res.on('data', (chunk) => { raw += chunk; });
+    res.on('end', () => {
+      try {
+        const parsed = JSON.parse(raw);
+        const result = Array.isArray(parsed.data) ? parsed.data[0] : parsed.data;
+        if (result?.status === 'error') {
+          console.warn('[notify] Expo push error:', result.message, result.details);
+        }
+      } catch {
+        // ignore parse errors
+      }
+    });
+  });
+  req.on('error', (e) => console.error('[notify] Expo push request error:', e.message));
+  req.write(message);
+  req.end();
+}
+
+// ─── Email HTML template ───────────────────────────────────────────────────────
 
 function buildEmailHtml(title: string, body: string, customHtml?: string): string {
   const content = customHtml || `<p style="font-size:16px;color:#374151;line-height:1.6">${body.replace(/\n/g, '<br>')}</p>`;
@@ -240,17 +301,19 @@ export async function sendNotification(payload: NotifyPayload) {
     emailSubject, emailHtml,
   } = payload;
 
-  // 1. Always fetch user to get email/phone (unless caller supplied them)
+  // 1. Always fetch user to get email/phone/pushToken (unless caller supplied them)
   let userEmail = payload.email;
   let userPhone = payload.phone;
+  let userPushToken = payload.pushToken;
 
-  if (!userEmail || !userPhone) {
+  if (!userEmail || !userPhone || !userPushToken) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { email: true, phone: true },
+      select: { email: true, phone: true, pushToken: true },
     }).catch(() => null);
     if (!userEmail && user?.email) userEmail = user.email;
     if (!userPhone && user?.phone) userPhone = user.phone;
+    if (!userPushToken && user?.pushToken) userPushToken = user.pushToken;
   }
 
   // 2. In-app notification (always)
@@ -261,7 +324,16 @@ export async function sendNotification(payload: NotifyPayload) {
     return null;
   });
 
-  // 3. Email (fire-and-forget — skipped in test mode)
+  // 3. Expo Push Notification (fire-and-forget — skipped in test mode)
+  if (!isTest && userPushToken) {
+    sendExpoPush(userPushToken, title, body, {
+      type,
+      referenceId: referenceId ?? undefined,
+      notificationId: notification?.id,
+    });
+  }
+
+  // 4. Email (fire-and-forget — skipped in test mode)
   if (!isTest && userEmail) {
     getMailer().then(({ mailer, from }) => {
       if (mailer) {
@@ -276,7 +348,7 @@ export async function sendNotification(payload: NotifyPayload) {
     }).catch((e) => console.error('[notify] getMailer error:', e));
   }
 
-  // 4. SMS (fire-and-forget — skipped in test mode)
+  // 5. SMS (fire-and-forget — skipped in test mode)
   const twilioClient = getTwilio();
   const fromNumber = process.env.TWILIO_FROM_NUMBER;
   if (!isTest && twilioClient && fromNumber && userPhone) {

@@ -535,4 +535,49 @@ router.patch('/profile', authenticateToken, async (req: AuthRequest, res) => {
   }
 });
 
+/**
+ * PATCH /auth/push-token
+ * Saves or updates the authenticated user's Expo push notification token.
+ * Called by the app on every launch after permission is granted.
+ * Body: { pushToken: string }
+ */
+router.patch('/push-token', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const { pushToken } = req.body;
+
+    if (!pushToken || typeof pushToken !== 'string') {
+      return res.status(400).json({ error: 'pushToken is required' });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { pushToken: pushToken.trim() },
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('PATCH /auth/push-token error:', error);
+    res.status(500).json({ error: 'Failed to save push token' });
+  }
+});
+
+/**
+ * DELETE /auth/push-token
+ * Clears the push token on logout so the device no longer receives pushes.
+ */
+router.delete('/push-token', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    await prisma.user.update({
+      where: { id: userId },
+      data: { pushToken: null },
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('DELETE /auth/push-token error:', error);
+    res.status(500).json({ error: 'Failed to clear push token' });
+  }
+});
+
 export default router;

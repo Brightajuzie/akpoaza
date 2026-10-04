@@ -6,7 +6,7 @@ import { notifyMany } from '../lib/notify';
 
 const router = Router();
 
-const MESSAGEABLE_ROLES: Role[] = ['CUSTOMER', 'VENDOR', 'HANDYMAN', 'RIDER'];
+const MESSAGEABLE_ROLES: Role[] = ['CUSTOMER', 'VENDOR', 'HANDYMAN', 'RIDER', 'AGENT'];
 
 /**
  * Helper function to create a notification.
@@ -147,7 +147,7 @@ router.post('/admin/message', authenticateToken, async (req: AuthRequest, res: R
       return res.status(400).json({ error: 'target must be USER, ROLE, or ALL' });
     }
 
-    let recipients: { id: string; email: string | null; phone: string | null }[];
+    let recipients: { id: string; email: string | null; phone: string | null; pushToken: string | null }[];
 
     if (target === 'USER') {
       if (!userId || typeof userId !== 'string') {
@@ -155,7 +155,7 @@ router.post('/admin/message', authenticateToken, async (req: AuthRequest, res: R
       }
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, email: true, phone: true },
+        select: { id: true, email: true, phone: true, pushToken: true },
       });
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
@@ -167,18 +167,28 @@ router.post('/admin/message', authenticateToken, async (req: AuthRequest, res: R
       }
       recipients = await prisma.user.findMany({
         where: { role: role as Role },
-        select: { id: true, email: true, phone: true },
+        select: { id: true, email: true, phone: true, pushToken: true },
       });
     } else {
       recipients = await prisma.user.findMany({
         where: { role: { in: MESSAGEABLE_ROLES } },
-        select: { id: true, email: true, phone: true },
+        select: { id: true, email: true, phone: true, pushToken: true },
       });
     }
 
     if (recipients.length === 0) {
       return res.status(404).json({ error: 'No matching recipients found' });
     }
+
+    const emailHtml = `
+      <div style="background:#F0FDF4;border:1px solid #86EFAC;border-radius:10px;padding:20px;margin:18px 0">
+        <p style="margin:0 0 10px 0;font-size:16px;font-weight:700;color:#166534">📢 Message from FixMart Management</p>
+        <p style="margin:0;font-size:15px;color:#1F2937;line-height:1.6">${body.trim().replace(/\n/g, '<br>')}</p>
+      </div>
+      <p style="font-size:13px;color:#6B7280;line-height:1.5">
+        This notification has also been delivered to your FixMart Mobile App alerts and active dashboard.
+      </p>
+    `;
 
     await notifyMany(
       recipients.map((r) => ({
@@ -188,7 +198,9 @@ router.post('/admin/message', authenticateToken, async (req: AuthRequest, res: R
         type: 'ADMIN_MESSAGE' as const,
         email: r.email ?? undefined,
         phone: r.phone ?? undefined,
-        emailSubject: `📢 Message from FixMart Admin: ${title.trim()}`,
+        pushToken: r.pushToken ?? undefined,
+        emailSubject: `📢 FixMart Notification: ${title.trim()}`,
+        emailHtml,
       }))
     );
 

@@ -97,6 +97,34 @@ export default function HomeScreen({ navigation }: any) {
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [vendorModalType, setVendorModalType] = useState<'REGISTER' | 'UPGRADE' | 'KYC'>('REGISTER');
 
+  // Dashboard notifications & alert banner
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+  const [latestUnreadNotif, setLatestUnreadNotif] = useState<any>(null);
+  const [dismissedNotifId, setDismissedNotifId] = useState<string | null>(null);
+
+  const fetchUnreadNotifications = useCallback(async () => {
+    if (!userInfo) return;
+    try {
+      const res = await apiClient.get('/notifications');
+      const count = res.data?.unreadCount || 0;
+      setUnreadNotifsCount(count);
+      const unreadList = (res.data?.notifications || []).filter((n: any) => !n.read);
+      if (unreadList.length > 0) {
+        setLatestUnreadNotif(unreadList[0]);
+      } else {
+        setLatestUnreadNotif(null);
+      }
+    } catch {
+      // ignore
+    }
+  }, [userInfo]);
+
+  useEffect(() => {
+    fetchUnreadNotifications();
+    const interval = setInterval(fetchUnreadNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [fetchUnreadNotifications]);
+
   const heroFadeAnim = useRef(new Animated.Value(0)).current;
   const heroSlideAnim = useRef(new Animated.Value(24)).current;
 
@@ -379,10 +407,15 @@ export default function HomeScreen({ navigation }: any) {
             <Text style={styles.navIconBtnText}>🛒</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.navIconBtn, { borderColor: theme.border }]}
+            style={[styles.navIconBtn, { borderColor: theme.border, position: 'relative' }]}
             onPress={() => navigation.navigate('NotificationsTab')}
           >
             <Text style={styles.navIconBtnText}>🔔</Text>
+            {unreadNotifsCount > 0 && (
+              <View style={[styles.navBadge, { backgroundColor: theme.primary }]}>
+                <Text style={styles.navBadgeText}>{unreadNotifsCount > 9 ? '9+' : unreadNotifsCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
           <ThemeToggle compact />
           <TouchableOpacity
@@ -419,6 +452,17 @@ export default function HomeScreen({ navigation }: any) {
       </View>
 
       <View style={styles.mobileNavRight}>
+        <TouchableOpacity
+          style={[styles.navIconBtn, { borderColor: theme.border, position: 'relative', marginRight: 4, width: isVeryCompact ? 30 : 34, height: isVeryCompact ? 30 : 34 }]}
+          onPress={() => navigation.navigate('NotificationsTab')}
+        >
+          <Text style={[styles.navIconBtnText, isVeryCompact && { fontSize: 13 }]}>🔔</Text>
+          {unreadNotifsCount > 0 && (
+            <View style={[styles.navBadge, { backgroundColor: theme.primary, top: -2, right: -4, minWidth: 14, height: 14, borderRadius: 7 }]}>
+              <Text style={[styles.navBadgeText, { fontSize: 8 }]}>{unreadNotifsCount > 9 ? '9+' : unreadNotifsCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
         <ThemeToggle compact />
         <TouchableOpacity
           style={[styles.navAvatar, { borderColor: theme.primary, backgroundColor: theme.primary + '18', marginLeft: 6 }, isCompactHeight && { width: 32, height: 32, borderRadius: 16 }, isVeryCompact && { width: 28, height: 28, borderRadius: 14 }]}
@@ -514,6 +558,12 @@ export default function HomeScreen({ navigation }: any) {
                     >
                       {item.label}
                     </Text>
+                    {item.screen === 'NotificationsTab' && unreadNotifsCount > 0 && (
+                      <View style={[styles.navBadge, { backgroundColor: theme.primary, position: 'relative', top: 0, right: 0, marginLeft: 6 }]}>
+                        <Text style={[styles.navBadgeText, { fontSize: 9 }]}>{unreadNotifsCount > 9 ? '9+' : unreadNotifsCount}</Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }} />
                     <Text style={[styles.drawerChevron, { color: item.screen === '__sell__' ? theme.primary : (theme.lightText || '#8E8E93') }]}>›</Text>
                   </TouchableOpacity>
                 ))}
@@ -559,6 +609,52 @@ export default function HomeScreen({ navigation }: any) {
     </Modal>
   );
 
+
+  const renderDashboardNotificationBanner = () => {
+    if (!latestUnreadNotif || latestUnreadNotif.id === dismissedNotifId) return null;
+
+    const cardBg = isDark ? '#1E293B' : (theme.card || '#FFFFFF');
+    const textColor = isDark ? '#F1F5F9' : (theme.text || '#0F172A');
+    const subtextColor = isDark ? '#94A3B8' : (theme.lightText || '#64748B');
+
+    return (
+      <View style={[styles.dashboardNoticeCard, { backgroundColor: cardBg, borderColor: theme.primary + '50' }]}>
+        <View style={styles.dashboardNoticeHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 }}>
+            <Text style={{ fontSize: 20 }}>📢</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: theme.primary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                New FixMart Message
+              </Text>
+              <Text style={[styles.dashboardNoticeTitle, { color: textColor }]} numberOfLines={1}>
+                {latestUnreadNotif.title}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            onPress={() => setDismissedNotifId(latestUnreadNotif.id)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={{ padding: 4 }}
+          >
+            <Text style={{ fontSize: 16, color: subtextColor, fontWeight: '700' }}>✕</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={[styles.dashboardNoticeBody, { color: subtextColor }]} numberOfLines={2}>
+          {latestUnreadNotif.body}
+        </Text>
+        <View style={styles.dashboardNoticeActions}>
+          <TouchableOpacity
+            style={[styles.dashboardNoticeBtn, { backgroundColor: theme.primary }]}
+            onPress={() => {
+              navigation.navigate('NotificationsTab');
+            }}
+          >
+            <Text style={styles.dashboardNoticeBtnText}>Open Message in Alerts →</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
 
   const renderHero = () => (
     <Animated.View style={{ opacity: heroFadeAnim, transform: [{ translateY: heroSlideAnim }] }}>
@@ -1352,6 +1448,9 @@ export default function HomeScreen({ navigation }: any) {
         keyboardShouldPersistTaps="handled"
       >
         <ResponsiveContainer maxWidth={1280}>
+          {/* Dashboard Message Notice Banner */}
+          {renderDashboardNotificationBanner()}
+
           {/* Hero */}
           {renderHero()}
 
@@ -1434,6 +1533,65 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   navIconBtnText: { fontSize: 16 },
+  navBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 3,
+  },
+  navBadgeText: {
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  dashboardNoticeCard: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 14,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  dashboardNoticeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  dashboardNoticeTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  dashboardNoticeBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  dashboardNoticeActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  dashboardNoticeBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  dashboardNoticeBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   // ── Mobile Navbar ─────────────────────────────────────────────────────────
   mobileNavbar: {

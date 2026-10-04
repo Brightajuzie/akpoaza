@@ -856,6 +856,12 @@ export default function ProfileScreen({ navigation }: any) {
           </TouchableOpacity>
         )}
 
+        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('NotificationsTab')}>
+          <Text style={styles.menuItemIcon}>🔔</Text>
+          <Text style={[styles.menuItemText, { color: textColor }]}>Alerts & Messages</Text>
+          <Text style={[styles.menuItemChevron, { color: subtextColor }]}>›</Text>
+        </TouchableOpacity>
+
         {/* Legal & Account Deletion (Google Play Compliance) */}
         <TouchableOpacity
           style={[styles.menuItem, { borderBottomColor: borderColor }]}
