@@ -29,7 +29,7 @@ const AI_FILTERS = [
 export default function AdminScreen() {
   const scrollViewRef = useRef<ScrollView>(null);
   const { userInfo } = useContext(AuthContext);
-  const { theme, settings, updateSettings, colorMode, apkUrl, aabUrl, playstoreUrl } = useContext(SettingsContext);
+  const { theme, settings, updateSettings, refreshSettings, colorMode, apkUrl, aabUrl, playstoreUrl } = useContext(SettingsContext);
   const { fmt } = useCurrency();
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -168,6 +168,8 @@ export default function AdminScreen() {
   const [smtpShowPass, setSmtpShowPass]               = useState(false);
   const [testEmailRecipient, setTestEmailRecipient]   = useState('');
   const [testEmailSending, setTestEmailSending]       = useState(false);
+  const [smtpSaving, setSmtpSaving]                   = useState(false);
+  const [smtpSyncStatus, setSmtpSyncStatus]           = useState<string | null>(null);
 
   // Rider Delivery Pricing (Admin only)
   const [riderBaseFare, setRiderBaseFare]           = useState('1000');
@@ -978,6 +980,13 @@ export default function AdminScreen() {
   }, [activeTab, txFilterStatus, txFilterType]);
 
   useEffect(() => {
+    // Refresh settings with admin authentication to ensure credentials (smtp_pass, payment keys) load
+    if (refreshSettings) {
+      refreshSettings().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
     if (settings) {
       setLogoUrlInput(settings.logo_url || '');
       setFaviconUrlInput(settings.favicon_url || '');
@@ -1029,7 +1038,9 @@ export default function AdminScreen() {
       setSmtpPort(settings.smtp_port || '465');
       setSmtpSecure(settings.smtp_secure !== undefined ? settings.smtp_secure === 'true' : true);
       setSmtpUser(settings.smtp_user || '');
-      setSmtpPass(settings.smtp_pass || '');
+      if (settings.smtp_pass) {
+        setSmtpPass(settings.smtp_pass);
+      }
       setSmtpFrom(settings.smtp_from || '');
       if (settings.smtp_user && !testEmailRecipient) {
         setTestEmailRecipient(settings.smtp_user);
@@ -1699,7 +1710,7 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
   const handleSaveSettings = async () => {
     setSettingsSaving(true);
     try {
-      const updates = {
+      const updates: Record<string, string> = {
         logo_url:                 logoUrlInput,
         favicon_url:              faviconUrlInput,
         hero_title:               heroTitleInput,
@@ -1742,9 +1753,19 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
         smtp_port:                smtpPort.trim(),
         smtp_secure:              smtpSecure ? 'true' : 'false',
         smtp_user:                smtpUser.trim(),
-        smtp_pass:                smtpPass.trim(),
-        smtp_from:                smtpFrom.trim(),
+        smtp_from:                smtpFrom.trim() || (smtpUser.trim() ? `FixMart <${smtpUser.trim()}>` : ''),
       };
+
+      // Clean and sanitize SMTP Password (e.g. strip spaces from Google App Passwords)
+      let cleanPass = smtpPass.trim();
+      if (cleanPass.includes(' ') && (cleanPass.replace(/\s+/g, '').length === 16 || smtpHost === 'smtp.gmail.com')) {
+        cleanPass = cleanPass.replace(/\s+/g, '');
+        setSmtpPass(cleanPass);
+      }
+      if (cleanPass) {
+        updates.smtp_pass = cleanPass;
+      }
+
       await updateSettings(updates);
       Alert.alert('Settings Saved', 'System branding, gateways, and email configurations updated successfully.');
     } catch (e) {
@@ -1768,28 +1789,81 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
     }
   };
 
+  // Dedicated email credentials sync function
+  const handleSyncEmailSettings = async () => {
+    if (!smtpUser.trim()) {
+      Alert.alert('Sender Email Missing', 'Please enter your SMTP Sender Email address.');
+      return;
+    }
+
+    let cleanPass = smtpPass.trim();
+    if (cleanPass.includes(' ') && (cleanPass.replace(/\s+/g, '').length === 16 || smtpHost === 'smtp.gmail.com')) {
+      cleanPass = cleanPass.replace(/\s+/g, '');
+      setSmtpPass(cleanPass);
+    }
+
+    setSmtpSaving(true);
+    setSmtpSyncStatus(null);
+    try {
+      const emailUpdates: Record<string, string> = {
+        smtp_host:   smtpHost.trim(),
+        smtp_port:   smtpPort.trim(),
+        smtp_secure: smtpSecure ? 'true' : 'false',
+        smtp_user:   smtpUser.trim(),
+        smtp_from:   smtpFrom.trim() || `FixMart <${smtpUser.trim()}>`,
+      };
+      if (cleanPass) {
+        emailUpdates.smtp_pass = cleanPass;
+      }
+
+      await updateSettings(emailUpdates);
+      setSmtpSyncStatus('✅ Email credentials & password synced successfully with mail server!');
+      Alert.alert(
+        '✅ Email Credentials Synced',
+        'Your SMTP email settings and password have been saved to the database and synced with the mail server. You can now use "Test Send" below to test delivery.'
+      );
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to sync email settings.';
+      Alert.alert('Error', msg);
+    } finally {
+      setSmtpSaving(false);
+    }
+  };
+
   const handleSendTestEmail = async () => {
     const targetEmail = (testEmailRecipient || smtpUser || userInfo?.email || '').trim();
     if (!targetEmail) {
       Alert.alert('Recipient Missing', 'Please enter an email address to send the test verification email to.');
       return;
     }
-    if (!smtpUser || !smtpPass) {
-      Alert.alert('Incomplete SMTP Settings', 'Please enter your Sender Email and Password/App Password, then click Save Settings first.');
+
+    const hasConfiguredPass = Boolean(smtpPass.trim() || settings.smtp_pass || settings.smtp_pass_configured === 'true');
+    if (!smtpUser.trim() || !hasConfiguredPass) {
+      Alert.alert('Incomplete SMTP Settings', 'Please enter your Sender Email and Password/App Password, then click "Save & Sync Email Credentials" first.');
       return;
     }
 
     setTestEmailSending(true);
     try {
-      // First save current settings to ensure backend has the latest credentials
-      await updateSettings({
+      let cleanPass = smtpPass.trim();
+      if (cleanPass.includes(' ') && (cleanPass.replace(/\s+/g, '').length === 16 || smtpHost === 'smtp.gmail.com')) {
+        cleanPass = cleanPass.replace(/\s+/g, '');
+        setSmtpPass(cleanPass);
+      }
+
+      const emailUpdates: Record<string, string> = {
         smtp_host:   smtpHost.trim(),
         smtp_port:   smtpPort.trim(),
         smtp_secure: smtpSecure ? 'true' : 'false',
         smtp_user:   smtpUser.trim(),
-        smtp_pass:   smtpPass.trim(),
-        smtp_from:   smtpFrom.trim(),
-      });
+        smtp_from:   smtpFrom.trim() || `FixMart <${smtpUser.trim()}>`,
+      };
+      if (cleanPass) {
+        emailUpdates.smtp_pass = cleanPass;
+      }
+
+      // First save current settings to ensure backend has the latest credentials
+      await updateSettings(emailUpdates);
 
       const res = await apiClient.post('/settings/test-email', { recipientEmail: targetEmail });
       Alert.alert(
@@ -1798,7 +1872,7 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
       );
     } catch (err: any) {
       console.error('Test email error:', err);
-      const errMsg = err?.response?.data?.error || err?.message || 'Failed to send test email. Please check your SMTP settings.';
+      const errMsg = err?.response?.data?.error || err?.message || 'Failed to send test email. Please check your SMTP settings and password.';
       Alert.alert('❌ Test Email Failed', errMsg);
     } finally {
       setTestEmailSending(false);
@@ -3993,6 +4067,46 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                     </Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* Password Sync Status Banner */}
+                {(smtpPass || settings.smtp_pass || settings.smtp_pass_configured === 'true') ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#064E3B' : '#ECFDF5', padding: 10, borderRadius: 8, marginTop: 8, borderWidth: 1, borderColor: isDark ? '#059669' : '#A7F3D0' }}>
+                    <Text style={{ fontSize: 13, marginRight: 6 }}>🔒</Text>
+                    <Text style={{ fontSize: 12, color: isDark ? '#6EE7B7' : '#065F46', fontWeight: '700', flex: 1 }}>
+                      SMTP Password Active & Synced {smtpPass ? `(${smtpPass.length} characters)` : '(Configured on server)'}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#78350F' : '#FEF3C7', padding: 10, borderRadius: 8, marginTop: 8, borderWidth: 1, borderColor: isDark ? '#B45309' : '#FDE68A' }}>
+                    <Text style={{ fontSize: 13, marginRight: 6 }}>⚠️</Text>
+                    <Text style={{ fontSize: 12, color: isDark ? '#FCD34D' : '#92400E', fontWeight: '600', flex: 1 }}>
+                      No SMTP password saved yet. Enter password above and tap "Save & Sync Email Credentials".
+                    </Text>
+                  </View>
+                )}
+
+                {smtpSyncStatus && (
+                  <View style={{ backgroundColor: isDark ? '#064E3B' : '#ECFDF5', padding: 8, borderRadius: 6, marginTop: 6 }}>
+                    <Text style={{ fontSize: 12, color: isDark ? '#6EE7B7' : '#047857', fontWeight: '600' }}>
+                      {smtpSyncStatus}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Dedicated Save & Sync Email Button */}
+                <TouchableOpacity
+                  style={[styles.saveSettingsBtn, { backgroundColor: '#2563EB', marginTop: 10, marginBottom: 6 }, smtpSaving && { opacity: 0.7 }]}
+                  onPress={handleSyncEmailSettings}
+                  disabled={smtpSaving}
+                >
+                  {smtpSaving ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
+                      💾 Save & Sync Email Credentials
+                    </Text>
+                  )}
+                </TouchableOpacity>
 
                 {/* Live Test Email Tool */}
                 <View style={{ marginTop: 12, paddingTop: 14, borderTopWidth: 1, borderTopColor: borderColor }}>

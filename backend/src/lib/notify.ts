@@ -86,7 +86,15 @@ async function getSmtpConfig(): Promise<{
   const port = parseInt(s['smtp_port'] || process.env.SMTP_PORT || '465', 10);
   const secure = s['smtp_secure'] !== undefined ? s['smtp_secure'] === 'true' : (process.env.SMTP_SECURE === 'true' || port === 465);
   const user = s['smtp_user'] || process.env.SMTP_USER || undefined;
-  const pass = s['smtp_pass'] || process.env.SMTP_PASS || undefined;
+  let pass = s['smtp_pass'] || process.env.SMTP_PASS || undefined;
+  if (pass) {
+    pass = pass.trim();
+    // Google App Passwords are 16 characters often copied with spaces (e.g. "abcd efgh ijkl mnop")
+    if (pass.includes(' ') && (host === 'smtp.gmail.com' || pass.replace(/\s+/g, '').length === 16)) {
+      pass = pass.replace(/\s+/g, '');
+    }
+  }
+
   const from = s['smtp_from'] || process.env.SMTP_FROM || (user ? `FixMart <${user}>` : 'FixMart <noreply@fixmart.app>');
 
   return { host, port, secure, user, pass, from };
