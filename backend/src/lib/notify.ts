@@ -98,6 +98,11 @@ async function getMailer(): Promise<{ mailer: nodemailer.Transporter | null; fro
 
   const config = await getSmtpConfig();
   if (!config.host || !config.user || !config.pass) {
+    if (config.host || config.user) {
+      // Partially configured — warn so the developer knows why email is skipped
+      console.warn('[notify] Email skipped — SMTP config incomplete. host=%s user=%s pass=%s',
+        config.host ? '✓' : '✗', config.user ? '✓' : '✗', config.pass ? '✓' : '✗');
+    }
     return { mailer: null, from: config.from };
   }
 
@@ -462,6 +467,18 @@ export async function sendWelcomeNotification(user: {
         <p style="margin:0;font-size:15px;color:#92400E;font-weight:700">🛵 Fast Logistics Network</p>
         <p style="margin:6px 0 0;font-size:14px;color:#1F2937">Our logistics team will verify your vehicle and identification. Once approved, you can turn your status to Online and start fulfilling package dispatches.</p>
       </div>
+    `;
+  } else if (user.role === 'AGENT') {
+    body = `Welcome to FixMart, ${user.name}! Your Regional Agent account has been created. Our admin team will review and activate your account shortly.`;
+    customHtml = `
+      <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
+      <p>Welcome to <strong>FixMart</strong> as a registered <strong>Regional Agent</strong>!</p>
+      <div style="background:#F0F9FF;border-left:4px solid #0EA5E9;padding:14px 16px;margin:18px 0;border-radius:6px;">
+        <p style="margin:0;font-size:15px;color:#0C4A6E;font-weight:700">🏘️ Regional Agent Account</p>
+        <p style="margin:6px 0 0;font-size:14px;color:#1F2937">As a Regional Agent, you will be able to manage bookings, orders, workmen, and riders in your locality once your account is approved by an Administrator.</p>
+        <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Status:</strong> ⏳ Pending Admin Approval</p>
+      </div>
+      <p>You will receive a notification once your account has been reviewed and activated. Thank you for joining FixMart!</p>
     `;
   } else {
     body = `Welcome to FixMart, ${user.name}! Your ${roleTitle} account has been created successfully.`;
