@@ -171,6 +171,16 @@ export default function AdminScreen() {
   const [smtpSaving, setSmtpSaving]                   = useState(false);
   const [smtpSyncStatus, setSmtpSyncStatus]           = useState<string | null>(null);
 
+  // Twilio SMS Gateway (Admin only)
+  const [twilioAccountSid, setTwilioAccountSid]       = useState('');
+  const [twilioAuthToken, setTwilioAuthToken]         = useState('');
+  const [twilioFromNumber, setTwilioFromNumber]       = useState('');
+  const [twilioShowToken, setTwilioShowToken]         = useState(false);
+  const [twilioSaving, setTwilioSaving]               = useState(false);
+  const [twilioSyncStatus, setTwilioSyncStatus]       = useState<string | null>(null);
+  const [testSmsRecipient, setTestSmsRecipient]       = useState('');
+  const [testSmsSending, setTestSmsSending]           = useState(false);
+
   // Rider Delivery Pricing (Admin only)
   const [riderBaseFare, setRiderBaseFare]           = useState('1000');
   const [riderPricePerKm, setRiderPricePerKm]       = useState('200');
@@ -1045,6 +1055,15 @@ export default function AdminScreen() {
       if (settings.smtp_user && !testEmailRecipient) {
         setTestEmailRecipient(settings.smtp_user);
       }
+      // Twilio SMS
+      setTwilioAccountSid(settings.twilio_account_sid || '');
+      if (settings.twilio_auth_token) {
+        setTwilioAuthToken(settings.twilio_auth_token);
+      }
+      setTwilioFromNumber(settings.twilio_from_number || '');
+      if (userInfo?.phone && !testSmsRecipient) {
+        setTestSmsRecipient(userInfo.phone);
+      }
     }
   }, [settings]);
 
@@ -1766,6 +1785,13 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
         updates.smtp_pass = cleanPass;
       }
 
+      // Twilio SMS Gateway
+      updates.twilio_account_sid = twilioAccountSid.trim();
+      updates.twilio_from_number = twilioFromNumber.trim();
+      if (twilioAuthToken.trim()) {
+        updates.twilio_auth_token = twilioAuthToken.trim();
+      }
+
       await updateSettings(updates);
       Alert.alert('Settings Saved', 'System branding, gateways, and email configurations updated successfully.');
     } catch (e) {
@@ -1876,6 +1902,81 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
       Alert.alert('❌ Test Email Failed', errMsg);
     } finally {
       setTestEmailSending(false);
+    }
+  };
+
+  // Dedicated Twilio SMS credentials sync function
+  const handleSyncTwilioSettings = async () => {
+    if (!twilioAccountSid.trim()) {
+      Alert.alert('Account SID Missing', 'Please enter your Twilio Account SID (e.g. ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx).');
+      return;
+    }
+    if (!twilioFromNumber.trim()) {
+      Alert.alert('From Number Missing', 'Please enter your Twilio phone number (e.g. +1234567890).');
+      return;
+    }
+
+    setTwilioSaving(true);
+    setTwilioSyncStatus(null);
+    try {
+      const twilioUpdates: Record<string, string> = {
+        twilio_account_sid: twilioAccountSid.trim(),
+        twilio_from_number: twilioFromNumber.trim(),
+      };
+      if (twilioAuthToken.trim()) {
+        twilioUpdates.twilio_auth_token = twilioAuthToken.trim();
+      }
+
+      await updateSettings(twilioUpdates);
+      setTwilioSyncStatus('✅ Twilio SMS credentials synced successfully!');
+      Alert.alert(
+        '✅ Twilio Credentials Synced',
+        'Your Twilio Account SID, Auth Token, and Sender Number have been saved to the database and synced. You can now use "Test Send" below to test SMS delivery.'
+      );
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to sync Twilio settings.';
+      Alert.alert('Error', msg);
+    } finally {
+      setTwilioSaving(false);
+    }
+  };
+
+  const handleSendTestSms = async () => {
+    const targetPhone = (testSmsRecipient || userInfo?.phone || '').trim();
+    if (!targetPhone) {
+      Alert.alert('Recipient Missing', 'Please enter a recipient phone number (e.g. 08012345678 or +234...) to send the test SMS to.');
+      return;
+    }
+
+    const hasConfiguredToken = Boolean(twilioAuthToken.trim() || settings.twilio_auth_token || settings.twilio_configured === 'true');
+    if (!twilioAccountSid.trim() || !hasConfiguredToken || !twilioFromNumber.trim()) {
+      Alert.alert('Incomplete Twilio Settings', 'Please enter your Account SID, Auth Token, and From Number, then click "Save & Sync Twilio Credentials" first.');
+      return;
+    }
+
+    setTestSmsSending(true);
+    try {
+      const twilioUpdates: Record<string, string> = {
+        twilio_account_sid: twilioAccountSid.trim(),
+        twilio_from_number: twilioFromNumber.trim(),
+      };
+      if (twilioAuthToken.trim()) {
+        twilioUpdates.twilio_auth_token = twilioAuthToken.trim();
+      }
+
+      await updateSettings(twilioUpdates);
+
+      const res = await apiClient.post('/settings/test-sms', { recipientPhone: targetPhone });
+      Alert.alert(
+        '✅ SMS Dispatched Successfully!',
+        res.data?.message || `A test SMS notification was dispatched to ${targetPhone}. Please check your phone.`
+      );
+    } catch (err: any) {
+      console.error('Test SMS error:', err);
+      const errMsg = err?.response?.data?.error || err?.message || 'Failed to send test SMS. Please check your Twilio credentials and recipient phone number.';
+      Alert.alert('❌ Test SMS Failed', errMsg);
+    } finally {
+      setTestSmsSending(false);
     }
   };
 
@@ -4148,8 +4249,160 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                 </View>
               </View>
 
-              {/* 5. Agent Commission Rate */}
-              <Text style={styles.sectionHeading}>5. Agent Commission Rate</Text>
+              {/* 7. Twilio SMS Notification Gateway */}
+              <Text style={styles.sectionHeading}>7. Twilio SMS Notification Gateway</Text>
+              <View style={styles.subSettingsCard}>
+                <Text style={styles.subCardTitle}>📱 Twilio SMS Dispatcher</Text>
+                <Text style={styles.subCardNote}>
+                  Configure your Twilio account credentials to send immediate SMS notifications directly to customers, artisans, riders, and vendors for orders, bookings, and important system alerts.
+                </Text>
+
+                {/* Account SID */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Twilio Account SID</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={twilioAccountSid}
+                    onChangeText={setTwilioAccountSid}
+                    placeholder="e.g. ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    autoCapitalize="none"
+                  />
+                  <Text style={{ fontSize: 11, color: subtextColor, marginTop: 3 }}>
+                    Found on your Twilio Console Dashboard (starts with "AC").
+                  </Text>
+                </View>
+
+                {/* Auth Token */}
+                <View style={styles.formGroup}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <Text style={styles.label}>Twilio Auth Token</Text>
+                    <TouchableOpacity onPress={() => setTwilioShowToken(!twilioShowToken)}>
+                      <Text style={{ fontSize: 12, color: theme.primary, fontWeight: '700' }}>
+                        {twilioShowToken ? '🙈 Hide' : '👁️ Show'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    value={twilioAuthToken}
+                    onChangeText={setTwilioAuthToken}
+                    placeholder="Twilio secret authentication token"
+                    autoCapitalize="none"
+                    secureTextEntry={!twilioShowToken}
+                  />
+                  <View style={{ backgroundColor: isDark ? '#1E293B' : '#EFF6FF', padding: 10, borderRadius: 8, marginTop: 6, borderWidth: 1, borderColor: isDark ? '#334155' : '#BFDBFE' }}>
+                    <Text style={{ fontSize: 11, color: isDark ? '#93C5FD' : '#1E40AF', lineHeight: 16 }}>
+                      💡 Where to find: Sign in to your Twilio Console (console.twilio.com) → Project Info → Auth Token.
+                    </Text>
+                    <TouchableOpacity
+                      style={{ marginTop: 5 }}
+                      onPress={() => Linking.openURL('https://console.twilio.com')}
+                    >
+                      <Text style={{ fontSize: 11, color: '#2563EB', fontWeight: '800', textDecorationLine: 'underline' }}>
+                        👉 Click to Open Twilio Console
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* From Number */}
+                <View style={styles.formGroup}>
+                  <Text style={styles.label}>Twilio Sender Phone Number ("From" Number)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={twilioFromNumber}
+                    onChangeText={setTwilioFromNumber}
+                    placeholder="e.g. +1234567890 or +234..."
+                    autoCapitalize="none"
+                    keyboardType="phone-pad"
+                  />
+                  <Text style={{ fontSize: 11, color: subtextColor, marginTop: 3 }}>
+                    The active Twilio phone number registered on your account (must include country code prefix, e.g. +1...).
+                  </Text>
+                </View>
+
+                {/* Twilio Status Banner */}
+                {(twilioAccountSid && (twilioAuthToken || settings.twilio_auth_token) && twilioFromNumber) ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#064E3B' : '#ECFDF5', padding: 10, borderRadius: 8, marginTop: 8, borderWidth: 1, borderColor: isDark ? '#059669' : '#A7F3D0' }}>
+                    <Text style={{ fontSize: 13, marginRight: 6 }}>🔒</Text>
+                    <Text style={{ fontSize: 12, color: isDark ? '#6EE7B7' : '#065F46', fontWeight: '700', flex: 1 }}>
+                      Twilio SMS Active & Synced (From: {twilioFromNumber})
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#78350F' : '#FEF3C7', padding: 10, borderRadius: 8, marginTop: 8, borderWidth: 1, borderColor: isDark ? '#B45309' : '#FDE68A' }}>
+                    <Text style={{ fontSize: 13, marginRight: 6 }}>⚠️</Text>
+                    <Text style={{ fontSize: 12, color: isDark ? '#FCD34D' : '#92400E', fontWeight: '600', flex: 1 }}>
+                      Twilio SMS not fully configured. Enter Account SID, Auth Token, and From Number.
+                    </Text>
+                  </View>
+                )}
+
+                {twilioSyncStatus && (
+                  <View style={{ backgroundColor: isDark ? '#064E3B' : '#ECFDF5', padding: 8, borderRadius: 6, marginTop: 6 }}>
+                    <Text style={{ fontSize: 12, color: isDark ? '#6EE7B7' : '#047857', fontWeight: '600' }}>
+                      {twilioSyncStatus}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Save & Sync Twilio Button */}
+                <TouchableOpacity
+                  style={[styles.saveSettingsBtn, { backgroundColor: '#0284C7', marginTop: 10, marginBottom: 6 }, twilioSaving && { opacity: 0.7 }]}
+                  onPress={handleSyncTwilioSettings}
+                  disabled={twilioSaving}
+                >
+                  {twilioSaving ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
+                      💾 Save & Sync Twilio Credentials
+                    </Text>
+                  )}
+                </TouchableOpacity>
+
+                {/* Live Test SMS Tool */}
+                <View style={{ marginTop: 12, paddingTop: 14, borderTopWidth: 1, borderTopColor: borderColor }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: textColor, marginBottom: 4 }}>
+                    📱 Send Verification Test SMS
+                  </Text>
+                  <Text style={{ fontSize: 11, color: subtextColor, marginBottom: 8 }}>
+                    Test your credentials in real-time. A test SMS will be dispatched to this phone number.
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TextInput
+                      style={[styles.input, { flex: 1 }]}
+                      value={testSmsRecipient}
+                      onChangeText={setTestSmsRecipient}
+                      placeholder="e.g. 08012345678 or +234..."
+                      autoCapitalize="none"
+                      keyboardType="phone-pad"
+                    />
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: '#0284C7',
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        borderRadius: 8,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        opacity: testSmsSending ? 0.7 : 1,
+                      }}
+                      onPress={handleSendTestSms}
+                      disabled={testSmsSending}
+                    >
+                      {testSmsSending ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Test Send</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* 8. Agent Commission Rate */}
+              <Text style={styles.sectionHeading}>8. Agent Commission Rate</Text>
               <View style={styles.subSettingsCard}>
                 <Text style={styles.subCardTitle}>🏘️ Regional Agent Commission</Text>
                 <Text style={styles.subCardNote}>

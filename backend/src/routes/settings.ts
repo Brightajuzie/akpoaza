@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { authenticateToken, optionalAuthenticateToken, AuthRequest } from '../middleware/auth';
 import prisma from '../lib/prisma';
-import { resetMailer, sendTestEmail } from '../lib/notify';
+import { resetMailer, sendTestEmail, sendTestSms } from '../lib/notify';
 
 const router = Router();
 
@@ -169,9 +169,20 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response, next:
     }
     if (updates.twilio_auth_token !== undefined) {
       const clean = String(updates.twilio_auth_token).trim();
-      updates.twilio_auth_token = clean;
-      process.env.TWILIO_AUTH_TOKEN = clean;
-      envUpdates['TWILIO_AUTH_TOKEN'] = clean;
+      if (clean === '') {
+        // If empty string sent and not explicit clear request, preserve existing DB or env token!
+        if (updates.clear_twilio_auth_token !== true && updates.clear_twilio_auth_token !== 'true') {
+          delete updates.twilio_auth_token;
+        } else {
+          updates.twilio_auth_token = '';
+          process.env.TWILIO_AUTH_TOKEN = '';
+          envUpdates['TWILIO_AUTH_TOKEN'] = '';
+        }
+      } else {
+        updates.twilio_auth_token = clean;
+        process.env.TWILIO_AUTH_TOKEN = clean;
+        envUpdates['TWILIO_AUTH_TOKEN'] = clean;
+      }
     }
     if (updates.twilio_from_number !== undefined) {
       const clean = String(updates.twilio_from_number).trim();
@@ -182,6 +193,7 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response, next:
 
     // Remove any special flags from the DB upsert
     delete updates.clear_smtp_pass;
+    delete updates.clear_twilio_auth_token;
 
     // Persist to .env file on disk if available
     if (Object.keys(envUpdates).length > 0) {
@@ -199,13 +211,14 @@ router.put('/', authenticateToken, async (req: AuthRequest, res: Response, next:
 
     await prisma.$transaction(prismaTxCalls);
 
-    // Invalidate cached SMTP transport so new email settings take effect immediately
+    // Invalidate cached SMTP & Twilio transport so new settings take effect immediately
     resetMailer();
 
     res.json({
       message: 'Settings updated successfully',
       settings: updates,
       smtp_pass_synced: updates.smtp_pass !== undefined,
+      twilio_synced: updates.twilio_account_sid !== undefined || updates.twilio_auth_token !== undefined,
     });
   } catch (error) {
     next(error);
@@ -242,6 +255,40 @@ router.post('/test-email', authenticateToken, async (req: AuthRequest, res: Resp
     console.error('[test-email] Failed to send test email:', err);
     res.status(400).json({
       error: err?.message || 'Failed to send test email. Please verify your SMTP settings and app password.',
+    });
+  }
+});
+
+// Send a test SMS via Twilio (Admin only)
+router.post('/test-sms', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const role = req.user?.role;
+  if (role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  }
+
+  let { recipientPhone } = req.body;
+  if (!recipientPhone) {
+    // If not provided, try to use the current admin's phone
+    if (req.user?.userId) {
+      const adminUser = await prisma.user.findUnique({
+        where: { id: req.user.userId },
+        select: { phone: true },
+      });
+      recipientPhone = adminUser?.phone;
+    }
+  }
+
+  if (!recipientPhone) {
+    return res.status(400).json({ error: 'Recipient phone number is required for the test SMS.' });
+  }
+
+  try {
+    const result = await sendTestSms(recipientPhone);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[test-sms] Failed to send test SMS:', err);
+    res.status(400).json({
+      error: err?.message || 'Failed to send test SMS. Please verify your Twilio credentials and recipient phone number.',
     });
   }
 });

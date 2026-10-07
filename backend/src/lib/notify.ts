@@ -212,6 +212,33 @@ async function getTwilioClient(): Promise<{ client: twilio.Twilio | null; fromNu
   return { client: twilio(sid, token), fromNumber };
 }
 
+/**
+ * sendTestSms — sends a verification test SMS using the configured Twilio credentials.
+ * Returns { success: true, message: string } or throws with error details.
+ */
+export async function sendTestSms(recipientPhone: string): Promise<{ success: boolean; message: string }> {
+  const { client, fromNumber } = await getTwilioClient();
+  if (!client || !fromNumber) {
+    throw new Error('Twilio credentials incomplete. Please configure Account SID, Auth Token, and Sender Phone Number.');
+  }
+
+  const toPhone = normalizePhoneNumber(recipientPhone);
+  if (!toPhone) {
+    throw new Error('Please provide a valid recipient phone number.');
+  }
+
+  const msg = await client.messages.create({
+    body: `[FixMart] Test SMS: Twilio integration verified and active! Time: ${new Date().toLocaleTimeString()}`,
+    from: fromNumber,
+    to: toPhone,
+  });
+
+  return {
+    success: true,
+    message: `Test SMS dispatched successfully to ${toPhone}! (SID: ${msg.sid})`,
+  };
+}
+
 // ─── Expo Push Notification ───────────────────────────────────────────────────
 
 /**
