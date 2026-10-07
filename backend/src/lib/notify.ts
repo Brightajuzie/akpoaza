@@ -38,6 +38,8 @@ export interface NotifyPayload {
   emailSubject?: string;
   /** Rich HTML email body (default: plain text body) */
   emailHtml?: string;
+  /** Custom SMS text body (defaults to `[FixMart] ${title}\n${body}`) */
+  smsText?: string;
 }
 
 // ─── Lazy singletons & Dynamic SMTP Config ──────────────────────────────────
@@ -411,7 +413,7 @@ export async function sendNotification(payload: NotifyPayload) {
     getTwilioClient().then(({ client, fromNumber }) => {
       if (client && fromNumber) {
         const toPhone = normalizePhoneNumber(userPhone!);
-        const smsBody = `[FixMart] ${title}\n${body}`;
+        const smsBody = payload.smsText || `[FixMart] ${title}\n${body}`;
         client.messages.create({
           body: smsBody.substring(0, 160),
           from: fromNumber,
@@ -433,7 +435,7 @@ export async function notifyMany(payloads: NotifyPayload[]) {
 }
 
 /**
- * sendWelcomeNotification — sends an in-app & email welcome notice to newly registered users.
+ * sendWelcomeNotification — sends an in-app, email, SMS, and push welcome notice to newly registered users.
  */
 export async function sendWelcomeNotification(user: {
   id: string;
@@ -443,6 +445,7 @@ export async function sendWelcomeNotification(user: {
   phone?: string | null;
   specialty?: string | null;
   verificationStatus?: string | null;
+  pushToken?: string | null;
 }) {
   const roleLabels: Record<string, string> = {
     CUSTOMER: 'Customer',
@@ -450,14 +453,17 @@ export async function sendWelcomeNotification(user: {
     VENDOR: 'Vendor & Merchant',
     RIDER: 'Delivery Rider',
     ADMIN: 'System Administrator',
+    AGENT: 'Regional Agent',
   };
   const roleTitle = roleLabels[user.role] || user.role;
 
   let body = '';
   let customHtml = '';
+  let smsText = `[FixMart] Welcome, ${user.name}! Your account is active. Explore verified handymen, quality products & fast delivery.`;
 
   if (user.role === 'CUSTOMER') {
     body = `Welcome to FixMart, ${user.name}! Your account is active and ready. Explore verified handymen, genuine tools & hardware, and track your orders in real-time.`;
+    smsText = `[FixMart] Welcome, ${user.name}! Your account is active and ready. Explore verified services & products on FixMart.`;
     customHtml = `
       <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
       <p>Welcome to <strong>FixMart</strong> — your one-stop platform for verified home repair services, professional artisans, quality tools, and fast deliveries!</p>
@@ -470,6 +476,7 @@ export async function sendWelcomeNotification(user: {
   } else if (user.role === 'HANDYMAN') {
     const isVerified = user.verificationStatus === 'VERIFIED';
     body = `Welcome to FixMart, ${user.name}! Your Service Provider profile (${user.specialty || 'General'}) is set up. ${isVerified ? 'Your account is active and ready for jobs.' : 'Our team will review your verification details shortly to activate you for jobs.'}`;
+    smsText = `[FixMart] Welcome, ${user.name}! Your Service Provider profile is set up. We'll alert you when clients request jobs in your area.`;
     customHtml = `
       <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
       <p>Welcome to <strong>FixMart</strong> as a registered <strong>Service Professional</strong>!</p>
@@ -483,6 +490,7 @@ export async function sendWelcomeNotification(user: {
   } else if (user.role === 'VENDOR') {
     const isVerified = user.verificationStatus === 'VERIFIED';
     body = `Welcome to FixMart Marketplace, ${user.name}! Your merchant account has been created. ${isVerified ? 'You can now list and sell products on FixMart.' : 'Please complete your KYC verification to begin listing products.'}`;
+    smsText = `[FixMart] Welcome to FixMart, ${user.name}! Your merchant account is created. Log in to start listing products.`;
     customHtml = `
       <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
       <p>Welcome to <strong>FixMart Marketplace</strong> as a registered <strong>Vendor / Merchant</strong>!</p>
@@ -495,6 +503,7 @@ export async function sendWelcomeNotification(user: {
     `;
   } else if (user.role === 'RIDER') {
     body = `Welcome to FixMart, ${user.name}! Your delivery partner account has been created. Our dispatch team will review your details to activate you for order deliveries.`;
+    smsText = `[FixMart] Welcome, ${user.name}! Your Delivery Partner registration is received. Our dispatch team will review and activate your account.`;
     customHtml = `
       <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
       <p>Thank you for signing up as a <strong>Delivery Partner</strong> on <strong>FixMart</strong>!</p>
@@ -505,6 +514,7 @@ export async function sendWelcomeNotification(user: {
     `;
   } else if (user.role === 'AGENT') {
     body = `Welcome to FixMart, ${user.name}! Your Regional Agent account has been created. Our admin team will review and activate your account shortly.`;
+    smsText = `[FixMart] Welcome, ${user.name}! Your Regional Agent registration is received. Our admin team will review and activate your portal.`;
     customHtml = `
       <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
       <p>Welcome to <strong>FixMart</strong> as a registered <strong>Regional Agent</strong>!</p>
@@ -527,7 +537,9 @@ export async function sendWelcomeNotification(user: {
     type: 'GENERAL',
     email: user.email,
     phone: user.phone || undefined,
+    pushToken: user.pushToken || undefined,
     emailSubject: `🎉 Welcome to FixMart — Your ${roleTitle} Account is Ready!`,
     emailHtml: customHtml,
+    smsText,
   }).catch((err) => console.error('[notify] sendWelcomeNotification failed:', err));
 }

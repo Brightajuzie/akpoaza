@@ -28,6 +28,32 @@ if (Notifications && Platform.OS !== 'web') {
 }
 
 /**
+ * getPushTokenAsync
+ * Safely fetches the current device's push token (if permission is granted) without patching the backend.
+ * Used during signup/registration so the token can be included directly in the registration payload.
+ */
+export async function getPushTokenAsync(): Promise<string | null> {
+  if (Platform.OS === 'web' || !Notifications) {
+    return null;
+  }
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    if (finalStatus !== 'granted') return null;
+    const tokenResponse = await Notifications.getExpoPushTokenAsync({
+      projectId: '8d4405de-245d-4c45-b0c0-5331aeb2e9fe',
+    });
+    return tokenResponse?.data || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * registerForPushNotificationsAsync
  * Requests permission, obtains Expo Push Token, sets up Android channels,
  * and registers the token with the FixMart backend.

@@ -22,6 +22,7 @@ import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
 import { useCurrency } from '../context/CurrencyContext';
 import AddressInput from '../components/AddressInput';
+import { getPushTokenAsync } from '../utils/pushNotifications';
 
 // Required for Google OAuth to complete auth session
 WebBrowser.maybeCompleteAuthSession();
@@ -87,6 +88,7 @@ export default function SignupScreen({ route, navigation }: any) {
         console.warn('Could not fetch userinfo directly from Google API:', err);
       }
 
+      const pushToken = await getPushTokenAsync().catch(() => null);
       const res = await apiClient.post('/auth/google', {
         idToken: idToken || accessToken,
         googleSub: userGoogleSub,
@@ -94,6 +96,7 @@ export default function SignupScreen({ route, navigation }: any) {
         name: userName,
         picture: userPicture,
         role: 'CUSTOMER',
+        pushToken: pushToken || undefined,
       });
       await login(res.data.token, res.data.user);
       handlePostAuthNavigation();
@@ -108,7 +111,12 @@ export default function SignupScreen({ route, navigation }: any) {
   const handleGoogleAuth = async (idToken: string) => {
     setGoogleLoading(true);
     try {
-      const res = await apiClient.post('/auth/google', { idToken, role: 'CUSTOMER' });
+      const pushToken = await getPushTokenAsync().catch(() => null);
+      const res = await apiClient.post('/auth/google', {
+        idToken,
+        role: 'CUSTOMER',
+        pushToken: pushToken || undefined,
+      });
       await login(res.data.token, res.data.user);
       handlePostAuthNavigation();
     } catch (err: any) {
@@ -399,6 +407,7 @@ export default function SignupScreen({ route, navigation }: any) {
       setLoading(true);
       const cleanEmail = email.trim().toLowerCase();
       try {
+        const pushToken = await getPushTokenAsync().catch(() => null);
         const response = await apiClient.post('/auth/register', {
           name: name.trim(),
           email: cleanEmail,
@@ -408,6 +417,7 @@ export default function SignupScreen({ route, navigation }: any) {
           country: selectedCountry.country,
           currency: selectedCountry.currency,
           state: state.trim() || null,
+          pushToken: pushToken || undefined,
         });
 
         await setCountry(selectedCountry.country);
@@ -461,6 +471,7 @@ export default function SignupScreen({ route, navigation }: any) {
     const finalLng = longitude !== null ? longitude : 7.0498 + (Math.random() - 0.5) * 0.02;
 
     try {
+      const pushToken = await getPushTokenAsync().catch(() => null);
       const response = await apiClient.post('/auth/register', {
         name: name.trim(),
         email: cleanEmail,
@@ -480,6 +491,7 @@ export default function SignupScreen({ route, navigation }: any) {
         passportPhoto: passportPhoto || null,
         actionPhoto: actionPhoto || null,
         identityNumber: identityNumber.trim() || null,
+        pushToken: pushToken || undefined,
       });
 
       await setCountry(selectedCountry.country);

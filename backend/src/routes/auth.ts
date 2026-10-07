@@ -27,6 +27,7 @@ router.post('/register', async (req, res) => {
     kycReferenceId,
     country,
     currency,
+    pushToken,
   } = req.body;
 
   const cleanEmail = (email || '').trim().toLowerCase();
@@ -92,6 +93,7 @@ router.post('/register', async (req, res) => {
             opayPhone: cleanOpayPhone || existingUser.opayPhone || cleanPhone,
             address: address ? String(address).trim() : existingUser.address,
             bvnHash: bvnHash || existingUser.bvnHash,
+            pushToken: pushToken ? String(pushToken).trim() : existingUser.pushToken,
           },
         });
 
@@ -202,6 +204,7 @@ router.post('/register', async (req, res) => {
         country: country || 'Nigeria',
         currency: currency || 'NGN',
         state: req.body.state ? String(req.body.state).trim() : null,
+        pushToken: pushToken ? String(pushToken).trim() : null,
       },
     });
 
@@ -315,7 +318,7 @@ router.post('/login', async (req, res) => {
 const googleClient = new OAuth2Client();
 
 router.post('/google', async (req, res) => {
-  const { idToken, role, email: directEmail, name: directName, picture: directPicture } = req.body;
+  const { idToken, role, email: directEmail, name: directName, picture: directPicture, pushToken } = req.body;
 
   try {
     let email: string;
@@ -376,6 +379,7 @@ router.post('/google', async (req, res) => {
           provider: 'GOOGLE',
           profileImage: picture,
           verificationStatus,
+          pushToken: pushToken ? String(pushToken).trim() : null,
         }
       });
 
@@ -550,10 +554,31 @@ router.patch('/push-token', authenticateToken, async (req: AuthRequest, res) => 
       return res.status(400).json({ error: 'pushToken is required' });
     }
 
+    const cleanToken = pushToken.trim();
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, createdAt: true, pushToken: true },
+    });
+
     await prisma.user.update({
       where: { id: userId },
-      data: { pushToken: pushToken.trim() },
+      data: { pushToken: cleanToken },
     });
+
+    // If newly registered user (account created within last 15 minutes) and didn't have a push token yet,
+    // deliver the welcome phone push notification to their device now!
+    if (existingUser && !existingUser.pushToken) {
+      const isRecent = (Date.now() - new Date(existingUser.createdAt).getTime()) < 15 * 60 * 1000;
+      if (isRecent) {
+        sendNotification({
+          userId,
+          title: `🎉 Welcome to FixMart, ${existingUser.name}!`,
+          body: `Your account is ready! Explore verified services, quality products, and fast delivery on FixMart.`,
+          type: 'GENERAL',
+          pushToken: cleanToken,
+        }).catch(() => {});
+      }
+    }
 
     res.json({ success: true });
   } catch (error) {
