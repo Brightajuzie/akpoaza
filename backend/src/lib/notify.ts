@@ -13,6 +13,8 @@
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 import https from 'https';
+import path from 'path';
+import fs from 'fs';
 import prisma from './prisma';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -102,6 +104,51 @@ async function getSmtpConfig(): Promise<{
   return { host, port, secure, user, pass, from };
 }
 
+/**
+ * Resolves the disk path to the FixMart logo file if present.
+ */
+function getLogoDiskPath(): string | null {
+  const candidates = [
+    path.resolve(__dirname, '../../uploads/fixmart-logo.png'),
+    path.resolve(__dirname, '../uploads/fixmart-logo.png'),
+    path.resolve(process.cwd(), 'uploads/fixmart-logo.png'),
+    path.resolve(process.cwd(), 'backend/uploads/fixmart-logo.png'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+/**
+ * Returns the publicly accessible fallback URL for the FixMart logo.
+ */
+function getEmailLogoUrl(): string {
+  const s = _cachedSettings || {};
+  const customLogo = s['logo_url'];
+  if (customLogo && !customLogo.includes('localhost')) {
+    return customLogo;
+  }
+  return 'https://akpoaza-3.onrender.com/uploads/fixmart-logo.png';
+}
+
+/**
+ * Prepares Nodemailer attachments including the FixMart inline logo if present on disk.
+ */
+function getEmailAttachments(): nodemailer.SendMailOptions['attachments'] {
+  const logoDiskPath = getLogoDiskPath();
+  if (logoDiskPath) {
+    return [
+      {
+        filename: 'fixmart-logo.png',
+        path: logoDiskPath,
+        cid: 'fixmartlogo',
+      },
+    ];
+  }
+  return [];
+}
+
 async function getMailer(): Promise<{ mailer: nodemailer.Transporter | null; from: string }> {
   // Skip email entirely during automated tests to prevent hangs on bad SMTP credentials
   if (process.env.NODE_ENV === 'test') return { mailer: null, from: '' };
@@ -178,12 +225,15 @@ export async function sendTestEmail(recipientEmail: string): Promise<{ success: 
     </p>
   `;
 
+  const attachments = getEmailAttachments();
+
   await transporter.sendMail({
     from: config.from,
     to: recipientEmail,
     subject: title,
     text: textBody,
     html: buildEmailHtml(title, '', htmlBody),
+    attachments,
   });
 
   return {
@@ -302,40 +352,90 @@ function sendExpoPush(
 // ─── Email HTML template ───────────────────────────────────────────────────────
 
 function buildEmailHtml(title: string, body: string, customHtml?: string): string {
-  const content = customHtml || `<p style="font-size:16px;color:#374151;line-height:1.6">${body.replace(/\n/g, '<br>')}</p>`;
+  const content = customHtml || `<p style="font-size:16px;color:#334155;line-height:1.6;margin:0 0 16px;">${body.replace(/\n/g, '<br>')}</p>`;
+  const logoFallbackUrl = getEmailLogoUrl();
+  const currentYear = new Date().getFullYear();
+
   return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>${title}</title>
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td {font-family: Arial, Helvetica, sans-serif !important;}
+  </style>
+  <![endif]-->
 </head>
-<body style="margin:0;padding:0;background:#F3F4F6;font-family:'Segoe UI',Arial,sans-serif">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:40px 0">
+<body style="margin:0;padding:0;background-color:#F1F5F9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;color:#1E293B;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color:#F1F5F9;padding:36px 12px;">
     <tr>
       <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08)">
-          <!-- Header -->
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width:600px;background-color:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 25px -5px rgba(0,0,0,0.06),0 8px 10px -6px rgba(0,0,0,0.04);border:1px solid #E2E8F0;">
+          <!-- Brand Header with FixMart Logo Badge -->
           <tr>
-            <td style="background:linear-gradient(135deg,#5856D6 0%,#007AFF 100%);padding:32px 40px;text-align:center">
-              <p style="margin:0;font-size:28px">🛠️</p>
-              <h1 style="margin:8px 0 0;color:#ffffff;font-size:20px;font-weight:700;letter-spacing:-0.3px">FixMart</h1>
+            <td style="background:linear-gradient(135deg, #0A2540 0%, #007AFF 100%);padding:36px 28px 30px;text-align:center;">
+              <table cellpadding="0" cellspacing="0" role="presentation" style="margin:0 auto;">
+                <tr>
+                  <td style="background:#ffffff;border-radius:14px;padding:12px 26px;box-shadow:0 6px 18px rgba(0,0,0,0.20);">
+                    <img src="cid:fixmartlogo" onerror="this.onerror=null;this.src='${logoFallbackUrl}';" alt="FixMart" width="150" style="display:block;max-height:50px;width:auto;max-width:180px;object-fit:contain;border:0;outline:none;margin:0 auto;" />
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:16px 0 0;font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:#E0F2FE;font-weight:700;">Smart Services • E-Commerce • Swift Delivery</p>
             </td>
           </tr>
-          <!-- Body -->
+          <!-- Main Content Area -->
           <tr>
-            <td style="padding:36px 40px">
-              <h2 style="margin:0 0 16px;font-size:20px;color:#111827;font-weight:700">${title}</h2>
+            <td style="padding:36px 36px 28px;">
+              <h2 style="margin:0 0 18px;font-size:22px;color:#0F172A;font-weight:800;letter-spacing:-0.4px;line-height:1.35;">${title}</h2>
               ${content}
+            </td>
+          </tr>
+          <!-- Mobile App Download Banner -->
+          <tr>
+            <td style="padding:0 36px 24px;">
+              <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:14px;padding:20px 22px;">
+                <tr>
+                  <td>
+                    <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#0F172A;">📲 FixMart Mobile App</p>
+                    <p style="margin:0 0 14px;font-size:13px;color:#64748B;line-height:1.45;">Experience faster bookings, real-time artisan tracking, and order delivery right from your smartphone.</p>
+                    <table cellpadding="0" cellspacing="0" role="presentation">
+                      <tr>
+                        <td style="padding-right:10px;">
+                          <a href="https://akpoaza-3.onrender.com/download/apk" target="_blank" style="display:inline-block;background:#007AFF;color:#ffffff;text-decoration:none;font-size:12px;font-weight:700;padding:9px 18px;border-radius:6px;">Direct APK Download</a>
+                        </td>
+                        <td>
+                          <a href="https://play.google.com/store/apps" target="_blank" style="display:inline-block;background:#1E293B;color:#ffffff;text-decoration:none;font-size:12px;font-weight:700;padding:9px 18px;border-radius:6px;">Google Play Store</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Security Notice -->
+          <tr>
+            <td style="padding:0 36px 24px;">
+              <div style="background:#FFFBEB;border-left:4px solid #F59E0B;padding:12px 14px;border-radius:6px;">
+                <p style="margin:0;font-size:12px;color:#92400E;line-height:1.45;">
+                  <strong>🔒 Security Tip:</strong> FixMart will never contact you asking for your password, PIN, or BVN. Always keep your credentials safe.
+                </p>
+              </div>
             </td>
           </tr>
           <!-- Footer -->
           <tr>
-            <td style="background:#F9FAFB;padding:20px 40px;text-align:center;border-top:1px solid #E5E7EB">
-              <p style="margin:0;font-size:12px;color:#9CA3AF">
-                © ${new Date().getFullYear()} FixMart. You are receiving this because you have an account with us.<br>
-                Do not reply to this email — it is sent from an unmonitored address.
+            <td style="background:#F8FAFC;padding:24px 36px;text-align:center;border-top:1px solid #E2E8F0;">
+              <p style="margin:0 0 8px;font-size:13px;color:#64748B;">
+                Need help? Contact support at <a href="mailto:admin.fixmart@gmail.com" style="color:#007AFF;text-decoration:none;font-weight:600;">admin.fixmart@gmail.com</a>
+              </p>
+              <p style="margin:0;font-size:12px;color:#94A3B8;line-height:1.5;">
+                © ${currentYear} FixMart Technologies. All rights reserved.<br>
+                You are receiving this email because you hold an active account on FixMart.
               </p>
             </td>
           </tr>
@@ -397,12 +497,14 @@ export async function sendNotification(payload: NotifyPayload) {
   if (!isTest && userEmail) {
     getMailer().then(({ mailer, from }) => {
       if (mailer) {
+        const attachments = getEmailAttachments();
         mailer.sendMail({
           from,
           to: userEmail,
           subject: emailSubject || title,
           text: body,
           html: buildEmailHtml(title, body, emailHtml),
+          attachments,
         }).catch((e) => console.error('[notify] email send failed:', e));
       }
     }).catch((e) => console.error('[notify] getMailer error:', e));
@@ -465,69 +567,192 @@ export async function sendWelcomeNotification(user: {
     body = `Welcome to FixMart, ${user.name}! Your account is active and ready. Explore verified handymen, genuine tools & hardware, and track your orders in real-time.`;
     smsText = `[FixMart] Welcome, ${user.name}! Your account is active and ready. Explore verified services & products on FixMart.`;
     customHtml = `
-      <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
-      <p>Welcome to <strong>FixMart</strong> — your one-stop platform for verified home repair services, professional artisans, quality tools, and fast deliveries!</p>
-      <div style="background:#EFF6FF;border-left:4px solid #3B82F6;padding:14px 16px;margin:18px 0;border-radius:6px;">
-        <p style="margin:0;font-size:15px;color:#1E40AF;font-weight:700">🎉 Your Account is Ready!</p>
-        <p style="margin:6px 0 0;font-size:14px;color:#1F2937">You can now book trusted artisans (plumbers, electricians, carpenters), order hardware and building materials, and track orders right to your doorstep.</p>
+      <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+        Hello <strong>${user.name}</strong>,
+      </p>
+      <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+        Welcome to <strong>FixMart</strong>! We’re thrilled to have you join Africa's trusted on-demand home repair, artisan service, and hardware marketplace.
+      </p>
+      <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:12px;padding:20px;margin:20px 0;">
+        <p style="margin:0 0 12px;font-size:16px;color:#1D4ED8;font-weight:700;">🚀 What You Can Do With FixMart:</p>
+        <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🔧</td>
+            <td style="padding:4px 0 6px 0;"><strong>Hire Verified Artisans:</strong> Plumbers, electricians, carpenters, AC technicians, painters & more at upfront, transparent rates.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🛒</td>
+            <td style="padding:4px 0 6px 0;"><strong>Shop Genuine Products:</strong> Order building supplies, repair parts, and tools straight from vetted merchants.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🛡️</td>
+            <td style="padding:4px 0 6px 0;"><strong>Safe Escrow Protection:</strong> Your payments remain safely locked in escrow until your service is fulfilled to your satisfaction.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">📍</td>
+            <td style="padding:4px 0 6px 0;"><strong>Real-Time Tracking:</strong> Follow your dispatched artisan or delivery rider directly in the mobile app.</td>
+          </tr>
+        </table>
       </div>
-      <p>If you have questions or need assistance, our support team is always glad to help.</p>
+      <div style="text-align:center;margin:28px 0 16px;">
+        <a href="https://akpoaza-3.onrender.com" target="_blank" style="display:inline-block;background:#007AFF;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(0,122,255,0.35);">🚀 Start Exploring FixMart</a>
+      </div>
     `;
   } else if (user.role === 'HANDYMAN') {
     const isVerified = user.verificationStatus === 'VERIFIED';
     body = `Welcome to FixMart, ${user.name}! Your Service Provider profile (${user.specialty || 'General'}) is set up. ${isVerified ? 'Your account is active and ready for jobs.' : 'Our team will review your verification details shortly to activate you for jobs.'}`;
     smsText = `[FixMart] Welcome, ${user.name}! Your Service Provider profile is set up. We'll alert you when clients request jobs in your area.`;
     customHtml = `
-      <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
-      <p>Welcome to <strong>FixMart</strong> as a registered <strong>Service Professional</strong>!</p>
-      <div style="background:#F0FDF4;border-left:4px solid #10B981;padding:14px 16px;margin:18px 0;border-radius:6px;">
-        <p style="margin:0;font-size:15px;color:#065F46;font-weight:700">🛠️ Partner Onboarding</p>
-        <p style="margin:6px 0 0;font-size:14px;color:#1F2937"><strong>Specialty:</strong> ${user.specialty || 'General Artisan'}</p>
-        <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Verification Status:</strong> ${isVerified ? '✅ Active & Verified' : '⏳ Pending Admin Review'}</p>
+      <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+        Hello <strong>${user.name}</strong>,
+      </p>
+      <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+        Welcome to the <strong>FixMart Professional Network</strong>! We connect skilled artisans and technicians with high-value jobs in their local neighborhoods.
+      </p>
+      <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:20px;margin:20px 0;">
+        <p style="margin:0 0 12px;font-size:16px;color:#15803D;font-weight:700;">🛠️ Service Professional Profile</p>
+        <p style="margin:0 0 8px;font-size:14px;color:#1E293B;"><strong>Specialty Trade:</strong> ${user.specialty || 'General Service Specialist'}</p>
+        <p style="margin:0 0 12px;font-size:14px;color:#1E293B;"><strong>Verification Status:</strong> ${isVerified ? '<span style="color:#15803D;font-weight:700;">✅ Active & Verified</span>' : '<span style="color:#D97706;font-weight:700;">⏳ In Review by Regional Agent</span>'}</p>
+        <hr style="border:0;border-top:1px solid #DCFCE7;margin:12px 0;">
+        <p style="margin:0 0 8px;font-size:14px;color:#15803D;font-weight:700;">💼 How to get jobs & maximize earnings:</p>
+        <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🔔</td>
+            <td style="padding:4px 0 6px 0;">Keep notifications active to accept instant job bookings within your state and radius.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">📸</td>
+            <td style="padding:4px 0 6px 0;">Upload clear job photos and ID verification to earn the verified pro trust badge.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">💰</td>
+            <td style="padding:4px 0 6px 0;">Job payments are automatically deposited into your FixMart wallet upon job completion.</td>
+          </tr>
+        </table>
       </div>
-      <p>Once your profile is active, you will receive real-time notifications whenever clients in your area request services matching your expertise.</p>
+      <div style="text-align:center;margin:28px 0 16px;">
+        <a href="https://akpoaza-3.onrender.com" target="_blank" style="display:inline-block;background:#10B981;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(16,185,129,0.35);">🛠️ Open Pro Dashboard</a>
+      </div>
     `;
   } else if (user.role === 'VENDOR') {
     const isVerified = user.verificationStatus === 'VERIFIED';
     body = `Welcome to FixMart Marketplace, ${user.name}! Your merchant account has been created. ${isVerified ? 'You can now list and sell products on FixMart.' : 'Please complete your KYC verification to begin listing products.'}`;
     smsText = `[FixMart] Welcome to FixMart, ${user.name}! Your merchant account is created. Log in to start listing products.`;
     customHtml = `
-      <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
-      <p>Welcome to <strong>FixMart Marketplace</strong> as a registered <strong>Vendor / Merchant</strong>!</p>
-      <div style="background:#FDF4FF;border-left:4px solid #A855F7;padding:14px 16px;margin:18px 0;border-radius:6px;">
-        <p style="margin:0;font-size:15px;color:#7E22CE;font-weight:700">🏪 Expand Your Sales on FixMart</p>
-        <p style="margin:6px 0 0;font-size:14px;color:#1F2937">Sell your tools, hardware, and building supplies directly to thousands of active buyers and technicians across the region.</p>
-        <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Status:</strong> ${isVerified ? '✅ Active Merchant' : '⏳ Pending Verification'}</p>
+      <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+        Hello <strong>${user.name}</strong>,
+      </p>
+      <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+        Welcome to <strong>FixMart Marketplace</strong>! Reach thousands of contractors, homeowners, and artisans looking for tools, spare parts, and building materials.
+      </p>
+      <div style="background:#FAF5FF;border:1px solid #E9D5FF;border-radius:12px;padding:20px;margin:20px 0;">
+        <p style="margin:0 0 12px;font-size:16px;color:#7E22CE;font-weight:700;">🏪 Merchant Partner Details</p>
+        <p style="margin:0 0 8px;font-size:14px;color:#1E293B;"><strong>Storefront:</strong> ${user.name}</p>
+        <p style="margin:0 0 12px;font-size:14px;color:#1E293B;"><strong>Status:</strong> ${isVerified ? '<span style="color:#15803D;font-weight:700;">✅ Active Merchant</span>' : '<span style="color:#D97706;font-weight:700;">⏳ Verification Pending</span>'}</p>
+        <hr style="border:0;border-top:1px solid #F3E8FF;margin:12px 0;">
+        <p style="margin:0 0 8px;font-size:14px;color:#7E22CE;font-weight:700;">📦 Merchant Advantages:</p>
+        <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">📈</td>
+            <td style="padding:4px 0 6px 0;">Publish unlimited products with instant catalog visibility to nearby buyers.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🛵</td>
+            <td style="padding:4px 0 6px 0;">FixMart logistics partners automatically handle delivery pickup from your store.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">💳</td>
+            <td style="padding:4px 0 6px 0;">Direct wallet disbursements and financial reporting on all completed sales.</td>
+          </tr>
+        </table>
       </div>
-      <p>Log in to your FixMart Dashboard to upload your products and receive orders.</p>
+      <div style="text-align:center;margin:28px 0 16px;">
+        <a href="https://akpoaza-3.onrender.com" target="_blank" style="display:inline-block;background:#8B5CF6;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(139,92,246,0.35);">🏪 Manage Products & Orders</a>
+      </div>
     `;
   } else if (user.role === 'RIDER') {
     body = `Welcome to FixMart, ${user.name}! Your delivery partner account has been created. Our dispatch team will review your details to activate you for order deliveries.`;
     smsText = `[FixMart] Welcome, ${user.name}! Your Delivery Partner registration is received. Our dispatch team will review and activate your account.`;
     customHtml = `
-      <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
-      <p>Thank you for signing up as a <strong>Delivery Partner</strong> on <strong>FixMart</strong>!</p>
-      <div style="background:#FFFBEB;border-left:4px solid #F59E0B;padding:14px 16px;margin:18px 0;border-radius:6px;">
-        <p style="margin:0;font-size:15px;color:#92400E;font-weight:700">🛵 Fast Logistics Network</p>
-        <p style="margin:6px 0 0;font-size:14px;color:#1F2937">Our logistics team will verify your vehicle and identification. Once approved, you can turn your status to Online and start fulfilling package dispatches.</p>
+      <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+        Hello <strong>${user.name}</strong>,
+      </p>
+      <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+        Welcome to the <strong>FixMart Dispatch & Logistics Network</strong>!
+      </p>
+      <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:20px;margin:20px 0;">
+        <p style="margin:0 0 12px;font-size:16px;color:#B45309;font-weight:700;">🛵 Delivery Rider Account</p>
+        <p style="margin:0 0 8px;font-size:14px;color:#1E293B;"><strong>Logistics Partner:</strong> ${user.name}</p>
+        <p style="margin:0 0 12px;font-size:14px;color:#1E293B;"><strong>Account Status:</strong> <span style="color:#D97706;font-weight:700;">⏳ Verification Under Review</span></p>
+        <hr style="border:0;border-top:1px solid #FEF3C7;margin:12px 0;">
+        <p style="margin:0 0 8px;font-size:14px;color:#B45309;font-weight:700;">📦 Next Steps:</p>
+        <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">📄</td>
+            <td style="padding:4px 0 6px 0;">Our dispatch supervisor will review your rider credentials and vehicle details.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🟢</td>
+            <td style="padding:4px 0 6px 0;">Once approved, switch your status to <strong>Online</strong> in the app to begin receiving delivery requests.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">💵</td>
+            <td style="padding:4px 0 6px 0;">Earn money per delivery with real-time balance tracking and instant wallet withdrawals.</td>
+          </tr>
+        </table>
+      </div>
+      <div style="text-align:center;margin:28px 0 16px;">
+        <a href="https://akpoaza-3.onrender.com" target="_blank" style="display:inline-block;background:#F59E0B;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(245,158,11,0.35);">🛵 View Rider Portal</a>
       </div>
     `;
   } else if (user.role === 'AGENT') {
     body = `Welcome to FixMart, ${user.name}! Your Regional Agent account has been created. Our admin team will review and activate your account shortly.`;
     smsText = `[FixMart] Welcome, ${user.name}! Your Regional Agent registration is received. Our admin team will review and activate your portal.`;
     customHtml = `
-      <p style="font-size:16px;color:#374151">Hi ${user.name},</p>
-      <p>Welcome to <strong>FixMart</strong> as a registered <strong>Regional Agent</strong>!</p>
-      <div style="background:#F0F9FF;border-left:4px solid #0EA5E9;padding:14px 16px;margin:18px 0;border-radius:6px;">
-        <p style="margin:0;font-size:15px;color:#0C4A6E;font-weight:700">🏘️ Regional Agent Account</p>
-        <p style="margin:6px 0 0;font-size:14px;color:#1F2937">As a Regional Agent, you will be able to manage bookings, orders, workmen, and riders in your locality once your account is approved by an Administrator.</p>
-        <p style="margin:4px 0 0;font-size:14px;color:#1F2937"><strong>Status:</strong> ⏳ Pending Admin Approval</p>
+      <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+        Hello <strong>${user.name}</strong>,
+      </p>
+      <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+        Welcome to FixMart as an appointed <strong>Regional Operations Agent</strong>!
+      </p>
+      <div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:12px;padding:20px;margin:20px 0;">
+        <p style="margin:0 0 12px;font-size:16px;color:#0369A1;font-weight:700;">🏘️ Regional Agent Console</p>
+        <p style="margin:0 0 8px;font-size:14px;color:#1E293B;"><strong>Agent:</strong> ${user.name}</p>
+        <p style="margin:0 0 12px;font-size:14px;color:#1E293B;"><strong>Portal Status:</strong> <span style="color:#0369A1;font-weight:700;">⏳ Pending System Admin Activation</span></p>
+        <hr style="border:0;border-top:1px solid #E0F2FE;margin:12px 0;">
+        <p style="margin:0 0 8px;font-size:14px;color:#0369A1;font-weight:700;">🌐 Regional Duties & Privileges:</p>
+        <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">👥</td>
+            <td style="padding:4px 0 6px 0;">Onboard, verify, and assign local handymen and dispatch riders in your state.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">📊</td>
+            <td style="padding:4px 0 6px 0;">Monitor regional booking requests and order fulfillments in real time.</td>
+          </tr>
+          <tr>
+            <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🛡️</td>
+            <td style="padding:4px 0 6px 0;">Resolve service queries and uphold FixMart quality and trust standards.</td>
+          </tr>
+        </table>
       </div>
-      <p>You will receive a notification once your account has been reviewed and activated. Thank you for joining FixMart!</p>
+      <div style="text-align:center;margin:28px 0 16px;">
+        <a href="https://akpoaza-3.onrender.com" target="_blank" style="display:inline-block;background:#0284C7;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(2,132,199,0.35);">🏘️ Launch Agent Portal</a>
+      </div>
     `;
   } else {
     body = `Welcome to FixMart, ${user.name}! Your ${roleTitle} account has been created successfully.`;
-    customHtml = `<p>Welcome to FixMart, ${user.name}! Your account is now active.</p>`;
+    customHtml = `
+      <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+        Hello <strong>${user.name}</strong>,
+      </p>
+      <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+        Your <strong>${roleTitle}</strong> account on FixMart is ready and active!
+      </p>
+      <div style="text-align:center;margin:28px 0 16px;">
+        <a href="https://akpoaza-3.onrender.com" target="_blank" style="display:inline-block;background:#007AFF;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;">Launch FixMart</a>
+      </div>
+    `;
   }
 
   return sendNotification({
