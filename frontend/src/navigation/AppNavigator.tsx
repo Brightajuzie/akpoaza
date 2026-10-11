@@ -271,8 +271,33 @@ export default function AppNavigator() {
     return null; // Or a loading spinner
   }
 
+  const linking = {
+    prefixes: ['handymanecommerce://', 'https://fixmart.ng', 'https://akpoaza-3.onrender.com'],
+    config: {
+      screens: {
+        Main: {
+          screens: {
+            HomeTab: '',
+            CartTab: 'cart',
+            NotificationsTab: 'notifications',
+            ProfileTab: 'profile',
+          },
+        },
+        Login: 'login',
+        Signup: 'signup',
+        Products: 'products',
+        ProductDetail: 'products/:id',
+        Services: 'services',
+        BookParcel: 'parcel',
+        History: 'history',
+        Admin: 'admin',
+        Wallet: 'wallet',
+      },
+    },
+  } as any;
+
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator 
         initialRouteName={isFirstLaunch ? 'Onboarding' : 'Main'}
         screenOptions={{
