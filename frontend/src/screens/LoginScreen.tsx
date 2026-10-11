@@ -58,7 +58,6 @@ export default function LoginScreen({ route, navigation }: any) {
           androidClientId: ANDROID_ID,
           iosClientId: IOS_ID,
           webClientId: WEB_ID,
-          clientId: WEB_ID || ANDROID_ID,
           scopes: ['profile', 'email', 'openid'],
         }
       : ({ androidClientId: 'placeholder', iosClientId: 'placeholder', webClientId: 'placeholder' } as any),
