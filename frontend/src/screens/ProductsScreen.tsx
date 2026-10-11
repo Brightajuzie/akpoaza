@@ -42,7 +42,7 @@ export default function ProductsScreen({ navigation, route }: any) {
 
   const isDark = colorMode === 'dark';
   const isCompactHeight = height < 760;
-  const isVeryCompact = height < 700;
+  const isVeryCompact = height <= 720; // 5.3" screen
   const numColumns = width >= 1200 ? 4 : width >= 768 ? 3 : 2;
   const imageH = width >= 1200 ? 160 : width >= 768 ? 140 : isVeryCompact ? 95 : (isCompactHeight ? 105 : 120);
 

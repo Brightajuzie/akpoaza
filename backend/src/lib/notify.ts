@@ -768,3 +768,323 @@ export async function sendWelcomeNotification(user: {
     smsText,
   }).catch((err) => console.error('[notify] sendWelcomeNotification failed:', err));
 }
+
+/**
+ * sendFirstWeekOfMonthNotification — Dispatched at the start of every month.
+ */
+export async function sendFirstWeekOfMonthNotification(user: {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  pushToken?: string | null;
+  role?: string;
+}) {
+  const title = '🗓️ New Month, Fresh Starts with FixMart!';
+  const body = `Happy New Month, ${user.name}! Kickstart your month with proactive home maintenance, genuine hardware tools, and verified artisans on FixMart.`;
+  const smsText = `[FixMart] Happy New Month, ${user.name}! Start fresh: book top-rated home repairs or shop genuine tools on FixMart: https://akpoaza-3.onrender.com`;
+  
+  const customHtml = `
+    <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+      Hello <strong>${user.name}</strong>,
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+      Welcome to the <strong>first week of the month</strong>! It’s the perfect time to organize, repair, and upgrade your home, office, and business workspace.
+    </p>
+    <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:20px;margin:20px 0;">
+      <p style="margin:0 0 12px;font-size:16px;color:#15803D;font-weight:700;">🌟 Your Monthly Maintenance Checklist:</p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🔧</td>
+          <td style="padding:4px 0 6px 0;"><strong>Schedule Routine Checkups:</strong> Inspect air conditioning, plumbing lines, generator circuits, and carpentry before small leaks become costly emergencies.</td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🛒</td>
+          <td style="padding:4px 0 6px 0;"><strong>Restock Genuine Hardware & Supplies:</strong> Order quality replacement fittings, electrical supplies, paints, and tools directly from verified merchants.</td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🛡️</td>
+          <td style="padding:4px 0 6px 0;"><strong>Protected by FixMart Escrow:</strong> Your payment remains securely locked until you test and confirm the completed service.</td>
+        </tr>
+      </table>
+    </div>
+    <div style="text-align:center;margin:28px 0 16px;">
+      <a href="https://akpoaza-3.onrender.com" target="_blank" style="display:inline-block;background:#059669;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(5,150,105,0.35);">🗓️ Plan Your Month with FixMart</a>
+    </div>
+  `;
+
+  return sendNotification({
+    userId: user.id,
+    title,
+    body,
+    type: 'GENERAL',
+    email: user.email ?? undefined,
+    phone: user.phone ?? undefined,
+    pushToken: user.pushToken ?? undefined,
+    emailSubject: `🗓️ FixMart Monthly Spotlight: Fresh Starts & Home Maintenance for ${user.name}`,
+    emailHtml: customHtml,
+    smsText,
+  });
+}
+
+/**
+ * sendWeekendNotification — Weekend prompt for household repairs & quick deliveries.
+ */
+export async function sendWeekendNotification(user: {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  pushToken?: string | null;
+  role?: string;
+}) {
+  const title = '⚡ FixMart Weekend Alert: Relax While We Fix It!';
+  const body = `Happy Weekend, ${user.name}! Don't let pending home repairs spoil your break. Our verified artisans and delivery riders are on standby to handle every fix.`;
+  const smsText = `[FixMart] Happy Weekend, ${user.name}! Relax while our verified artisans handle pending repairs. Book services or tools today: https://akpoaza-3.onrender.com`;
+
+  const customHtml = `
+    <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+      Hello <strong>${user.name}</strong>,
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+      The weekend is here! Your downtime is precious — let FixMart take care of your household fixes while you rest.
+    </p>
+    <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:20px;margin:20px 0;">
+      <p style="margin:0 0 12px;font-size:16px;color:#B45309;font-weight:700;">☕ Weekend Service Highlights:</p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🚰</td>
+          <td style="padding:4px 0 6px 0;"><strong>On-Demand Artisans:</strong> Plumbers, electricians, painters, and appliance technicians ready for weekend call-outs.</td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🛵</td>
+          <td style="padding:4px 0 6px 0;"><strong>Fast Weekend Parcel Delivery:</strong> Send items, groceries, and documents across town with real-time GPS tracking.</td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🏷️</td>
+          <td style="padding:4px 0 6px 0;"><strong>Exclusive Weekend Deals:</strong> Special offers on home improvement products and electrical supplies.</td>
+        </tr>
+      </table>
+    </div>
+    <div style="text-align:center;margin:28px 0 16px;">
+      <a href="https://akpoaza-3.onrender.com" target="_blank" style="display:inline-block;background:#D97706;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(217,119,6,0.35);">⚡ Book a Weekend Pro</a>
+    </div>
+  `;
+
+  return sendNotification({
+    userId: user.id,
+    title,
+    body,
+    type: 'GENERAL',
+    email: user.email ?? undefined,
+    phone: user.phone ?? undefined,
+    pushToken: user.pushToken ?? undefined,
+    emailSubject: `⚡ FixMart Weekend Spotlight: Relax & Let Us Handle the Repairs!`,
+    emailHtml: customHtml,
+    smsText,
+  });
+}
+
+/**
+ * sendIncompleteRegistrationNotification — Nudge for users missing phone, address, or KYC.
+ */
+export async function sendIncompleteRegistrationNotification(user: {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  pushToken?: string | null;
+  role?: string;
+  missingFields?: string[];
+}) {
+  const missingText = user.missingFields?.length ? user.missingFields.join(', ') : 'Profile & KYC details';
+  const title = '⚠️ Action Required: Complete Your FixMart Profile';
+  const body = `Hello ${user.name}, your FixMart profile is incomplete (missing: ${missingText}). Finish your profile now to enable verified bookings, escrow protection, and instant order delivery.`;
+  const smsText = `[FixMart] Hello ${user.name}, your profile is incomplete. Finish your setup to unlock full bookings, verified trust badges & payouts: https://akpoaza-3.onrender.com`;
+
+  const customHtml = `
+    <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+      Hello <strong>${user.name}</strong>,
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+      We noticed your FixMart account is missing key details. Completing your profile takes less than 2 minutes and unlocks full platform capabilities.
+    </p>
+    <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:12px;padding:20px;margin:20px 0;">
+      <p style="margin:0 0 12px;font-size:16px;color:#B91C1C;font-weight:700;">⚠️ Profile Items Awaiting Completion:</p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">📱</td>
+          <td style="padding:4px 0 6px 0;"><strong>Active Phone Number:</strong> Essential for SMS order receipts, dispatch rider calls, and security notifications.</td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">📍</td>
+          <td style="padding:4px 0 6px 0;"><strong>Default Address & State:</strong> Powers fast checkout and assigns nearby service professionals instantly.</td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">🆔</td>
+          <td style="padding:4px 0 6px 0;"><strong>KYC Verification:</strong> Unlocks vendor listing privileges, artisan job eligibility, and wallet withdrawals.</td>
+        </tr>
+      </table>
+    </div>
+    <div style="text-align:center;margin:28px 0 16px;">
+      <a href="https://akpoaza-3.onrender.com/profile" target="_blank" style="display:inline-block;background:#DC2626;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(220,38,38,0.35);">⚠️ Complete Profile Now</a>
+    </div>
+  `;
+
+  return sendNotification({
+    userId: user.id,
+    title,
+    body,
+    type: 'KYC',
+    email: user.email ?? undefined,
+    phone: user.phone ?? undefined,
+    pushToken: user.pushToken ?? undefined,
+    emailSubject: `⚠️ Urgent: Complete Your FixMart Account Setup, ${user.name}`,
+    emailHtml: customHtml,
+    smsText,
+  });
+}
+
+/**
+ * sendNonUploadNotification — Sent to Vendors or Artisans who have zero active listings.
+ */
+export async function sendNonUploadNotification(user: {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  pushToken?: string | null;
+  role?: string;
+}) {
+  const isVendor = user.role === 'VENDOR';
+  const itemType = isVendor ? 'products' : 'services';
+  const title = `📦 Start Earning: Upload Your ${isVendor ? 'Products' : 'Services'} on FixMart!`;
+  const body = `Hello ${user.name}, your FixMart storefront has 0 ${itemType} listed. Add your first listing today to start receiving customer orders and job requests.`;
+  const smsText = `[FixMart] Attention ${user.name}: You have 0 ${itemType} listed! Add items today to start receiving orders: https://akpoaza-3.onrender.com`;
+
+  const customHtml = `
+    <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+      Hello <strong>${user.name}</strong>,
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+      Thousands of homeowners, contractors, and shoppers browse FixMart daily. Right now, your catalog has <strong>no active ${itemType}</strong>!
+    </p>
+    <div style="background:#FAF5FF;border:1px solid #E9D5FF;border-radius:12px;padding:20px;margin:20px 0;">
+      <p style="margin:0 0 12px;font-size:16px;color:#7E22CE;font-weight:700;">🚀 How to Launch Your First Listing in 3 Minutes:</p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">1️⃣</td>
+          <td style="padding:4px 0 6px 0;"><strong>Snap Clear Photos:</strong> Show your products or past service workmanship from multiple clean angles.</td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">2️⃣</td>
+          <td style="padding:4px 0 6px 0;"><strong>Set Competitive Pricing:</strong> Enter transparent pricing in NGN. Customers appreciate clear upfront costs.</td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 6px 0;width:24px;">3️⃣</td>
+          <td style="padding:4px 0 6px 0;"><strong>Sit Back & Fulfill:</strong> FixMart riders manage delivery pickup, and escrow funds land straight into your wallet upon delivery!</td>
+        </tr>
+      </table>
+    </div>
+    <div style="text-align:center;margin:28px 0 16px;">
+      <a href="https://akpoaza-3.onrender.com" target="_blank" style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(124,58,237,0.35);">📦 Upload ${isVendor ? 'Products' : 'Services'} Now</a>
+    </div>
+  `;
+
+  return sendNotification({
+    userId: user.id,
+    title,
+    body,
+    type: 'GENERAL',
+    email: user.email ?? undefined,
+    phone: user.phone ?? undefined,
+    pushToken: user.pushToken ?? undefined,
+    emailSubject: `📦 Boost Your Sales: Add Your ${isVendor ? 'Products' : 'Services'} to FixMart, ${user.name}!`,
+    emailHtml: customHtml,
+    smsText,
+  });
+}
+
+/**
+ * sendUserGuideNotification — Comprehensive User Guide with actionable prompts.
+ */
+export async function sendUserGuideNotification(user: {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  pushToken?: string | null;
+  role?: string;
+}) {
+  const title = '📘 FixMart Complete User Guide & Essential Tips';
+  const body = `Master FixMart in minutes, ${user.name}! Read our complete guide to hiring verified artisans, shopping genuine hardware, and protecting payments with escrow.`;
+  const smsText = `[FixMart Guide] Welcome! Discover how to hire verified artisans, buy genuine tools & protect payments with escrow: https://akpoaza-3.onrender.com`;
+
+  const customHtml = `
+    <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+      Hello <strong>${user.name}</strong>,
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+      Welcome to your comprehensive <strong>FixMart Platform Guide</strong>! Here is everything you need to know to get the most value out of FixMart:
+    </p>
+
+    <!-- Guide Section 1: Customers -->
+    <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:12px;padding:20px;margin:16px 0;">
+      <p style="margin:0 0 10px;font-size:16px;color:#1D4ED8;font-weight:700;">1. 🛒 Ordering Products & Tracking Deliveries</p>
+      <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">
+        • Browse building materials, replacement parts, and power tools.<br>
+        • Choose between 1-time full payment or 50% split payment.<br>
+        • Follow your delivery rider in real time via live GPS mapping.<br>
+        • Verify the physical condition before confirming receipt.
+      </p>
+    </div>
+
+    <!-- Guide Section 2: Artisans & Services -->
+    <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:20px;margin:16px 0;">
+      <p style="margin:0 0 10px;font-size:16px;color:#15803D;font-weight:700;">2. 🔧 Hiring Verified Artisans & Handymen</p>
+      <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">
+        • Search for electricians, plumbers, AC technicians, carpenters, or painters.<br>
+        • Check their verified KYC badge, customer reviews, and completed job ratings.<br>
+        • Set your scheduled date and time; communicate directly via in-app call/chat.
+      </p>
+    </div>
+
+    <!-- Guide Section 3: Escrow Protection -->
+    <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:20px;margin:16px 0;">
+      <p style="margin:0 0 10px;font-size:16px;color:#B45309;font-weight:700;">3. 🛡️ How Escrow Safeguards Your Money</p>
+      <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">
+        • When you pay, funds enter a <strong>secure escrow vault</strong> — NOT directly to the provider.<br>
+        • The artisan or vendor works knowing payment is guaranteed.<br>
+        • You only release funds when the work is thoroughly inspected and approved.
+      </p>
+    </div>
+
+    <!-- Guide Section 4: Express Parcel -->
+    <div style="background:#FDF2F8;border:1px solid #FBCFE8;border-radius:12px;padding:20px;margin:16px 0;">
+      <p style="margin:0 0 10px;font-size:16px;color:#BE185D;font-weight:700;">4. 🛵 Express Parcel Dispatch & Logistics</p>
+      <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">
+        • Need to send items or tools across town? Book a dispatch rider in 3 clicks.<br>
+        • Automated transparent pricing based on distance and parcel size.<br>
+        • Real-time delivery confirmation and receipt generation.
+      </p>
+    </div>
+
+    <div style="text-align:center;margin:28px 0 16px;">
+      <a href="https://akpoaza-3.onrender.com" target="_blank" style="display:inline-block;background:#007AFF;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(0,122,255,0.35);">🚀 Launch FixMart Mobile App</a>
+    </div>
+  `;
+
+  return sendNotification({
+    userId: user.id,
+    title,
+    body,
+    type: 'GENERAL',
+    email: user.email ?? undefined,
+    phone: user.phone ?? undefined,
+    pushToken: user.pushToken ?? undefined,
+    emailSubject: `📘 FixMart Complete User Guide: Tips, Escrow & Navigation for ${user.name}`,
+    emailHtml: customHtml,
+    smsText,
+  });
+}
+

@@ -2,6 +2,7 @@ import React, { useContext, useState } from 'react';
 import {
   View, Text, FlatList, StyleSheet, TouchableOpacity,
   ActivityIndicator, Alert, Modal, Platform, ScrollView, Image,
+  useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CartContext } from '../context/CartContext';
@@ -20,6 +21,8 @@ export default function CartScreen({ route, navigation }: any) {
   const { userToken } = useContext(AuthContext);
   const { theme, colorMode } = useContext(SettingsContext);
   const { fmt } = useCurrency();
+  const { height } = useWindowDimensions();
+  const isCompact = height <= 720;
   const [loading, setLoading] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const isDark = colorMode === 'dark';
@@ -231,13 +234,17 @@ export default function CartScreen({ route, navigation }: any) {
       />
 
       {/* ── Sticky Footer ────────────────────────────────────────────────── */}
-      <View style={[styles.stickyFooter, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderTopColor: isDark ? '#334155' : '#E2E8F0' }]}>
+      <View style={[
+        styles.stickyFooter,
+        { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderTopColor: isDark ? '#334155' : '#E2E8F0' },
+        isCompact && { padding: 10, paddingBottom: Platform.OS === 'ios' ? 16 : 10, gap: 6 }
+      ]}>
         <View style={styles.footerTotalRow}>
           <Text style={[styles.footerTotalLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>Total</Text>
-          <Text style={[styles.footerTotalValue, { color: theme.primary }]}>{fmt(cartTotal)}</Text>
+          <Text style={[styles.footerTotalValue, { color: theme.primary }, isCompact && { fontSize: 18 }]}>{fmt(cartTotal)}</Text>
         </View>
         <TouchableOpacity
-          style={[styles.checkoutBtn, { backgroundColor: theme.primary }]}
+          style={[styles.checkoutBtn, { backgroundColor: theme.primary }, isCompact && { paddingVertical: 12, borderRadius: 10 }]}
           onPress={handleCheckout}
           disabled={loading}
           activeOpacity={0.85}
@@ -245,16 +252,16 @@ export default function CartScreen({ route, navigation }: any) {
           {loading ? (
             <ActivityIndicator color="#FFF" />
           ) : (
-            <Text style={styles.checkoutBtnText}>
+            <Text style={[styles.checkoutBtnText, isCompact && { fontSize: 14 }]}>
               🔒 Proceed to Checkout → {fmt(cartTotal)}
             </Text>
           )}
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.continueBtn, { borderColor: theme.primary + '50', backgroundColor: theme.primary + '08' }]}
+          style={[styles.continueBtn, { borderColor: theme.primary + '50', backgroundColor: theme.primary + '08' }, isCompact && { paddingVertical: 10, borderRadius: 10 }]}
           onPress={() => navigation.navigate('Products')}
         >
-          <Text style={[styles.continueBtnText, { color: theme.primary }]}>🛍️ Continue Shopping</Text>
+          <Text style={[styles.continueBtnText, { color: theme.primary }, isCompact && { fontSize: 13 }]}>🛍️ Continue Shopping</Text>
         </TouchableOpacity>
       </View>
     </View>

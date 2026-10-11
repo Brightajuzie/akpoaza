@@ -28,8 +28,9 @@ import { getPushTokenAsync } from '../utils/pushNotifications';
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignupScreen({ route, navigation }: any) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isLargeScreen = width >= 768;
+  const isCompact = height <= 720;
   const { login } = useContext(AuthContext);
   const { theme, settings } = useContext(SettingsContext);
 
@@ -535,10 +536,10 @@ export default function SignupScreen({ route, navigation }: any) {
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={[styles.card, { borderColor: theme.border }, isLargeScreen && styles.cardWeb]}>
+      <View style={[styles.card, { borderColor: theme.border }, isLargeScreen && styles.cardWeb, isCompact && { padding: 16 }]}>
         {/* Header Section */}
-        <Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: theme.text }, isCompact && { fontSize: 22, marginBottom: 4 }]}>Create Account</Text>
+        <Text style={[styles.subtitle, isCompact && { fontSize: 13, marginBottom: 14, lineHeight: 18 }]}>
           {role === 'CUSTOMER'
             ? 'Join FixMart in seconds to order services, buy products & dispatch riders'
             : currentStep === 1

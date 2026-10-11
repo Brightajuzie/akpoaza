@@ -20,8 +20,9 @@ const BIOMETRIC_TOKEN_KEY = 'biometric_auth_token';
 const BIOMETRIC_ENABLED_KEY = 'biometric_enabled';
 
 export default function LoginScreen({ route, navigation }: any) {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isLargeScreen = width >= 768;
+  const isCompact = height <= 720;
   const [email, setEmail]       = useState(route?.params?.initialEmail || route?.params?.email || '');
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
@@ -175,10 +176,18 @@ export default function LoginScreen({ route, navigation }: any) {
     }
     setLoading(true);
     try {
-      const res = await apiClient.post('/auth/login', { email: cleanEmail, password });
+      // Get the device push token so the backend can sync it immediately on login
+      const { getPushTokenAsync } = await import('../utils/pushNotifications');
+      const pushToken = await getPushTokenAsync().catch(() => null);
+
+      const res = await apiClient.post('/auth/login', {
+        email: cleanEmail,
+        password,
+        pushToken: pushToken || undefined,
+      });
       await login(res.data.token, res.data.user);
 
-      // Offer biometric setup after first manual login
+      // Offer biometric setup after first manual login — await so nav doesn't fire during alert
       const alreadyEnabled = await SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY);
       if (alreadyEnabled !== 'true') {
         await promptEnableBiometrics(res.data.token);
@@ -258,16 +267,16 @@ export default function LoginScreen({ route, navigation }: any) {
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }, isLargeScreen && styles.cardWeb]}>
-        <TouchableOpacity onPress={() => navigation.navigate('Main')} style={{ alignItems: 'center', marginBottom: 12 }}>
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }, isLargeScreen && styles.cardWeb, isCompact && { padding: 16 }]}>
+        <TouchableOpacity onPress={() => navigation.navigate('Main')} style={{ alignItems: 'center', marginBottom: isCompact ? 8 : 12 }}>
           <SafeLogo
             logoUrl={logoUrl}
-            style={{ width: 72, height: 72 }}
+            style={{ width: isCompact ? 52 : 72, height: isCompact ? 52 : 72 }}
             resizeMode="contain"
           />
         </TouchableOpacity>
-        <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, isCompact && { fontSize: 22, marginBottom: 4 }]}>Welcome Back</Text>
+        <Text style={[styles.subtitle, isCompact && { fontSize: 13, marginBottom: 14, lineHeight: 18 }]}>
           {redirectTo
             ? 'Sign in to continue where you left off.'
             : 'Log in to request services or manage your account.'}
@@ -276,11 +285,11 @@ export default function LoginScreen({ route, navigation }: any) {
         {/* ── Biometric Quick Login ── */}
         {biometricEnabled && (
           <TouchableOpacity
-            style={[styles.biometricBtn, { borderColor: theme.primary }]}
+            style={[styles.biometricBtn, { borderColor: theme.primary }, isCompact && { paddingVertical: 10, marginBottom: 12 }]}
             onPress={triggerBiometricLogin}
           >
             <Text style={styles.biometricIcon}>{Platform.OS === 'ios' ? '👤' : '🔒'}</Text>
-            <Text style={[styles.biometricText, { color: theme.primary }]}>
+            <Text style={[styles.biometricText, { color: theme.primary }, isCompact && { fontSize: 13 }]}>
               Sign in with {Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'Fingerprint'}
             </Text>
           </TouchableOpacity>
@@ -288,7 +297,7 @@ export default function LoginScreen({ route, navigation }: any) {
 
         {/* ── Divider ── */}
         {biometricEnabled && (
-          <View style={styles.dividerRow}>
+          <View style={[styles.dividerRow, isCompact && { marginBottom: 14 }]}>
             <View style={styles.dividerLine} />
             <Text style={styles.dividerText}>or continue with</Text>
             <View style={styles.dividerLine} />
@@ -296,7 +305,7 @@ export default function LoginScreen({ route, navigation }: any) {
         )}
 
         <TextInput
-          style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border }]}
+          style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border }, isCompact && { height: 46, marginBottom: 10 }]}
           placeholder="Email address"
           value={email}
           onChangeText={setEmail}
@@ -305,7 +314,7 @@ export default function LoginScreen({ route, navigation }: any) {
           placeholderTextColor="#8E8E93"
         />
         <TextInput
-          style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border }]}
+          style={[styles.input, { backgroundColor: theme.background, borderColor: theme.border }, isCompact && { height: 46, marginBottom: 10 }]}
           placeholder="Password"
           value={password}
           onChangeText={setPassword}
@@ -315,7 +324,7 @@ export default function LoginScreen({ route, navigation }: any) {
 
         {/* ── Login Button ── */}
         <TouchableOpacity
-          style={[styles.button, { backgroundColor: theme.primary, shadowColor: theme.primary }]}
+          style={[styles.button, { backgroundColor: theme.primary, shadowColor: theme.primary }, isCompact && { height: 46, marginBottom: 10 }]}
           onPress={handleLogin}
           disabled={loading}
         >
@@ -327,7 +336,7 @@ export default function LoginScreen({ route, navigation }: any) {
         {/* ── Google Sign-In (for Customers) ── */}
         {googleConfigured && (
           <TouchableOpacity
-            style={styles.googleBtn}
+            style={[styles.googleBtn, isCompact && { height: 46, marginBottom: 12 }]}
             onPress={async () => {
               if (googleLoading) return;
               try {

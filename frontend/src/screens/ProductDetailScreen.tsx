@@ -48,7 +48,7 @@ export default function ProductDetailScreen({ route, navigation }: any) {
   const isDesktop = width >= 1024;
   const isTablet = width >= 600 && width < 1024;
   const isCompactHeight = height < 760;
-  const isVeryCompact = height < 700;
+  const isVeryCompact = height <= 720; // 5.3" screen
   const contentMaxWidth = isDesktop ? 1200 : isTablet ? 800 : undefined;
   const imageHeight = isDesktop ? 420 : isTablet ? 340 : isVeryCompact ? 170 : (isCompactHeight ? 200 : 260);
 

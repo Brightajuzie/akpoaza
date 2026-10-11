@@ -8,6 +8,7 @@ import { useCurrency } from '../context/CurrencyContext';
 import { SUPPORTED_COUNTRIES } from '../utils/currency';
 import apiClient from '../api/client';
 import ThemeToggle from '../components/ThemeToggle';
+import UserGuideModal from '../components/UserGuideModal';
 
 const BIOMETRIC_TOKEN_KEY = 'biometric_auth_token';
 const BIOMETRIC_ENABLED_KEY = 'biometric_enabled';
@@ -28,6 +29,7 @@ export default function ProfileScreen({ navigation }: any) {
   const [isOnline, setIsOnline] = useState(false);
   const [trackingIntervalId, setTrackingIntervalId] = useState<any>(null);
   const [showCountryModal, setShowCountryModal] = useState(false);
+  const [showUserGuide, setShowUserGuide] = useState(false);
   const [savingCountry, setSavingCountry] = useState(false);
 
   // Biometric state
@@ -856,6 +858,12 @@ export default function ProfileScreen({ navigation }: any) {
           </TouchableOpacity>
         )}
 
+        <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => setShowUserGuide(true)}>
+          <Text style={styles.menuItemIcon}>📘</Text>
+          <Text style={[styles.menuItemText, { color: textColor }]}>User Guide & Platform Prompts</Text>
+          <Text style={[styles.menuItemChevron, { color: subtextColor }]}>›</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={[styles.menuItem, { borderBottomColor: borderColor }]} onPress={() => navigation.navigate('NotificationsTab')}>
           <Text style={styles.menuItemIcon}>🔔</Text>
           <Text style={[styles.menuItemText, { color: textColor }]}>Alerts & Messages</Text>
@@ -898,6 +906,13 @@ export default function ProfileScreen({ navigation }: any) {
       <TouchableOpacity style={[styles.logoutButton, { backgroundColor: isDark ? '#1E293B' : '#FFF', borderColor: '#EF4444' }]} onPress={logout}>
         <Text style={{ color: '#EF4444', fontSize: 16, fontWeight: '700' }}>🚪 Log Out</Text>
       </TouchableOpacity>
+
+      <UserGuideModal
+        visible={showUserGuide}
+        onClose={() => setShowUserGuide(false)}
+        theme={theme}
+        colorMode={colorMode}
+      />
     </ScrollView>
   );
 }

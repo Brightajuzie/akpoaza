@@ -258,7 +258,7 @@ router.post('/register', async (req, res) => {
 
 // Login User
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, pushToken } = req.body;
 
   const cleanEmail = (email || '').trim().toLowerCase();
 
@@ -267,7 +267,7 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    let user = await prisma.user.findUnique({ where: { email: cleanEmail } });
     if (!user || !user.passwordHash) {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
@@ -277,26 +277,36 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Invalid credentials' });
     }
 
+    // Sync push token on login if the app sent one and it's new
+    if (pushToken && typeof pushToken === 'string') {
+      const cleanPushToken = pushToken.trim();
+      if (cleanPushToken && cleanPushToken !== user.pushToken) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { pushToken: cleanPushToken },
+        });
+      }
+    }
+
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '30d' }
     );
 
-    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus === 'UNVERIFIED';
+    // Return the full user profile so the client never needs a separate /me call right after login
+    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER' || user.role === 'AGENT') && user.verificationStatus === 'UNVERIFIED';
     const isPendingReview = user.verificationStatus === 'PENDING_REVIEW';
+
+    const { passwordHash: _pw, bvnHash: _bvn, ...userFields } = user as any;
+
     res.json({
       token,
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        phone: user.phone,
-        verificationStatus: user.verificationStatus,
+        ...userFields,
         requiresKYC,
         isPendingReview,
-      }
+      },
     });
   } catch (error: any) {
     const isDbConnError = ['P1001', 'P1002', 'P1008', 'P1017', 'P2024'].includes(error?.code);
@@ -384,28 +394,35 @@ router.post('/google', async (req, res) => {
       });
 
       sendWelcomeNotification(user).catch(() => {});
+    } else if (pushToken && typeof pushToken === 'string') {
+      // Update push token for returning Google users if it changed
+      const cleanPushToken = pushToken.trim();
+      if (cleanPushToken && cleanPushToken !== user.pushToken) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { pushToken: cleanPushToken },
+        });
+      }
     }
 
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '30d' }
     );
 
-    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER') && user.verificationStatus === 'UNVERIFIED';
+    const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER' || user.role === 'AGENT') && user.verificationStatus === 'UNVERIFIED';
     const isPendingReview = user.verificationStatus === 'PENDING_REVIEW';
+
+    const { passwordHash: _pw, bvnHash: _bvn, ...userFields } = user as any;
+
     res.json({
       token,
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        phone: user.phone,
-        verificationStatus: user.verificationStatus,
+        ...userFields,
         requiresKYC,
         isPendingReview,
-      }
+      },
     });
   } catch (error) {
     console.error('Google Auth Error:', error);
@@ -602,6 +619,149 @@ router.delete('/push-token', authenticateToken, async (req: AuthRequest, res) =>
   } catch (error) {
     console.error('DELETE /auth/push-token error:', error);
     res.status(500).json({ error: 'Failed to clear push token' });
+  }
+});
+
+/**
+ * POST /auth/forgot-password
+ * Generates a 6-digit OTP and emails it to the user.
+ * Body: { email }
+ */
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (!cleanEmail) return res.status(400).json({ error: 'Email is required' });
+
+  try {
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+
+    // Always return success to prevent email enumeration attacks
+    if (!user) {
+      return res.json({ success: true, message: 'If an account exists with that email, a reset code has been sent.' });
+    }
+
+    // Generate a 6-digit OTP and store its hash with 15-min expiry
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetToken: otpHash,
+        passwordResetExpires: expiresAt,
+      },
+    });
+
+    // Send the OTP via email (fire-and-forget)
+    const { sendNotification } = await import('../lib/notify');
+    sendNotification({
+      userId: user.id,
+      title: '🔐 FixMart Password Reset Code',
+      body: `Your password reset code is: ${otp}\n\nThis code expires in 15 minutes. Do not share it with anyone.`,
+      type: 'GENERAL',
+      email: user.email,
+      emailSubject: '🔐 Your FixMart Password Reset Code',
+      emailHtml: `
+        <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+          Hello <strong>${user.name}</strong>,
+        </p>
+        <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+          We received a request to reset your FixMart password. Use the code below to set a new password.
+        </p>
+        <div style="background:#F0F9FF;border:2px solid #BAE6FD;border-radius:14px;padding:24px;text-align:center;margin:20px 0;">
+          <p style="margin:0 0 8px;font-size:13px;color:#0369A1;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Password Reset Code</p>
+          <p style="margin:0;font-size:42px;font-weight:900;color:#0F172A;letter-spacing:10px;">${otp}</p>
+          <p style="margin:12px 0 0;font-size:13px;color:#64748B;">⏰ Expires in 15 minutes</p>
+        </div>
+        <p style="font-size:13px;color:#64748B;line-height:1.5;margin:0 0 12px;">
+          Enter this code in the FixMart app to reset your password. If you did not request a password reset, please ignore this email — your account remains secure.
+        </p>
+        <div style="background:#FFFBEB;border-left:4px solid #F59E0B;padding:12px 14px;border-radius:6px;">
+          <p style="margin:0;font-size:12px;color:#92400E;line-height:1.45;">
+            <strong>⚠️ Security Notice:</strong> FixMart will never ask for this code over the phone or chat. Keep it private.
+          </p>
+        </div>
+      `,
+      smsText: `[FixMart] Your password reset code is: ${otp}. Expires in 15 min. Do not share.`,
+    }).catch(() => {});
+
+    res.json({ success: true, message: 'If an account exists with that email, a reset code has been sent.' });
+  } catch (error) {
+    console.error('POST /auth/forgot-password error:', error);
+    res.status(500).json({ error: 'Failed to process password reset request' });
+  }
+});
+
+/**
+ * POST /auth/reset-password
+ * Verifies the OTP and sets a new password.
+ * Body: { email, otp, newPassword }
+ */
+router.post('/reset-password', async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+  const cleanEmail = (email || '').trim().toLowerCase();
+
+  if (!cleanEmail || !otp || !newPassword) {
+    return res.status(400).json({ error: 'Email, reset code, and new password are required' });
+  }
+  if (typeof newPassword !== 'string' || newPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters long' });
+  }
+
+  try {
+    const user = await prisma.user.findUnique({ where: { email: cleanEmail } });
+    if (!user || !user.passwordResetToken || !user.passwordResetExpires) {
+      return res.status(400).json({ error: 'Invalid or expired reset code. Please request a new one.' });
+    }
+
+    // Check expiry
+    if (new Date() > user.passwordResetExpires) {
+      return res.status(400).json({ error: 'This reset code has expired. Please request a new one.' });
+    }
+
+    // Verify OTP hash
+    const otpHash = crypto.createHash('sha256').update(String(otp).trim()).digest('hex');
+    if (otpHash !== user.passwordResetToken) {
+      return res.status(400).json({ error: 'Incorrect reset code. Please check your email and try again.' });
+    }
+
+    // Hash the new password and clear the OTP fields
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(newPassword, salt);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        passwordResetToken: null,
+        passwordResetExpires: null,
+      },
+    });
+
+    res.json({ success: true, message: 'Password reset successfully. You can now log in with your new password.' });
+  } catch (error) {
+    console.error('POST /auth/reset-password error:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+/**
+ * POST /auth/token/refresh
+ * Re-issues a fresh 30-day JWT for an authenticated user (keeps session alive).
+ * Used by the app on launch to silently extend sessions without re-entering credentials.
+ */
+router.post('/token/refresh', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.userId;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return res.status(401).json({ error: 'User not found' });
+
+    const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token });
+  } catch (error) {
+    console.error('POST /auth/token/refresh error:', error);
+    res.status(500).json({ error: 'Failed to refresh token' });
   }
 });
 

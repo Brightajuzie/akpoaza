@@ -3,16 +3,18 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { Picker } from '@react-native-picker/picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Modal, TextInput, Alert, ScrollView, RefreshControl, Image, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Swipeable } from 'react-native-gesture-handler';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Notifications from 'expo-notifications';
+import * as ImagePicker from 'expo-image-picker';
 import apiClient from '../api/client';
 import { AuthContext } from '../context/AuthContext';
 import { SettingsContext } from '../context/SettingsContext';
+import { useCurrency } from '../context/CurrencyContext';
 import PaymentWebView from '../components/PaymentWebView';
 
 // Only real payment gateways make sense for topping up a wallet — unlike
@@ -28,10 +30,18 @@ const FUND_PROVIDERS: { id: 'STRIPE' | 'PAYSTACK' | 'FLUTTERWAVE' | 'OPAY'; labe
 export default function WalletScreen({ navigation }: any) {
   const { userInfo } = useContext(AuthContext);
   const { theme, settings, colorMode } = useContext(SettingsContext);
+  const { currency, symbol, fmt } = useCurrency();
   const isDark = colorMode === 'dark';
 
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>({ balance: 0, pendingBalance: 0, transactions: [], withdrawals: [] });
+  const [data, setData] = useState<any>({
+    balance: 0,
+    pendingBalance: 0,
+    transactions: [],
+    withdrawals: [],
+    isFirstWithdrawal: false,
+    hugeWithdrawalThreshold: 50000,
+  });
   
   // Pull-to-refresh state
   const [refreshing, setRefreshing] = useState(false);
@@ -43,6 +53,16 @@ export default function WalletScreen({ navigation }: any) {
   const [accountNumber, setAccountNumber] = useState('');
   const [bankName, setBankName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  // First-time withdrawal OTP states
+  const [otp, setOtp] = useState('');
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0);
+
+  // Huge amount withdrawal Facial Life Check states
+  const [livenessPhoto, setLivenessPhoto] = useState<string | null>(null);
+  const [uploadingLifeCheck, setUploadingLifeCheck] = useState(false);
 
   // Fund Wallet form state
   const [fundModalVisible, setFundModalVisible] = useState(false);
@@ -89,7 +109,132 @@ export default function WalletScreen({ navigation }: any) {
 
   useEffect(() => {
     fetchWalletData();
+
+    // Check for web callback redirects (?payment_status=success&ref=...)
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const paymentStatus = urlParams.get('payment_status');
+        const ref = urlParams.get('ref');
+        if (paymentStatus === 'success' && ref) {
+          apiClient.get(`/wallet/fund/verify/${encodeURIComponent(ref)}`).then(() => {
+            Alert.alert('✅ Wallet Funded', `Your top-up was verified and credited to your wallet!\nReference: ${ref}`);
+            fetchWalletData();
+          }).catch(() => fetchWalletData());
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (paymentStatus === 'cancelled') {
+          Alert.alert('Funding Cancelled', 'Wallet top-up was cancelled.');
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      } catch (e) {}
+    }
   }, []);
+
+  // Countdown timer for withdrawal OTP
+  useEffect(() => {
+    let interval: any = null;
+    if (otpTimer > 0) {
+      interval = setInterval(() => setOtpTimer((t) => t - 1), 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [otpTimer]);
+
+  // Request withdrawal OTP for first-time authentication
+  const requestWithdrawalOtp = async () => {
+    setSendingOtp(true);
+    try {
+      const res = await apiClient.post('/wallet/withdraw/request-otp');
+      setOtpSent(true);
+      setOtpTimer(60);
+      Alert.alert('🔐 Code Sent', res.data.message || 'A 6-digit verification code has been sent to your email.');
+    } catch (err: any) {
+      Alert.alert('Failed to Send Code', err.response?.data?.error || 'Could not send verification code.');
+    } finally {
+      setSendingOtp(false);
+    }
+  };
+
+  // Facial life check selfie capture
+  const handleCaptureLifeCheck = async () => {
+    try {
+      if (Platform.OS === 'web') {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.capture = 'user'; // Requests front-facing camera on mobile browsers
+        input.onchange = async (e: any) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            setUploadingLifeCheck(true);
+            try {
+              const formData = new FormData();
+              formData.append('image', file, file.name || 'selfie.jpg');
+              const res = await apiClient.post('/upload', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+              });
+              if (res.data?.success && res.data.imageUrl) {
+                setLivenessPhoto(res.data.imageUrl);
+                Alert.alert('✅ Life Check Captured', 'Your live selfie facial verification has been recorded.');
+              }
+            } catch (err: any) {
+              Alert.alert('Upload Failed', err.response?.data?.error || 'Could not upload selfie.');
+            } finally {
+              setUploadingLifeCheck(false);
+            }
+          }
+        };
+        input.click();
+        return;
+      }
+
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Camera Permission Required', 'Camera access is required to take a live selfie verification.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        cameraType: ImagePicker.CameraType.front,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setUploadingLifeCheck(true);
+        try {
+          const formData = new FormData();
+          const filename = asset.uri.split('/').pop() || 'selfie.jpg';
+          const ext = filename.split('.').pop()?.toLowerCase() || 'jpg';
+          const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+          formData.append('image', {
+            uri: asset.uri,
+            name: filename,
+            type: mimeType,
+          } as any);
+
+          const res = await apiClient.post('/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+
+          if (res.data?.success && res.data.imageUrl) {
+            setLivenessPhoto(res.data.imageUrl);
+            Alert.alert('✅ Life Check Captured', 'Your live selfie facial verification has been recorded.');
+          }
+        } catch (uploadErr: any) {
+          Alert.alert('Upload Failed', uploadErr.response?.data?.error || 'Could not upload selfie.');
+        } finally {
+          setUploadingLifeCheck(false);
+        }
+      }
+    } catch (err) {
+      console.error('Liveness capture error', err);
+      Alert.alert('Camera Error', 'Could not access camera for life check.');
+    }
+  };
 
   const handleWithdraw = async () => {
     const amtFloat = parseFloat(amount);
@@ -110,37 +255,76 @@ export default function WalletScreen({ navigation }: any) {
       return;
     }
 
+    // High amount check: requires facial life check
+    const hugeThreshold = data.hugeWithdrawalThreshold || 50000;
+    const isHugeAmount = amtFloat >= hugeThreshold;
+    if (isHugeAmount && !livenessPhoto) {
+      Alert.alert(
+        'Facial Life Check Required',
+        `High-value withdrawals (₦${hugeThreshold.toLocaleString()} and above) require a live selfie verification to protect your funds. Please snap a selfie below before submitting.`
+      );
+      return;
+    }
+
+    // First-time withdrawal check: requires OTP
+    if (data.isFirstWithdrawal && !otp.trim()) {
+      if (!otpSent) {
+        requestWithdrawalOtp();
+      }
+      Alert.alert(
+        'Authentication Required',
+        'First-time withdrawals require a 6-digit security code sent to your registered email. Please enter the code below.'
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const payload = {
+      const payload: any = {
         amount: amtFloat,
         instant,
         accountNumber: accountNumber.trim(),
         bankName: bankName.trim(),
       };
+      if (otp.trim()) {
+        payload.otp = otp.trim();
+      }
+      if (livenessPhoto) {
+        payload.livenessPhoto = livenessPhoto;
+      }
       
       const response = await apiClient.post('/wallet/withdraw', payload);
       Alert.alert('Success', response.data.message);
-      // Schedule a local notification to inform the user of the withdrawal request
+      
       await Notifications.scheduleNotificationAsync({
         content: {
           title: 'Withdrawal Requested',
           body: `Your withdrawal of ₦${amtFloat.toFixed(2)} is being processed.`,
         },
         trigger: null,
-      });
+      }).catch(() => {});
       
       // Reset form
       setAmount('');
       setAccountNumber('');
       setBankName('');
       setInstant(false);
+      setOtp('');
+      setOtpSent(false);
+      setLivenessPhoto(null);
       setModalVisible(false);
       
       // Refresh balance and transaction log
       fetchWalletData();
     } catch (error: any) {
-      Alert.alert('Withdrawal Failed', error.response?.data?.error || 'Failed to submit withdrawal request.');
+      if (error.response?.data?.requiresOtp) {
+        setOtpSent(true);
+        Alert.alert('Code Required', error.response?.data?.error || 'A 6-digit verification code has been sent to your email.');
+      } else if (error.response?.data?.requiresLifeCheck) {
+        Alert.alert('Life Check Required', error.response?.data?.error || 'A live selfie is required for this withdrawal.');
+      } else {
+        Alert.alert('Withdrawal Failed', error.response?.data?.error || 'Failed to submit withdrawal request.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -161,18 +345,29 @@ export default function WalletScreen({ navigation }: any) {
       return;
     }
 
+    const minAmount = (currency || 'NGN') === 'NGN' ? 100 : 1;
+    if (amtFloat < minAmount) {
+      Alert.alert('Minimum Amount', `Minimum wallet top-up is ${symbol}${minAmount}.`);
+      return;
+    }
+
     setFundLoadingProvider(provider);
     try {
       // 1. Create the PENDING WalletFunding record this top-up will pay off.
-      const fundRes = await apiClient.post('/wallet/fund', { amount: amtFloat });
+      const fundRes = await apiClient.post('/wallet/fund', {
+        amount: amtFloat,
+        currency: currency || 'NGN',
+      });
       const fundingId = fundRes.data?.fundingId;
       if (!fundingId) throw new Error('Could not start wallet funding.');
 
-      // 2. Same gateway-initiation call order/booking/parcel checkout uses.
+      // 2. Gateway-initiation call with active currency
       const checkoutRes = await apiClient.post('/payments/checkout', {
         checkoutType: 'wallet_funding',
         id: fundingId,
         provider,
+        currency: currency || 'NGN',
+        localAmount: amtFloat,
       });
 
       const redirectUrl = provider === 'FLUTTERWAVE'
@@ -191,12 +386,20 @@ export default function WalletScreen({ navigation }: any) {
     }
   };
 
-  const handleFundPaymentSuccess = (reference: string) => {
+  const handleFundPaymentSuccess = async (reference: string) => {
     setPaymentUrl(null);
     const providerName = fundProvider;
     setFundProvider(null);
     setFundAmount('');
-    Alert.alert('Wallet Funded', `Your ${providerName} top-up was completed successfully!\nReference: ${reference}`);
+
+    // Explicitly verify funding status on server to guarantee balance is credited
+    try {
+      await apiClient.get(`/wallet/fund/verify/${encodeURIComponent(reference)}`);
+    } catch (err) {
+      console.warn('Auto-verify call finished with notice:', err);
+    }
+
+    Alert.alert('✅ Wallet Funded', `Your ${providerName || 'gateway'} top-up was completed successfully!\nReference: ${reference}`);
     fetchWalletData();
   };
 
@@ -502,6 +705,96 @@ export default function WalletScreen({ navigation }: any) {
                       ₦{Math.max(parseFloat(amount) - (instant ? 100 : 0), 0).toFixed(2)}
                     </Text>
                   </View>
+                </View>
+              ) : null}
+
+              {/* First-time Withdrawal Security: OTP Verification */}
+              {data.isFirstWithdrawal ? (
+                <View style={styles.securityBox}>
+                  <View style={styles.securityHeader}>
+                    <View style={styles.securityBadge}>
+                      <Text style={styles.securityBadgeText}>1ST-TIME SECURITY</Text>
+                    </View>
+                    <Text style={styles.securityTitle}>Email / SMS Authentication</Text>
+                  </View>
+                  <Text style={styles.securityDesc}>
+                    First-time withdrawals require a 6-digit one-time password (OTP) sent to your registered account to confirm your identity.
+                  </Text>
+                  <View style={styles.otpRow}>
+                    <TextInput
+                      style={[styles.input, styles.otpInput]}
+                      placeholder="Enter 6-digit OTP"
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      value={otp}
+                      onChangeText={setOtp}
+                    />
+                    <TouchableOpacity
+                      style={[
+                        styles.otpBtn,
+                        { backgroundColor: theme.primary },
+                        (sendingOtp || otpTimer > 0) && styles.otpBtnDisabled
+                      ]}
+                      onPress={requestWithdrawalOtp}
+                      disabled={sendingOtp || otpTimer > 0}
+                    >
+                      {sendingOtp ? (
+                        <ActivityIndicator color="#FFF" size="small" />
+                      ) : (
+                        <Text style={styles.otpBtnText}>
+                          {otpTimer > 0 ? `${otpTimer}s` : otpSent ? 'Resend' : 'Send Code'}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : null}
+
+              {/* High-Value Withdrawal Security: Live Facial Life Check */}
+              {parseFloat(amount) >= (data.hugeWithdrawalThreshold || 50000) ? (
+                <View style={[styles.securityBox, styles.lifeCheckBox]}>
+                  <View style={styles.securityHeader}>
+                    <View style={[styles.securityBadge, styles.hugeBadge]}>
+                      <Text style={styles.hugeBadgeText}>HIGH AMOUNT CHECK</Text>
+                    </View>
+                    <Text style={styles.securityTitle}>Real-Time Facial Life Check</Text>
+                  </View>
+                  <Text style={styles.securityDesc}>
+                    Withdrawals of ₦{(data.hugeWithdrawalThreshold || 50000).toLocaleString()} and above require a live front-camera selfie to protect your funds against fraud.
+                  </Text>
+
+                  {livenessPhoto ? (
+                    <View style={styles.lifeCheckPreview}>
+                      <Image source={{ uri: livenessPhoto }} style={styles.lifeCheckImg} />
+                      <View style={styles.lifeCheckInfo}>
+                        <Text style={styles.lifeCheckSuccessText}>✅ Live Selfie Attached</Text>
+                        <TouchableOpacity
+                          style={styles.retakeBtn}
+                          onPress={handleCaptureLifeCheck}
+                          disabled={uploadingLifeCheck}
+                        >
+                          <Text style={styles.retakeBtnText}>Retake Photo</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.lifeCheckBtn, { borderColor: theme.primary }]}
+                      onPress={handleCaptureLifeCheck}
+                      disabled={uploadingLifeCheck}
+                    >
+                      {uploadingLifeCheck ? (
+                        <ActivityIndicator color={theme.primary} size="small" />
+                      ) : (
+                        <>
+                          <Text style={styles.lifeCheckBtnIcon}>📸</Text>
+                          <Text style={[styles.lifeCheckBtnText, { color: theme.primary }]}>
+                            Take Live Selfie (Front Camera)
+                          </Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : null}
 
@@ -856,5 +1149,140 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 15,
+  },
+  securityBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginVertical: 10,
+  },
+  lifeCheckBox: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+  },
+  securityHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  securityBadge: {
+    backgroundColor: '#E0E7FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  securityBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#4338CA',
+    letterSpacing: 0.5,
+  },
+  hugeBadge: {
+    backgroundColor: '#FEE2E2',
+  },
+  hugeBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B91C1C',
+    letterSpacing: 0.5,
+  },
+  securityTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+    flex: 1,
+  },
+  securityDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 17,
+    marginBottom: 10,
+  },
+  otpRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  otpInput: {
+    flex: 1,
+    marginBottom: 0,
+    letterSpacing: 3,
+    fontWeight: '700',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  otpBtn: {
+    paddingHorizontal: 16,
+    height: 48,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 100,
+  },
+  otpBtnDisabled: {
+    opacity: 0.6,
+  },
+  otpBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  lifeCheckBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+  },
+  lifeCheckBtnIcon: {
+    fontSize: 20,
+  },
+  lifeCheckBtnText: {
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  lifeCheckPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  lifeCheckImg: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#E2E8F0',
+  },
+  lifeCheckInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  lifeCheckSuccessText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  retakeBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 6,
+  },
+  retakeBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
   },
 });

@@ -11,7 +11,7 @@ export default function OnboardingScreen({ navigation }: any) {
   const { width, height } = useWindowDimensions();
 
   const isSmallHeight = height < 750;
-  const isCompactPhone = width < 380 || height < 700;
+  const isCompactPhone = width < 380 || height <= 720;
   const logoSize = isCompactPhone ? 140 : isSmallHeight ? 170 : Math.min(width * 0.5, 210);
 
   const handleGetStarted = async () => {

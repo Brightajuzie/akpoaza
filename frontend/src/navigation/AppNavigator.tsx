@@ -12,7 +12,7 @@ function FixMartHeader() {
   const navigation = useNavigation<any>();
   const { logoUrl, theme } = useContext(SettingsContext);
   const { width, height } = useWindowDimensions();
-  const isCompact = width < 380 || height < 700;
+  const isCompact = width < 380 || height <= 720;
 
   const handleGoHome = () => {
     try {
@@ -130,7 +130,7 @@ function MainTabs() {
   const { width, height } = useWindowDimensions();
   const isLargeScreen = width >= 768;
   const isCompactHeight = height < 760;
-  const isVeryCompact = height < 700;
+  const isVeryCompact = height <= 720; // Compact devices (<= 5.3" screen height)
 
   useEffect(() => {
     const fetchUnread = async () => {
@@ -165,10 +165,10 @@ function MainTabs() {
           alignSelf: 'center',
           width: '100%',
           display: isLargeScreen ? 'none' : 'flex',
-          height: isVeryCompact ? 46 : (isCompactHeight ? 52 : undefined),
-          paddingBottom: isVeryCompact ? 2 : (isCompactHeight ? 4 : undefined),
+          height: isVeryCompact ? 48 : (isCompactHeight ? 52 : undefined),
+          paddingBottom: isVeryCompact ? 3 : (isCompactHeight ? 4 : undefined),
         },
-        tabBarLabelStyle: isVeryCompact ? { fontSize: 10, marginBottom: 1 } : undefined,
+        tabBarLabelStyle: isVeryCompact ? { fontSize: 10, marginBottom: 2 } : undefined,
       }}
     >
       <Tab.Screen 

@@ -907,6 +907,13 @@ router.post('/checkout', async (req: Request, res: Response, next: NextFunction)
       const reference = `STRIPE_${id}_${Date.now()}`;
       const isDummy = !activeStripeKey || activeStripeKey.includes('dummy') || activeStripeKey === 'sk_test_dummy';
 
+      if (checkoutType === 'wallet_funding') {
+        await prisma.walletFunding.update({
+          where: { id },
+          data: { paymentRef: reference, paymentProvider: 'STRIPE', currency: chargeCurrency, amount: chargeAmount },
+        }).catch(() => {});
+      }
+
       if (isDummy) {
         console.log(`[StripeService] Running in sandbox mock mode for ${checkoutType}: ${id}`);
         return res.json({
@@ -927,6 +934,13 @@ router.post('/checkout', async (req: Request, res: Response, next: NextFunction)
           currency: chargeCurrency.toLowerCase(),
           metadata,
         });
+
+        if (checkoutType === 'wallet_funding') {
+          await prisma.walletFunding.update({
+            where: { id },
+            data: { paymentRef: paymentIntent.id, paymentProvider: 'STRIPE', currency: chargeCurrency, amount: chargeAmount },
+          }).catch(() => {});
+        }
 
         return res.json({
           provider: 'STRIPE',
@@ -953,6 +967,13 @@ router.post('/checkout', async (req: Request, res: Response, next: NextFunction)
 
       const reference = `PAY_${id}_${Date.now()}`;
       const isDummy = !activePaystackKey || activePaystackKey.includes('dummy') || activePaystackKey === 'sk_test_dummy';
+
+      if (checkoutType === 'wallet_funding') {
+        await prisma.walletFunding.update({
+          where: { id },
+          data: { paymentRef: reference, paymentProvider: 'PAYSTACK', currency: chargeCurrency, amount: chargeAmount },
+        }).catch(() => {});
+      }
 
       if (isDummy) {
         console.log(`[PaystackService] Running in sandbox mock mode for ${checkoutType}: ${id}`);
@@ -1010,6 +1031,13 @@ router.post('/checkout', async (req: Request, res: Response, next: NextFunction)
 
       const txRef = `FLW_${id}_${Date.now()}`;
       const isDummy = !activeFlutterwaveKey || activeFlutterwaveKey.includes('dummy') || activeFlutterwaveKey.startsWith('FLWSECK_TEST-dummy');
+
+      if (checkoutType === 'wallet_funding') {
+        await prisma.walletFunding.update({
+          where: { id },
+          data: { paymentRef: txRef, paymentProvider: 'FLUTTERWAVE', currency: chargeCurrency, amount: chargeAmount },
+        }).catch(() => {});
+      }
 
       if (isDummy) {
         console.log(`[FlutterwaveService] Running in sandbox mock mode for ${checkoutType}: ${id}`);
@@ -1070,6 +1098,13 @@ router.post('/checkout', async (req: Request, res: Response, next: NextFunction)
 
       const reference = `OPAY_${id}_${Date.now()}`;
       const isDummy = !activeOpaySecretKey || activeOpaySecretKey.includes('dummy') || activeOpayMerchantId.includes('dummy') || activeOpayPublicKey.includes('dummy');
+
+      if (checkoutType === 'wallet_funding') {
+        await prisma.walletFunding.update({
+          where: { id },
+          data: { paymentRef: reference, paymentProvider: 'OPAY', currency: chargeCurrency, amount: chargeAmount },
+        }).catch(() => {});
+      }
 
       if (isDummy) {
         console.log(`[OPayService] Running in sandbox mock mode for ${checkoutType}: ${id}`);
@@ -1329,9 +1364,28 @@ router.get('/paystack/callback', async (req: Request, res: Response, next: NextF
       }
     }
 
+    if (!id && req.query.id) {
+      id = String(req.query.id);
+    }
+
     if (!id) {
-      const ord = await prisma.order.findFirst({ where: { paymentRef: reference } });
-      if (ord) id = ord.id;
+      const wf = await prisma.walletFunding.findFirst({ where: { paymentRef: reference } });
+      if (wf) {
+        id = wf.id;
+      } else {
+        const ord = await prisma.order.findFirst({ where: { paymentRef: reference } });
+        if (ord) {
+          id = ord.id;
+        } else {
+          const bk = await prisma.booking.findFirst({ where: { paymentRef: reference } });
+          if (bk) {
+            id = bk.id;
+          } else {
+            const pcl = await prisma.parcelDelivery.findFirst({ where: { paymentRef: reference } });
+            if (pcl) id = pcl.id;
+          }
+        }
+      }
     }
 
     let matchedType: string | null = null;
@@ -1493,9 +1547,28 @@ router.get('/flutterwave/callback', async (req: Request, res: Response, next: Ne
       }
     }
 
+    if (!id && req.query.id) {
+      id = String(req.query.id);
+    }
+
     if (!id) {
-      const ord = await prisma.order.findFirst({ where: { paymentRef: txRef } });
-      if (ord) id = ord.id;
+      const wf = await prisma.walletFunding.findFirst({ where: { paymentRef: txRef } });
+      if (wf) {
+        id = wf.id;
+      } else {
+        const ord = await prisma.order.findFirst({ where: { paymentRef: txRef } });
+        if (ord) {
+          id = ord.id;
+        } else {
+          const bk = await prisma.booking.findFirst({ where: { paymentRef: txRef } });
+          if (bk) {
+            id = bk.id;
+          } else {
+            const pcl = await prisma.parcelDelivery.findFirst({ where: { paymentRef: txRef } });
+            if (pcl) id = pcl.id;
+          }
+        }
+      }
     }
 
     let matchedType: string | null = null;
@@ -1647,7 +1720,7 @@ router.get('/stripe/mock-pay', (req: Request, res: Response) => {
           <div class="amount">${currSymbol}${amt.toFixed(2)}</div>
           <div class="ref">REF: ${reference}</div>
           <div class="divider"></div>
-          <button class="btn" onclick="location.href='/api/payments/stripe/verify/${reference}'">
+          <button class="btn" onclick="location.href='/api/payments/stripe/verify/${reference}?id=${id || ''}&type=${type || ''}'">
             Authorize & Complete Payment
           </button>
           <div class="secured-text">🔒 256-bit SSL Encrypted Sandbox Checkout</div>
@@ -1698,22 +1771,33 @@ router.get('/stripe/verify/:reference', async (req: Request, res: Response, next
       }
     }
 
+    if (!id && req.query.id) {
+      id = String(req.query.id);
+      if (req.query.type) checkoutType = String(req.query.type);
+    }
+
     if (!id) {
-      // Mock-mode fallback: check if an order/parcel/wallet-funding has paymentRef = reference
-      const ord = await prisma.order.findFirst({ where: { paymentRef: reference } });
-      if (ord) {
-        id = ord.id;
-        checkoutType = 'order';
+      // Mock-mode fallback: check if an order/parcel/wallet-funding/booking has paymentRef = reference
+      const wf = await prisma.walletFunding.findFirst({ where: { paymentRef: reference } });
+      if (wf) {
+        id = wf.id;
+        checkoutType = 'wallet_funding';
       } else {
-        const pcl = await prisma.parcelDelivery.findFirst({ where: { paymentRef: reference } });
-        if (pcl) {
-          id = pcl.id;
-          checkoutType = 'parcel';
+        const ord = await prisma.order.findFirst({ where: { paymentRef: reference } });
+        if (ord) {
+          id = ord.id;
+          checkoutType = 'order';
         } else {
-          const wf = await prisma.walletFunding.findFirst({ where: { paymentRef: reference } });
-          if (wf) {
-            id = wf.id;
-            checkoutType = 'wallet_funding';
+          const bk = await prisma.booking.findFirst({ where: { paymentRef: reference } });
+          if (bk) {
+            id = bk.id;
+            checkoutType = 'booking';
+          } else {
+            const pcl = await prisma.parcelDelivery.findFirst({ where: { paymentRef: reference } });
+            if (pcl) {
+              id = pcl.id;
+              checkoutType = 'parcel';
+            }
           }
         }
       }
@@ -2159,29 +2243,39 @@ router.get('/opay/verify/:reference', async (req: Request, res: Response, next: 
       }
     }
 
-    const order = await prisma.order.findUnique({ where: { id } });
+    let targetId = id;
+    if (!targetId) {
+      const wf = await prisma.walletFunding.findFirst({ where: { paymentRef: reference } });
+      if (wf) targetId = wf.id;
+      else {
+        const ord = await prisma.order.findFirst({ where: { paymentRef: reference } });
+        if (ord) targetId = ord.id;
+      }
+    }
+
+    const order = await prisma.order.findUnique({ where: { id: targetId } });
     if (order) {
       const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
-      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'order', id, chargedAmount });
-      return res.send(await renderPaymentSuccessPage({ checkoutType: 'order', id, provider: 'OPay', reference, frontendUrl }));
+      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'order', id: targetId, chargedAmount });
+      return res.send(await renderPaymentSuccessPage({ checkoutType: 'order', id: targetId, provider: 'OPay', reference, frontendUrl }));
     }
 
-    const booking = await prisma.booking.findUnique({ where: { id } });
+    const booking = await prisma.booking.findUnique({ where: { id: targetId } });
     if (booking) {
       const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
-      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'booking', id, chargedAmount });
-      return res.send(await renderPaymentSuccessPage({ checkoutType: 'booking', id, provider: 'OPay', reference, frontendUrl }));
+      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'booking', id: targetId, chargedAmount });
+      return res.send(await renderPaymentSuccessPage({ checkoutType: 'booking', id: targetId, provider: 'OPay', reference, frontendUrl }));
     }
 
-    const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
+    const parcel = await prisma.parcelDelivery.findUnique({ where: { id: targetId } });
     if (parcel) {
-      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
-      return res.send(await renderPaymentSuccessPage({ checkoutType: 'parcel', id, provider: 'OPay', reference, frontendUrl }));
+      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'parcel', id: targetId, chargedAmount: parcel.totalAmount });
+      return res.send(await renderPaymentSuccessPage({ checkoutType: 'parcel', id: targetId, provider: 'OPay', reference, frontendUrl }));
     }
 
-    const funding = await prisma.walletFunding.findUnique({ where: { id } });
+    const funding = await prisma.walletFunding.findUnique({ where: { id: targetId } });
     if (funding) {
-      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'wallet_funding', id, chargedAmount: funding.amount });
+      await processPaymentVerification({ provider: 'OPAY', reference, checkoutType: 'wallet_funding', id: targetId, chargedAmount: funding.amount });
       return res.send(renderSuccessHtml('OPay', reference, frontendUrl, 'Wallet Funded Successfully!', 'Your OPay top-up has been verified and added to your wallet balance.'));
     }
 

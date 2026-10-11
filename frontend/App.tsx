@@ -14,16 +14,16 @@ import * as Font from 'expo-font';
 import ToastProvider from './src/components/ToastProvider';
 import { StatusBar } from 'expo-status-bar';
 
-// Global text overflow protection for compact devices (e.g. 5.6" screens)
+// Global text overflow protection for compact devices (e.g. 5.3" screens)
 if ((Text as any).defaultProps == null) {
   (Text as any).defaultProps = {};
 }
-(Text as any).defaultProps.maxFontSizeMultiplier = 1.2;
+(Text as any).defaultProps.maxFontSizeMultiplier = 1.15;
 
 if ((TextInput as any).defaultProps == null) {
   (TextInput as any).defaultProps = {};
 }
-(TextInput as any).defaultProps.maxFontSizeMultiplier = 1.2;
+(TextInput as any).defaultProps.maxFontSizeMultiplier = 1.15;
 
 // ── Platform-safe imports ─────────────────────────────────────────────────────
 // On web, @stripe/stripe-react-native crashes at import time because it
@@ -89,7 +89,11 @@ function AppContent() {
       <CartProvider>
         <NetworkProvider>
           <SafeAreaProvider style={{ flex: 1, backgroundColor: theme.background }}>
-            <StatusBar style={colorMode === 'dark' ? 'light' : 'dark'} />
+            <StatusBar
+              style={colorMode === 'dark' ? 'light' : 'dark'}
+              backgroundColor={theme.card || '#FFFFFF'}
+              translucent={Platform.OS === 'android' ? false : undefined}
+            />
             <NetworkBanner />
             <AppNavigator />
             <ToastProvider />
@@ -166,7 +170,7 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     width: '100%',
-    minHeight: '100%',
+    ...(Platform.OS === 'web' ? { minHeight: '100%' } : {}),
   },
   loadingContainer: {
     flex: 1,
@@ -177,6 +181,6 @@ const styles = StyleSheet.create({
   gradient: {
     flex: 1,
     width: '100%',
-    minHeight: '100%',
+    ...(Platform.OS === 'web' ? { minHeight: '100%' } : {}),
   },
 });

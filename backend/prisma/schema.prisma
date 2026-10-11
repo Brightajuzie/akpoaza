@@ -9,53 +9,57 @@ datasource db {
 }
 
 model User {
-  id                 String             @id @default(uuid())
-  email              String             @unique
-  passwordHash       String?
-  name               String
-  role               Role               @default(CUSTOMER)
-  provider           AuthProvider       @default(LOCAL)
-  providerId         String?
-  profileImage       String?
-  passportPhoto      String?
-  actionPhoto        String?
-  phone              String?
-  address            String?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  currentLat         Float?
-  currentLng         Float?
-  latitude           Float?
-  longitude          Float?
-  specialty          String?
-  bvnHash            String?
-  kycReferenceId     String?
-  kycSubmittedAt     DateTime?
-  opayPhone          String?
-  rejectionReason    String?
-  verificationStatus VerificationStatus @default(UNVERIFIED)
-  licensePlate       String?
-  riderStatus        String?            @default("OFFLINE")
-  vehicleType        String?
-  country            String?            @default("Nigeria")
-  currency           String?            @default("NGN")
-  pushToken          String?            // Expo push notification token
-  state              String?            // e.g. "Rivers State", "Lagos"
-  agentId            String?            // agent who manages this user's region
-  agent              User?              @relation("AgentUsers", fields: [agentId], references: [id])
-  managedUsers       User[]             @relation("AgentUsers")
-  bookings           Booking[]          @relation("CustomerBookings")
-  jobs               Booking[]          @relation("HandymanJobs")
-  escrows            Escrow[]           @relation("ProviderEscrows")
-  deliveries         Order[]            @relation("RiderDeliveries")
-  orders             Order[]
-  riderParcels       ParcelDelivery[]   @relation("RiderParcels")
-  customerParcels    ParcelDelivery[]   @relation("CustomerParcels")
-  products           Product[]          @relation("VendorProducts")
-  reviewsGiven       Review[]           @relation("ReviewAuthor")
-  reviewsReceived    Review[]           @relation("ReviewHandyman")
-  wallet             Wallet?
-  walletFundings     WalletFunding[]
+  id                   String             @id @default(uuid())
+  email                String             @unique
+  passwordHash         String?
+  name                 String
+  role                 Role               @default(CUSTOMER)
+  provider             AuthProvider       @default(LOCAL)
+  providerId           String?
+  profileImage         String?
+  passportPhoto        String?
+  actionPhoto          String?
+  phone                String?
+  address              String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+  currentLat           Float?
+  currentLng           Float?
+  latitude             Float?
+  longitude            Float?
+  specialty            String?
+  bvnHash              String?
+  kycReferenceId       String?
+  kycSubmittedAt       DateTime?
+  opayPhone            String?
+  rejectionReason      String?
+  verificationStatus   VerificationStatus @default(UNVERIFIED)
+  licensePlate         String?
+  riderStatus          String?            @default("OFFLINE")
+  vehicleType          String?
+  country              String?            @default("Nigeria")
+  currency             String?            @default("NGN")
+  pushToken            String?            // Expo push notification token
+  state                String?            // e.g. "Rivers State", "Lagos"
+  agentId              String?            // agent who manages this user's region
+  passwordResetToken   String?            // SHA-256 hash of the 6-digit OTP
+  passwordResetExpires DateTime?          // OTP expiry timestamp
+  withdrawalOtp        String?            // SHA-256 hash of the 6-digit withdrawal OTP
+  withdrawalOtpExpires DateTime?          // Withdrawal OTP expiry timestamp
+  agent                User?              @relation("AgentUsers", fields: [agentId], references: [id])
+  managedUsers         User[]             @relation("AgentUsers")
+  bookings             Booking[]          @relation("CustomerBookings")
+  jobs                 Booking[]          @relation("HandymanJobs")
+  escrows              Escrow[]           @relation("ProviderEscrows")
+  deliveries           Order[]            @relation("RiderDeliveries")
+  orders               Order[]
+  riderParcels         ParcelDelivery[]   @relation("RiderParcels")
+  customerParcels      ParcelDelivery[]   @relation("CustomerParcels")
+  products             Product[]          @relation("VendorProducts")
+  reviewsGiven         Review[]           @relation("ReviewAuthor")
+  reviewsReceived      Review[]           @relation("ReviewHandyman")
+  wallet               Wallet?
+  walletFundings       WalletFunding[]
 }
 
 model Product {
@@ -278,6 +282,8 @@ model Withdrawal {
   bankName      String?
   bankCode      String?
   instant       Boolean  @default(false)
+  livenessPhoto String?  // Facial liveness check selfie for high-value withdrawals
+  otpVerified   Boolean  @default(false) // First-time withdrawal verified by OTP
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   wallet        Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)

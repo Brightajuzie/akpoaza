@@ -43,8 +43,9 @@ export default function CheckoutScreen({ route, navigation }: any) {
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const isDark = colorMode === 'dark';
 
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isLarge = width >= 768;
+  const isCompact = height <= 720;
 
   // State
   const [activeRecordId, setActiveRecordId] = useState<string | null>(initialId && initialId !== 'dummy-id' ? initialId : null);
@@ -580,10 +581,10 @@ export default function CheckoutScreen({ route, navigation }: any) {
       </Modal>
 
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerIcon}>🔒</Text>
-        <Text style={[styles.title, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>Secure Checkout</Text>
-        <Text style={[styles.subtitle, { color: isDark ? '#64748B' : '#94A3B8' }]}>
+      <View style={[styles.header, isCompact && { marginBottom: 10 }]}>
+        <Text style={[styles.headerIcon, isCompact && { fontSize: 24, marginBottom: 2 }]}>🔒</Text>
+        <Text style={[styles.title, { color: isDark ? '#F1F5F9' : '#0F172A' }, isCompact && { fontSize: 20 }]}>Secure Checkout</Text>
+        <Text style={[styles.subtitle, { color: isDark ? '#64748B' : '#94A3B8' }, isCompact && { fontSize: 12 }]}>
           {checkoutType === 'booking' ? 'Booking Payment' : checkoutType === 'parcel' ? 'Parcel Delivery Payment' : 'Order Payment'}
         </Text>
       </View>
@@ -845,11 +846,15 @@ export default function CheckoutScreen({ route, navigation }: any) {
       )}
 
       {/* Amount Card */}
-      <View style={[styles.amountCard, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
+      <View style={[
+        styles.amountCard,
+        { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' },
+        isCompact && { padding: 14, borderRadius: 16, marginBottom: 10 }
+      ]}>
         <Text style={[styles.amountLabel, { color: isDark ? '#64748B' : '#94A3B8' }]}>
           {isRemainingPayment ? 'Remaining Amount Due (50%)' : 'Amount Due'}
         </Text>
-        <Text style={[styles.amountValue, { color: theme.primary }]} adjustsFontSizeToFit numberOfLines={1}>
+        <Text style={[styles.amountValue, { color: theme.primary }, isCompact && { fontSize: 24 }]} adjustsFontSizeToFit numberOfLines={1}>
           {fmt(displayAmount)}
         </Text>
         {isRemainingPayment && (

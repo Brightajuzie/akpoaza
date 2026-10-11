@@ -13,6 +13,7 @@ import apiClient, { getImageUri } from '../api/client';
 import ResponsiveContainer from '../components/ResponsiveContainer';
 import SafeLogo from '../components/SafeLogo';
 import ThemeToggle from '../components/ThemeToggle';
+import UserGuideModal from '../components/UserGuideModal';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const PROMO_SLIDES = [
@@ -75,7 +76,7 @@ export default function HomeScreen({ navigation }: any) {
   const isTablet = width >= 768 && width < 1024;
   const isMobile = width < 768;
   const isCompactHeight = height < 760;  // Devices with <= 5.6" screen height
-  const isVeryCompact  = height < 700;  // Devices with ~5.3" screen height or smaller
+  const isVeryCompact  = height <= 720;  // Devices with <= 5.3" screen height
   const isDark = colorMode === 'dark';
 
   // ── State ────────────────────────────────────────────────────────────────
@@ -85,6 +86,7 @@ export default function HomeScreen({ navigation }: any) {
   const [addedCartFeedback, setAddedCartFeedback] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showUserGuide, setShowUserGuide] = useState(false);
   const [slides, setSlides] = useState<any[]>([]);
   const [slidesLoading, setSlidesLoading] = useState(true);
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
@@ -532,6 +534,7 @@ export default function HomeScreen({ navigation }: any) {
                   { icon: '🛒', label: 'Cart', screen: 'CartTab' },
                   { icon: '🔔', label: 'Alerts', screen: 'NotificationsTab' },
                   { icon: '👤', label: 'Profile', screen: 'ProfileTab' },
+                  { icon: '📘', label: 'User Guide', screen: '__guide__' },
                 ].map(item => (
                   <TouchableOpacity
                     key={item.screen}
@@ -539,11 +542,13 @@ export default function HomeScreen({ navigation }: any) {
                       styles.drawerItem,
                       { borderBottomColor: theme.border },
                       item.screen === '__sell__' && { backgroundColor: theme.primary + '14' },
+                      item.screen === '__guide__' && { backgroundColor: theme.primary + '0A' },
                       isVeryCompact && { paddingVertical: 8, paddingHorizontal: 12 },
                     ]}
                     onPress={() => {
                       setMenuOpen(false);
                       if (item.screen === '__sell__') handleSellPress();
+                      else if (item.screen === '__guide__') setShowUserGuide(true);
                       else navigation.navigate(item.screen);
                     }}
                   >
@@ -1485,6 +1490,14 @@ export default function HomeScreen({ navigation }: any) {
 
       {/* Mobile Hamburger Modal Drawer — native overlay that cannot be obscured */}
       {renderMobileDrawer()}
+
+      {/* User Guide Modal — accessible from hamburger drawer and Profile */}
+      <UserGuideModal
+        visible={showUserGuide}
+        onClose={() => setShowUserGuide(false)}
+        theme={theme}
+        colorMode={colorMode}
+      />
     </View>
   );
 }

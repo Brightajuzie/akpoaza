@@ -2,7 +2,15 @@ import { Router, Request, Response } from 'express';
 import { PrismaClient, Role } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import prisma from '../lib/prisma';
-import { notifyMany } from '../lib/notify';
+import {
+  notifyMany,
+  sendFirstWeekOfMonthNotification,
+  sendWeekendNotification,
+  sendIncompleteRegistrationNotification,
+  sendNonUploadNotification,
+  sendUserGuideNotification,
+  sendWelcomeNotification,
+} from '../lib/notify';
 
 const router = Router();
 
@@ -232,6 +240,228 @@ router.post('/admin/message', authenticateToken, async (req: AuthRequest, res: R
   } catch (error) {
     console.error('POST /notifications/admin/message error:', error);
     res.status(500).json({ error: 'Failed to send admin message' });
+  }
+});
+
+/**
+ * GET /notifications/admin/campaigns/templates
+ * Authenticated, ADMIN only.
+ * Returns preset message campaigns with rich content for all channels.
+ */
+router.get('/admin/campaigns/templates', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const admin = req.user!;
+    if (admin.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Forbidden: admin access only' });
+    }
+
+    const templates = [
+      {
+        id: 'WELCOME',
+        name: '🎉 Welcome & Onboarding Guide',
+        category: 'Registration',
+        defaultTitle: '🎉 Welcome to FixMart — Your Account is Ready!',
+        defaultBody: 'Welcome to FixMart! Explore verified artisans, genuine hardware supplies, and express parcel delivery. Your payments are 100% safeguarded by FixMart Escrow.',
+        target: 'ALL',
+        recommendedRole: 'ALL',
+        channels: ['In-App Bell', 'Push Notification', 'HTML Email', 'SMS'],
+      },
+      {
+        id: 'FIRST_WEEK',
+        name: '🗓️ First Week of the Month Message',
+        category: 'Monthly Engagement',
+        defaultTitle: '🗓️ New Month, Fresh Starts with FixMart!',
+        defaultBody: 'Happy New Month! Kick off the first week of the month with proactive home maintenance, restock workshop materials, and explore new verified artisans on FixMart.',
+        target: 'ALL',
+        recommendedRole: 'ALL',
+        channels: ['In-App Bell', 'Push Notification', 'HTML Email', 'SMS'],
+      },
+      {
+        id: 'WEEKEND',
+        name: '⚡ Weekend Special & Emergency Repairs',
+        category: 'Weekly Engagement',
+        defaultTitle: '⚡ FixMart Weekend Alert: Relax While We Fix It!',
+        defaultBody: 'Happy Weekend! Don\'t let pending household repairs spoil your break. Our verified plumbers, electricians, and technicians are on standby while you unwind.',
+        target: 'ALL',
+        recommendedRole: 'ALL',
+        channels: ['In-App Bell', 'Push Notification', 'HTML Email', 'SMS'],
+      },
+      {
+        id: 'INCOMPLETE_REG',
+        name: '⚠️ Incomplete Registration Nudge',
+        category: 'Account & KYC',
+        defaultTitle: '⚠️ Action Required: Complete Your FixMart Profile',
+        defaultBody: 'Your FixMart profile is missing key details (phone, delivery address, or KYC verification). Complete your profile now to unlock escrow payouts and verified badges.',
+        target: 'INCOMPLETE',
+        recommendedRole: 'ALL',
+        channels: ['In-App Bell', 'Push Notification', 'HTML Email', 'SMS'],
+      },
+      {
+        id: 'NON_UPLOAD',
+        name: '📦 Non-Upload of Products & Services',
+        category: 'Merchant Activation',
+        defaultTitle: '📦 Start Selling: Upload Your Products & Services on FixMart!',
+        defaultBody: 'Your storefront currently has 0 active listings! Upload your products and services today to get discovered by nearby customers and start earning daily income.',
+        target: 'NON_UPLOAD',
+        recommendedRole: 'VENDOR',
+        channels: ['In-App Bell', 'Push Notification', 'HTML Email', 'SMS'],
+      },
+      {
+        id: 'USER_GUIDE',
+        name: '📘 Complete User Guide & Step-by-Step Prompts',
+        category: 'Education & Trust',
+        defaultTitle: '📘 FixMart Complete User Guide & Essential Tips',
+        defaultBody: 'Master FixMart in minutes! Learn how to hire verified artisans, order genuine hardware tools, track deliveries live, and protect every payment with escrow.',
+        target: 'ALL',
+        recommendedRole: 'ALL',
+        channels: ['In-App Bell', 'Push Notification', 'HTML Email', 'SMS'],
+      },
+    ];
+
+    res.json({ templates });
+  } catch (error) {
+    console.error('GET /notifications/admin/campaigns/templates error:', error);
+    res.status(500).json({ error: 'Failed to fetch campaign templates' });
+  }
+});
+
+/**
+ * POST /notifications/admin/campaigns/dispatch
+ * Authenticated, ADMIN only.
+ * Dispatches a preset campaign across In-App, Push, Email, and SMS.
+ * Body: { campaignId, target?: 'ALL' | 'ROLE' | 'USER' | 'INCOMPLETE' | 'NON_UPLOAD', role?, userId?, customTitle?, customBody? }
+ */
+router.post('/admin/campaigns/dispatch', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const admin = req.user!;
+    if (admin.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Forbidden: admin access only' });
+    }
+
+    const { campaignId, target = 'ALL', role, userId } = req.body;
+
+    if (!campaignId) {
+      return res.status(400).json({ error: 'campaignId is required' });
+    }
+
+    let recipients: { id: string; name: string; email: string | null; phone: string | null; pushToken: string | null; role: Role; verificationStatus: string; specialty: string | null; address: string | null }[] = [];
+
+    if (target === 'USER') {
+      if (!userId) return res.status(400).json({ error: 'userId is required when target is USER' });
+      const u = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, name: true, email: true, phone: true, pushToken: true, role: true, verificationStatus: true, specialty: true, address: true },
+      });
+      if (!u) return res.status(404).json({ error: 'Target user not found' });
+      recipients = [u];
+    } else if (target === 'INCOMPLETE') {
+      // Find users with missing phone, address, or unverified status
+      recipients = await prisma.user.findMany({
+        where: {
+          OR: [
+            { phone: null },
+            { phone: '' },
+            { address: null },
+            { address: '' },
+            { verificationStatus: { in: ['UNVERIFIED', 'REJECTED'] } },
+          ],
+        },
+        select: { id: true, name: true, email: true, phone: true, pushToken: true, role: true, verificationStatus: true, specialty: true, address: true },
+      });
+    } else if (target === 'NON_UPLOAD') {
+      // Find vendors with 0 products or handymen with 0 bookings/jobs
+      recipients = await prisma.user.findMany({
+        where: {
+          OR: [
+            { role: 'VENDOR', products: { none: {} } },
+            { role: 'HANDYMAN', specialty: null },
+          ],
+        },
+        select: { id: true, name: true, email: true, phone: true, pushToken: true, role: true, verificationStatus: true, specialty: true, address: true },
+      });
+    } else if (target === 'ROLE') {
+      if (!role || !MESSAGEABLE_ROLES.includes(role)) {
+        return res.status(400).json({ error: `role must be one of ${MESSAGEABLE_ROLES.join(', ')}` });
+      }
+      recipients = await prisma.user.findMany({
+        where: { role: role as Role },
+        select: { id: true, name: true, email: true, phone: true, pushToken: true, role: true, verificationStatus: true, specialty: true, address: true },
+      });
+    } else {
+      recipients = await prisma.user.findMany({
+        where: { role: { in: MESSAGEABLE_ROLES } },
+        select: { id: true, name: true, email: true, phone: true, pushToken: true, role: true, verificationStatus: true, specialty: true, address: true },
+      });
+    }
+
+    if (recipients.length === 0) {
+      return res.status(404).json({ error: 'No matching recipients found for this target criteria' });
+    }
+
+    // Dispatch corresponding campaign
+    await Promise.allSettled(
+      recipients.map((r) => {
+        switch (campaignId) {
+          case 'FIRST_WEEK':
+            return sendFirstWeekOfMonthNotification(r);
+          case 'WEEKEND':
+            return sendWeekendNotification(r);
+          case 'INCOMPLETE_REG': {
+            const missing: string[] = [];
+            if (!r.phone) missing.push('Phone Number');
+            if (!r.address) missing.push('Delivery Address');
+            if (r.verificationStatus !== 'VERIFIED') missing.push('KYC Verification');
+            return sendIncompleteRegistrationNotification({ ...r, missingFields: missing });
+          }
+          case 'NON_UPLOAD':
+            return sendNonUploadNotification(r);
+          case 'USER_GUIDE':
+            return sendUserGuideNotification(r);
+          case 'WELCOME':
+            return sendWelcomeNotification({
+              id: r.id,
+              name: r.name,
+              email: r.email || '',
+              role: r.role,
+              phone: r.phone,
+              pushToken: r.pushToken,
+              verificationStatus: r.verificationStatus,
+              specialty: r.specialty,
+            });
+          default:
+            return sendUserGuideNotification(r);
+        }
+      })
+    );
+
+    const stats = {
+      total: recipients.length,
+      inApp: recipients.length,
+      emailQueued: recipients.filter((r) => !!r.email).length,
+      smsQueued: recipients.filter((r) => !!r.phone).length,
+      pushQueued: recipients.filter((r) => !!r.pushToken).length,
+    };
+
+    // Self-notify the admin
+    await prisma.notification.create({
+      data: {
+        userId: admin.userId,
+        title: `✅ Campaign Sent: ${campaignId}`,
+        body: `Multi-channel campaign dispatched to ${recipients.length} user(s). In-App: ${stats.inApp}, Emails: ${stats.emailQueued}, Push: ${stats.pushQueued}, SMS: ${stats.smsQueued}.`,
+        type: 'ADMIN_MESSAGE',
+      },
+    }).catch(() => {});
+
+    res.json({
+      success: true,
+      campaignId,
+      recipientCount: recipients.length,
+      stats,
+      message: `Campaign "${campaignId}" dispatched to ${recipients.length} recipient(s) across all active channels!`,
+    });
+  } catch (error) {
+    console.error('POST /notifications/admin/campaigns/dispatch error:', error);
+    res.status(500).json({ error: 'Failed to dispatch campaign' });
   }
 });
 

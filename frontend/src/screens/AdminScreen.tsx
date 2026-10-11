@@ -983,6 +983,91 @@ export default function AdminScreen() {
     );
   };
 
+  const applyCampaignPreset = (presetKey: string) => {
+    switch (presetKey) {
+      case 'FIRST_WEEK':
+        setAdminMsgTitle('🗓️ New Month, Fresh Starts with FixMart!');
+        setAdminMsgBody('Happy New Month! Kick off the first week of the month with proactive home maintenance, restock workshop materials, and explore new verified artisans on FixMart.');
+        setAdminMsgTarget('ALL');
+        break;
+      case 'WEEKEND':
+        setAdminMsgTitle('⚡ FixMart Weekend Alert: Relax While We Fix It!');
+        setAdminMsgBody('Happy Weekend! Don\'t let pending household repairs spoil your break. Our verified plumbers, electricians, and technicians are on standby while you unwind.');
+        setAdminMsgTarget('ALL');
+        break;
+      case 'INCOMPLETE_REG':
+        setAdminMsgTitle('⚠️ Action Required: Complete Your FixMart Profile');
+        setAdminMsgBody('Your FixMart profile is missing key details (phone, delivery address, or KYC verification). Complete your profile now to unlock escrow payouts and verified badges.');
+        setAdminMsgTarget('ALL');
+        break;
+      case 'NON_UPLOAD':
+        setAdminMsgTitle('📦 Start Selling: Upload Your Products & Services on FixMart!');
+        setAdminMsgBody('Your storefront currently has 0 active listings! Upload your products and services today to get discovered by nearby customers and start earning daily income.');
+        setAdminMsgTarget('ROLE');
+        setAdminMsgRole('VENDOR');
+        break;
+      case 'USER_GUIDE':
+        setAdminMsgTitle('📘 FixMart Complete User Guide & Essential Tips');
+        setAdminMsgBody('Master FixMart in minutes! Learn how to hire verified artisans, order genuine hardware tools, track deliveries live, and protect every payment with escrow.');
+        setAdminMsgTarget('ALL');
+        break;
+      case 'WELCOME':
+        setAdminMsgTitle('🎉 Welcome to FixMart — Your Account is Ready!');
+        setAdminMsgBody('Welcome to FixMart! Explore verified artisans, genuine hardware supplies, and express parcel delivery. Your payments are 100% safeguarded by FixMart Escrow.');
+        setAdminMsgTarget('ALL');
+        break;
+    }
+  };
+
+  const handleDispatchCampaign = async (campaignId: string, campaignName: string, targetType: string = 'ALL') => {
+    const targetDesc = targetType === 'INCOMPLETE'
+      ? 'users with incomplete profiles / KYC'
+      : targetType === 'NON_UPLOAD'
+      ? 'merchants and artisans with 0 listings'
+      : 'all targeted users';
+
+    confirmAction(
+      `🚀 Launch ${campaignName}`,
+      `Dispatch the "${campaignName}" campaign to ${targetDesc}?\n\nThis will send across In-App Notification Bell, Phone Lockscreen Push, HTML Email, and SMS text message.`,
+      async () => {
+        setAdminMsgSending(true);
+        setAdminMsgFeedback(null);
+        try {
+          const res = await apiClient.post('/notifications/admin/campaigns/dispatch', {
+            campaignId,
+            target: targetType,
+          });
+
+          const count = res.data?.recipientCount ?? 0;
+          const stats = res.data?.stats;
+          const successTitle = `🎉 ${campaignName} Dispatched!`;
+          const successMsg = res.data?.message || `Dispatched to ${count} recipient(s). In-App: ${stats?.inApp ?? count}, Emails: ${stats?.emailQueued ?? 0}, SMS: ${stats?.smsQueued ?? 0}, Phone Push: ${stats?.pushQueued ?? 0}.`;
+
+          Alert.alert(successTitle, successMsg);
+          setAdminMsgFeedback({
+            type: 'success',
+            title: successTitle,
+            message: successMsg,
+            recipientCount: count,
+            stats,
+            timestamp: new Date().toLocaleTimeString(),
+          });
+        } catch (e: any) {
+          const errorMsg = e.response?.data?.error || e.message || 'Failed to dispatch campaign.';
+          Alert.alert('❌ Error Dispatching Campaign', errorMsg);
+          setAdminMsgFeedback({
+            type: 'error',
+            title: '❌ Campaign Dispatch Failed',
+            message: errorMsg,
+            timestamp: new Date().toLocaleTimeString(),
+          });
+        } finally {
+          setAdminMsgSending(false);
+        }
+      }
+    );
+  };
+
   useEffect(() => {
     if (activeTab === 'transactions' && isAdmin) {
       fetchTransactions();
@@ -5169,6 +5254,146 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
             <Text style={[styles.listItemMeta, { marginBottom: 16 }]}>
               Send a message to a specific user, every user of one role, or everyone at once (customers, vendors, artisans &amp; riders). Delivered as an in-app notification, email and SMS.
             </Text>
+
+            {/* ── Preset Campaigns Section ── */}
+            <View style={[styles.card, { marginBottom: 16, borderColor: theme.primary + '50' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ fontSize: 18 }}>🚀</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: textColor }}>
+                    Automated & Scheduled Campaign Presets
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: theme.primary, backgroundColor: theme.primary + '18', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                  Multi-Channel (In-App • Push • Email • SMS)
+                </Text>
+              </View>
+
+              <Text style={{ fontSize: 12, color: subtextColor, marginBottom: 14 }}>
+                Choose a pre-crafted campaign to auto-fill the composer or launch instantly to targeted audiences:
+              </Text>
+
+              <View style={{ gap: 10 }}>
+                {[
+                  {
+                    id: 'FIRST_WEEK',
+                    icon: '🗓️',
+                    name: 'First Week of the Month',
+                    desc: 'Monthly kickoff message encouraging routine home maintenance, restock workshop materials, and hiring verified artisans.',
+                    target: 'ALL',
+                    badge: 'Monthly Kickoff',
+                    badgeColor: '#059669',
+                  },
+                  {
+                    id: 'WEEKEND',
+                    icon: '⚡',
+                    name: 'Weekend Special & Emergency Repairs',
+                    desc: 'Weekend prompt highlighting on-demand emergency repairs, express parcel delivery, and relaxation while FixMart fixes it.',
+                    target: 'ALL',
+                    badge: 'Weekend Prompt',
+                    badgeColor: '#D97706',
+                  },
+                  {
+                    id: 'INCOMPLETE_REG',
+                    icon: '⚠️',
+                    name: 'Incomplete Registration Nudge',
+                    desc: 'Targets users with missing phone, delivery address, or KYC details to finish registration for escrow safety and verified badges.',
+                    target: 'INCOMPLETE',
+                    badge: 'KYC & Profile Nudge',
+                    badgeColor: '#DC2626',
+                  },
+                  {
+                    id: 'NON_UPLOAD',
+                    icon: '📦',
+                    name: 'Non-Upload of Products & Services',
+                    desc: 'Targets vendors and artisans with 0 listings, walking them through uploading catalogs to start receiving orders.',
+                    target: 'NON_UPLOAD',
+                    badge: 'Seller Activation',
+                    badgeColor: '#7C3AED',
+                  },
+                  {
+                    id: 'USER_GUIDE',
+                    icon: '📘',
+                    name: 'FixMart User Guide & Prompts',
+                    desc: 'Comprehensive step-by-step educational guide covering artisan booking, hardware shopping, escrow protection, and rider dispatch.',
+                    target: 'ALL',
+                    badge: 'Education & Trust',
+                    badgeColor: '#2563EB',
+                  },
+                  {
+                    id: 'WELCOME',
+                    icon: '🎉',
+                    name: 'Welcome & Registration Message',
+                    desc: 'Warm role-tailored greeting for newly registered users with getting-started tips, escrow reassurance, and direct app links.',
+                    target: 'ALL',
+                    badge: 'New Users',
+                    badgeColor: '#059669',
+                  },
+                ].map((camp) => (
+                  <View
+                    key={camp.id}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: borderColor,
+                      borderRadius: 12,
+                      padding: 12,
+                      backgroundColor: cardBg,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                        <Text style={{ fontSize: 16 }}>{camp.icon}</Text>
+                        <Text style={{ fontWeight: '800', color: textColor, fontSize: 13, flexShrink: 1 }}>
+                          {camp.name}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 10, fontWeight: '700', color: camp.badgeColor, backgroundColor: camp.badgeColor + '18', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                        {camp.badge}
+                      </Text>
+                    </View>
+
+                    <Text style={{ fontSize: 11, color: subtextColor, lineHeight: 16, marginBottom: 10 }}>
+                      {camp.desc}
+                    </Text>
+
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          paddingVertical: 7,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: theme.primary,
+                          alignItems: 'center',
+                          backgroundColor: theme.primary + '10',
+                        }}
+                        onPress={() => applyCampaignPreset(camp.id)}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: theme.primary }}>
+                          ✍️ Load into Composer
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={{
+                          flex: 1,
+                          paddingVertical: 7,
+                          borderRadius: 8,
+                          backgroundColor: camp.badgeColor,
+                          alignItems: 'center',
+                        }}
+                        onPress={() => handleDispatchCampaign(camp.id, camp.name, camp.target)}
+                        disabled={adminMsgSending}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' }}>
+                          🚀 1-Click Launch
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
 
             <View style={styles.card}>
               {/* Target selector */}
