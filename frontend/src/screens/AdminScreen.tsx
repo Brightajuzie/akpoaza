@@ -1515,10 +1515,10 @@ Industrial Safety Helmet,Standard industrial safety hard hat yellow,7500,30,Safe
 Wall Paint Brilliant White 20L,Anti-fungal emulsion interior and exterior wall paint,28000,12,Painting,20L,22kg,,`,
 
     VENDORS: `name,email,password,phone,role,state,address,specialty
-FixMart Hardware Hub,hardware.hub@fixmart.ng,FixMart@123,08012345678,VENDOR,Rivers State,12 Aba Road Port Harcourt,Building & Hardware
-Chidi Electrical Stores,chidi.elect@fixmart.ng,FixMart@123,08098765432,VENDOR,Lagos State,45 Ikeja Plaza Lagos,Electrical Supplies
-Prime Tools Nigeria,primetools@fixmart.ng,FixMart@123,08022223333,VENDOR,Abuja,Plot 100 Garki Abuja,Power & Hand Tools
-Emeka Plumbing Service,emeka.plumber@fixmart.ng,FixMart@123,08055551234,HANDYMAN,Rivers State,10 Stadium Road PH,Plumbing`,
+FixMart Hardware Hub,hardware.hub@fixmart.com.ng,FixMart@123,08012345678,VENDOR,Rivers State,12 Aba Road Port Harcourt,Building & Hardware
+Chidi Electrical Stores,chidi.elect@fixmart.com.ng,FixMart@123,08098765432,VENDOR,Lagos State,45 Ikeja Plaza Lagos,Electrical Supplies
+Prime Tools Nigeria,primetools@fixmart.com.ng,FixMart@123,08022223333,VENDOR,Abuja,Plot 100 Garki Abuja,Power & Hand Tools
+Emeka Plumbing Service,emeka.plumber@fixmart.com.ng,FixMart@123,08055551234,HANDYMAN,Rivers State,10 Stadium Road PH,Plumbing`,
 
     SERVICES: `name,description,category,basePrice
 Emergency Plumbing & Pipe Leak Repair,Rapid on-demand pipe repair drain clearing and leakage fixing,Plumbing,7500

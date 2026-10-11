@@ -22,8 +22,8 @@ export function applyGoogleOptimization(settings: Record<string, string>) {
     const googleVerification = settings.google_site_verification || '';
     const gaId = settings.google_analytics_id || '';
     const gtmId = settings.google_tag_manager_id || '';
-    const logoUrl = settings.logo_url || 'https://fixmart.ng/assets/icon.png';
-    const currentUrl = typeof window !== 'undefined' ? window.location.origin : 'https://fixmart.ng';
+    const logoUrl = settings.logo_url || 'https://fixmart.com.ng/assets/icon.png';
+    const currentUrl = typeof window !== 'undefined' ? window.location.origin : 'https://fixmart.com.ng';
 
     // ── 1. Update Document Title ──
     const customTitle = settings.seo_meta_title || `${siteName} | Handyman Services & Online Marketplace`;

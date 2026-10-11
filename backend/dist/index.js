@@ -100,7 +100,7 @@ app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../
 // ── Google SEO: Dynamic XML Sitemap ──────────────────────────────────────────
 const generateSitemap = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const host = req.get('host') || 'fixmart.ng';
+        const host = req.get('host') || 'fixmart.com.ng';
         const protocol = req.protocol || 'https';
         const baseUrl = `${protocol}://${host}`;
         const [products, services] = yield Promise.all([
@@ -157,7 +157,7 @@ app.get('/sitemap.xml', generateSitemap);
 app.get('/api/sitemap.xml', generateSitemap);
 // ── Google SEO: robots.txt ───────────────────────────────────────────────────
 const sendRobotsTxt = (req, res) => {
-    const host = req.get('host') || 'fixmart.ng';
+    const host = req.get('host') || 'fixmart.com.ng';
     const protocol = req.protocol || 'https';
     const sitemapUrl = `${protocol}://${host}/sitemap.xml`;
     const robots = `# Google & Global Search Engine Crawler Rules

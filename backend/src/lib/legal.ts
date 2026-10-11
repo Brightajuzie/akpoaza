@@ -177,7 +177,7 @@ export function renderPrivacyPolicyHtml(): string {
     <p>To request deletion of your account and personal data:</p>
     <ul>
       <li><strong>Within the App:</strong> Go to <em>Profile Tab</em> &rarr; <em>Account Settings</em> &rarr; tap <em>Delete My Account</em>.</li>
-      <li><strong>Web Request / Email:</strong> Visit our dedicated <a href="/account-deletion">Account Deletion Request Page</a> or send an email to <a href="mailto:support@fixmart.ng">support@fixmart.ng</a> with the subject line "Account Deletion Request" and your registered email address.</li>
+      <li><strong>Web Request / Email:</strong> Visit our dedicated <a href="/account-deletion">Account Deletion Request Page</a> or send an email to <a href="mailto:support@fixmart.com.ng">support@fixmart.com.ng</a> with the subject line "Account Deletion Request" and your registered email address.</li>
     </ul>
     <p>Upon receiving your request, your account credentials and personal profile information will be permanently deleted from our active databases within thirty (30) days, except where retention is strictly required by financial auditing or legal compliance regulations.</p>
 
@@ -192,10 +192,10 @@ export function renderPrivacyPolicyHtml(): string {
       <p>If you have any questions, feedback, or concerns regarding this Privacy Policy or your personal information, please contact our data privacy officer at:</p>
       <p>
         <strong>FixMart / Akpoaza</strong><br>
-        <strong>Email:</strong> <a href="mailto:support@fixmart.ng">support@fixmart.ng</a> / <a href="mailto:privacy@fixmart.ng">privacy@fixmart.ng</a><br>
+        <strong>Email:</strong> <a href="mailto:support@fixmart.com.ng">support@fixmart.com.ng</a> / <a href="mailto:privacy@fixmart.com.ng">privacy@fixmart.com.ng</a><br>
         <strong>Publisher:</strong> Bright Ajuzie<br>
         <strong>Location:</strong> Nigeria<br>
-        <strong>Website:</strong> <a href="https://akpoaza-3.onrender.com">https://akpoaza-3.onrender.com</a>
+        <strong>Website:</strong> <a href="https://fixmart.com.ng">https://fixmart.com.ng</a>
       </p>
     </div>
 
@@ -307,7 +307,7 @@ export function renderAccountDeletionHtml(): string {
       <h3 style="margin-bottom:10px; color:var(--primary-dark);">Option 2: Direct Email Request</h3>
       <p>If you have uninstalled the app or cannot log in, email our support team directly:</p>
       <ul>
-        <li>Send an email to: <a href="mailto:support@fixmart.ng">support@fixmart.ng</a> or <a href="mailto:brightajuzie@gmail.com">brightajuzie@gmail.com</a></li>
+        <li>Send an email to: <a href="mailto:support@fixmart.com.ng">support@fixmart.com.ng</a> or <a href="mailto:brightajuzie@gmail.com">brightajuzie@gmail.com</a></li>
         <li>Subject: <code>Account Deletion Request - [Your Registered Email]</code></li>
         <li>Provide your full name and registered phone number for verification.</li>
       </ul>

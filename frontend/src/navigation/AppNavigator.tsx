@@ -272,7 +272,7 @@ export default function AppNavigator() {
   }
 
   const linking = {
-    prefixes: ['handymanecommerce://', 'https://fixmart.ng', 'https://akpoaza-3.onrender.com'],
+    prefixes: ['handymanecommerce://', 'https://fixmart.com.ng', 'https://akpoaza-3.onrender.com'],
     config: {
       screens: {
         Main: {
