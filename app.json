@@ -9,7 +9,7 @@
       "web"
     ],
     "scheme": "handymanecommerce",
-    "version": "6.0.3",
+    "version": "6.0.4",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "splash": {
@@ -76,7 +76,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.akpoaza.kachlinks",
-      "versionCode": 7,
+      "versionCode": 9,
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
