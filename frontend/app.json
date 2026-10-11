@@ -87,7 +87,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.akpoaza.kachlinks",
-      "versionCode": 9,
+      "versionCode": 10,
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
