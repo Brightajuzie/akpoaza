@@ -44,6 +44,7 @@ const upload_1 = __importDefault(require("./routes/upload"));
 const wallet_1 = __importDefault(require("./routes/wallet"));
 const parcels_1 = __importDefault(require("./routes/parcels"));
 const slides_1 = __importDefault(require("./routes/slides"));
+const agents_1 = __importDefault(require("./routes/agents"));
 const errorHandler_1 = require("./middleware/errorHandler");
 const prisma_1 = __importDefault(require("./lib/prisma"));
 const wallet_2 = require("./lib/wallet");
@@ -219,6 +220,7 @@ app.use('/api/kyc', kyc_1.default);
 app.use('/api/wallet', wallet_1.default);
 app.use('/api/parcels', parcels_1.default);
 app.use('/api/slides', slides_1.default);
+app.use('/api/agents', agents_1.default);
 // Fallback 404 handler for undefined routes / incorrect HTTP methods
 app.use((req, res, next) => {
     res.status(404).json({

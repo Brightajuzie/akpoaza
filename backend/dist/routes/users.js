@@ -54,6 +54,9 @@ router.get('/', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0
                 opayPhone: true,
                 verificationStatus: true,
                 address: true,
+                state: true,
+                agentId: true,
+                agent: { select: { id: true, name: true } },
                 currentLat: true,
                 currentLng: true,
                 specialty: true,
@@ -69,7 +72,7 @@ router.get('/', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0
         });
         // Shape the response to rename/flatten fields for clarity
         const formatted = users.map((u) => {
-            var _a, _b, _c, _d, _e, _f;
+            var _a, _b, _c, _d, _e, _f, _g, _h, _j;
             return ({
                 id: u.id,
                 email: u.email,
@@ -79,9 +82,12 @@ router.get('/', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0
                 opayPhone: (_b = u.opayPhone) !== null && _b !== void 0 ? _b : null,
                 verificationStatus: u.verificationStatus,
                 address: (_c = u.address) !== null && _c !== void 0 ? _c : null,
-                latitude: (_d = u.currentLat) !== null && _d !== void 0 ? _d : null,
-                longitude: (_e = u.currentLng) !== null && _e !== void 0 ? _e : null,
-                specialty: (_f = u.specialty) !== null && _f !== void 0 ? _f : null,
+                state: (_d = u.state) !== null && _d !== void 0 ? _d : null,
+                agentId: (_e = u.agentId) !== null && _e !== void 0 ? _e : null,
+                agent: (_f = u.agent) !== null && _f !== void 0 ? _f : null,
+                latitude: (_g = u.currentLat) !== null && _g !== void 0 ? _g : null,
+                longitude: (_h = u.currentLng) !== null && _h !== void 0 ? _h : null,
+                specialty: (_j = u.specialty) !== null && _j !== void 0 ? _j : null,
                 createdAt: u.createdAt,
                 bookingCount: u._count.bookings,
             });
@@ -172,7 +178,7 @@ router.post('/', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 
         if (admin.role !== 'ADMIN') {
             return res.status(403).json({ error: 'Forbidden: admin access only' });
         }
-        const { email, password, name, role, phone, opayPhone, specialty, address, latitude, longitude, verificationStatus, } = req.body;
+        const { email, password, name, role, phone, opayPhone, specialty, address, state, agentId, latitude, longitude, verificationStatus, } = req.body;
         if (!email || !password || !name || !role) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
@@ -192,6 +198,8 @@ router.post('/', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 
                 opayPhone: opayPhone || phone || null,
                 specialty: role === 'HANDYMAN' ? specialty : null,
                 address: address || null,
+                state: state || null,
+                agentId: agentId || null,
                 latitude: latitude ? parseFloat(latitude) : null,
                 longitude: longitude ? parseFloat(longitude) : null,
                 verificationStatus: verificationStatus || 'UNVERIFIED',
@@ -217,7 +225,7 @@ router.put('/:id', auth_1.authenticateToken, (req, res) => __awaiter(void 0, voi
             return res.status(403).json({ error: 'Forbidden: admin access only' });
         }
         const { id } = req.params;
-        const { email, password, name, role, phone, opayPhone, specialty, address, latitude, longitude, verificationStatus, } = req.body;
+        const { email, password, name, role, phone, opayPhone, specialty, address, state, agentId, latitude, longitude, verificationStatus, } = req.body;
         const existingUser = yield prisma_1.default.user.findUnique({ where: { id } });
         if (!existingUser) {
             return res.status(404).json({ error: 'User not found' });
@@ -270,6 +278,8 @@ router.put('/:id', auth_1.authenticateToken, (req, res) => __awaiter(void 0, voi
                 opayPhone: opayPhone !== undefined ? opayPhone : undefined,
                 specialty: specialty !== undefined ? specialty : undefined,
                 address: address !== undefined ? address : undefined,
+                state: state !== undefined ? state : undefined,
+                agentId: agentId !== undefined ? agentId : undefined,
                 vehicleType: req.body.vehicleType !== undefined ? req.body.vehicleType : undefined,
                 licensePlate: req.body.licensePlate !== undefined ? req.body.licensePlate : undefined,
                 latitude: latitude !== undefined && latitude !== null ? parseFloat(latitude) : undefined,
@@ -352,6 +362,117 @@ router.post('/bulk-delete', auth_1.authenticateToken, (req, res) => __awaiter(vo
     catch (error) {
         console.error('POST /users/bulk-delete error:', error);
         res.status(500).json({ error: 'Failed to bulk delete users' });
+    }
+}));
+/**
+ * POST /users/bulk-csv
+ * ADMIN only.
+ * Bulk imports users (vendors, riders, handymen, etc.) from CSV rows.
+ */
+router.post('/bulk-csv', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const admin = req.user;
+        if (admin.role !== 'ADMIN') {
+            return res.status(403).json({ error: 'Forbidden: admin access only' });
+        }
+        const { users } = req.body;
+        if (!Array.isArray(users) || users.length === 0) {
+            return res.status(400).json({ error: 'No users provided. A non-empty "users" array is required.' });
+        }
+        const created = [];
+        const skipped = [];
+        const errors = [];
+        // Pre-hash default password once for speed
+        const defaultSalt = yield bcrypt_1.default.genSalt(10);
+        const defaultHash = yield bcrypt_1.default.hash('FixMart@123', defaultSalt);
+        const allowedRoles = ['CUSTOMER', 'HANDYMAN', 'VENDOR', 'RIDER', 'AGENT', 'ADMIN'];
+        for (let i = 0; i < users.length; i++) {
+            const row = users[i];
+            const name = String(row.name || row.Name || '').trim();
+            const email = String(row.email || row.Email || '').trim().toLowerCase();
+            if (!name) {
+                errors.push({ row: i + 1, error: 'User name is required' });
+                continue;
+            }
+            if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                errors.push({ row: i + 1, name, error: 'Valid email address is required' });
+                continue;
+            }
+            // Check if user with this email already exists
+            const existing = yield prisma_1.default.user.findUnique({ where: { email } });
+            if (existing) {
+                skipped.push({ row: i + 1, name, email, reason: 'Email already registered' });
+                continue;
+            }
+            let rawRole = String(row.role || row.Role || 'VENDOR').trim().toUpperCase();
+            if (!allowedRoles.includes(rawRole)) {
+                rawRole = 'VENDOR';
+            }
+            const phone = row.phone || row.Phone ? String(row.phone || row.Phone).trim() : null;
+            const opayPhone = row.opayPhone || row.opay_phone || row.OpayPhone ? String(row.opayPhone || row.opay_phone || row.OpayPhone).trim() : phone;
+            const address = row.address || row.Address ? String(row.address || row.Address).trim() : null;
+            const state = row.state || row.State ? String(row.state || row.State).trim() : null;
+            const specialty = row.specialty || row.Specialty ? String(row.specialty || row.Specialty).trim() : null;
+            const vehicleType = row.vehicleType || row.vehicle_type || row.VehicleType ? String(row.vehicleType || row.vehicle_type || row.VehicleType).trim() : null;
+            let passwordHash = defaultHash;
+            const rawPassword = row.password || row.Password;
+            if (rawPassword && String(rawPassword).trim().length >= 6) {
+                const salt = yield bcrypt_1.default.genSalt(10);
+                passwordHash = yield bcrypt_1.default.hash(String(rawPassword).trim(), salt);
+            }
+            // Determine verification status: Vendors with phone/address auto-verify; workmen/riders pending review
+            let verificationStatus = 'VERIFIED';
+            if (rawRole === 'HANDYMAN' || rawRole === 'RIDER') {
+                verificationStatus = 'PENDING_REVIEW';
+            }
+            else if (rawRole === 'AGENT') {
+                verificationStatus = 'PENDING_REVIEW';
+            }
+            try {
+                const newUser = yield prisma_1.default.user.create({
+                    data: {
+                        name,
+                        email,
+                        passwordHash,
+                        role: rawRole,
+                        phone,
+                        opayPhone,
+                        address,
+                        state,
+                        specialty: rawRole === 'HANDYMAN' ? specialty : null,
+                        vehicleType: rawRole === 'RIDER' ? vehicleType : null,
+                        verificationStatus,
+                    },
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        role: true,
+                        phone: true,
+                        state: true,
+                        address: true,
+                        verificationStatus: true,
+                        createdAt: true,
+                    },
+                });
+                created.push(newUser);
+            }
+            catch (err) {
+                errors.push({ row: i + 1, name, email, error: err.message || 'Database error creating user' });
+            }
+        }
+        res.json({
+            success: true,
+            count: created.length,
+            message: `Successfully imported ${created.length} user(s).${skipped.length > 0 ? ` (${skipped.length} existing skipped)` : ''}${errors.length > 0 ? ` (${errors.length} failed)` : ''}`,
+            created,
+            skipped,
+            errors,
+        });
+    }
+    catch (error) {
+        console.error('POST /users/bulk-csv error:', error);
+        res.status(500).json({ error: (error === null || error === void 0 ? void 0 : error.message) || 'Failed to bulk import users from CSV' });
     }
 }));
 exports.default = router;

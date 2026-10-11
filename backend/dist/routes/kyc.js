@@ -268,6 +268,18 @@ router.post('/submit', auth_1.authenticateToken, (req, res) => __awaiter(void 0,
     if (!bvn && !nin && !referenceId) {
         return res.status(400).json({ error: 'Either BVN, NIN, or verification reference ID is required to complete verification.' });
     }
+    if (bvn) {
+        const cleanBvn = String(bvn).trim();
+        if (!/^\d{11}$/.test(cleanBvn)) {
+            return res.status(400).json({ error: 'Invalid BVN: BVN must be exactly 11 numeric digits.' });
+        }
+    }
+    if (nin) {
+        const cleanNin = String(nin).trim();
+        if (!/^\d{11}$/.test(cleanNin)) {
+            return res.status(400).json({ error: 'Invalid NIN: NIN must be exactly 11 numeric digits.' });
+        }
+    }
     try {
         const currentUser = yield prisma_1.default.user.findUnique({ where: { id: userId } });
         if (!currentUser) {

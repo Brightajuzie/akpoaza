@@ -275,4 +275,60 @@ router.get('/public/specialists', (req, res, next) => __awaiter(void 0, void 0, 
         next(error);
     }
 }));
+// Bulk import services from CSV (Admin only)
+router.post('/bulk-csv', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
+    if (role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+    }
+    const { services } = req.body;
+    if (!Array.isArray(services) || services.length === 0) {
+        return res.status(400).json({ error: 'No services provided. A non-empty "services" array is required.' });
+    }
+    try {
+        const created = [];
+        const errors = [];
+        for (let i = 0; i < services.length; i++) {
+            const row = services[i];
+            const name = String(row.name || row.Name || '').trim();
+            const rawPrice = row.basePrice !== undefined ? row.basePrice : row.price !== undefined ? row.price : row.BasePrice;
+            const basePrice = parseFloat(rawPrice);
+            if (!name) {
+                errors.push({ row: i + 1, error: 'Service name is required' });
+                continue;
+            }
+            if (isNaN(basePrice) || basePrice < 0) {
+                errors.push({ row: i + 1, name, error: 'Valid positive base price is required' });
+                continue;
+            }
+            const description = String(row.description || row.Description || name).trim();
+            const category = String(row.category || row.Category || 'General Maintenance').trim();
+            try {
+                const newService = yield prisma_1.default.service.create({
+                    data: {
+                        name,
+                        description,
+                        category,
+                        basePrice,
+                    },
+                });
+                created.push(newService);
+            }
+            catch (err) {
+                errors.push({ row: i + 1, name, error: err.message || 'Database error creating service' });
+            }
+        }
+        res.json({
+            success: true,
+            count: created.length,
+            message: `Successfully imported ${created.length} service(s).${errors.length > 0 ? ` (${errors.length} skipped)` : ''}`,
+            created,
+            errors,
+        });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
 exports.default = router;

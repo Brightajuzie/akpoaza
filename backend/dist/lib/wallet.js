@@ -13,10 +13,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getOrCreateWallet = getOrCreateWallet;
+exports.creditAgentCommission = creditAgentCommission;
 exports.createEscrowForPaidItem = createEscrowForPaidItem;
 exports.releaseEscrow = releaseEscrow;
 exports.triggerSplitWebhook = triggerSplitWebhook;
 const prisma_1 = __importDefault(require("./prisma"));
+const notify_1 = require("./notify");
 function getOrCreateWallet(userId) {
     return __awaiter(this, void 0, void 0, function* () {
         let wallet = yield prisma_1.default.wallet.findUnique({
@@ -32,6 +34,71 @@ function getOrCreateWallet(userId) {
             });
         }
         return wallet;
+    });
+}
+/**
+ * Calculates and credits commission to regional agents when a user (vendor, customer, rider, handyman)
+ * under their management makes a sale, completes a booking, or performs a delivery task.
+ */
+function creditAgentCommission(userId, transactionAmount, category, referenceId, description) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const user = yield prisma_1.default.user.findUnique({
+                where: { id: userId },
+                select: { id: true, name: true, role: true, state: true, country: true, agentId: true },
+            });
+            if (!user)
+                return;
+            let agentId = user.agentId;
+            if (!agentId && user.state) {
+                const stateAgent = yield prisma_1.default.user.findFirst({
+                    where: { role: 'AGENT', state: user.state, verificationStatus: 'VERIFIED' },
+                    select: { id: true },
+                });
+                if (stateAgent) {
+                    agentId = stateAgent.id;
+                }
+            }
+            if (!agentId)
+                return;
+            const agentWallet = yield getOrCreateWallet(agentId);
+            // Prevent duplicate commission for same referenceId & agentId
+            const existingTx = yield prisma_1.default.transaction.findFirst({
+                where: { walletId: agentWallet.id, referenceId, type: 'AGENT_COMMISSION' },
+            });
+            if (existingTx)
+                return;
+            // Default agent commission rate is 5.0%
+            const setting = yield prisma_1.default.appSetting.findUnique({ where: { key: 'agent_commission_rate' } });
+            const commissionRate = setting ? parseFloat(setting.value) : 0.05;
+            const commissionAmount = Math.round(transactionAmount * commissionRate * 100) / 100;
+            if (commissionAmount <= 0)
+                return;
+            yield prisma_1.default.wallet.update({
+                where: { id: agentWallet.id },
+                data: { balance: { increment: commissionAmount } },
+            });
+            yield prisma_1.default.transaction.create({
+                data: {
+                    walletId: agentWallet.id,
+                    amount: commissionAmount,
+                    type: 'AGENT_COMMISSION',
+                    status: 'COMPLETED',
+                    description: `Regional Agent Commission (${(commissionRate * 100).toFixed(1)}%): ${description} by ${user.name} (${user.role})`,
+                    referenceId,
+                },
+            });
+            (0, notify_1.sendNotification)({
+                userId: agentId,
+                title: `💰 Agent Commission Earned: ₦${commissionAmount.toLocaleString()}`,
+                body: `You earned ₦${commissionAmount.toLocaleString()} commission from a ${category.toLowerCase()} transaction by ${user.name} (${user.role}) in your region.`,
+                type: 'PAYMENT',
+                referenceId,
+            }).catch(() => { });
+        }
+        catch (err) {
+            console.error('[creditAgentCommission error]', err);
+        }
     });
 }
 function createEscrowForPaidItem(checkoutType, id, paidAmount) {
@@ -311,6 +378,10 @@ function releaseEscrow(escrowId) {
                     },
                 });
             }
+            // Trigger Regional Agent commission payout for the provider and customer
+            const refCat = escrow.bookingId ? 'BOOKING' : escrow.parcelDeliveryId ? 'PARCEL' : 'ORDER';
+            const refId = escrow.bookingId || escrow.orderId || escrow.parcelDeliveryId || escrow.id;
+            creditAgentCommission(escrow.providerId, escrow.amount, refCat, refId, 'Provider task/sale completed').catch(() => { });
             return updatedEscrow;
         }), {
             timeout: 30000

@@ -40,14 +40,20 @@ export default function SignupScreen({ route, navigation }: any) {
 
   // ── Google Auth ──────────────────────────────────────────────────────────
   const [googleLoading, setGoogleLoading] = useState(false);
-  const ANDROID_ID = settings?.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || undefined;
-  const IOS_ID     = settings?.google_ios_client_id     || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || undefined;
-  const WEB_ID     = settings?.google_web_client_id     || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID      || undefined;
-  const googleConfigured = !!(ANDROID_ID || IOS_ID || WEB_ID);
+  const ANDROID_ID = (settings?.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '').trim() || undefined;
+  const IOS_ID     = (settings?.google_ios_client_id     || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || '').trim() || undefined;
+  const WEB_ID     = (settings?.google_web_client_id     || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID      || '').trim() || undefined;
+  const googleConfigured = Boolean(ANDROID_ID || IOS_ID || WEB_ID);
 
   const [request, response, promptAsync] = Google.useAuthRequest(
     googleConfigured
-      ? { androidClientId: ANDROID_ID, iosClientId: IOS_ID, webClientId: WEB_ID }
+      ? {
+          androidClientId: ANDROID_ID,
+          iosClientId: IOS_ID,
+          webClientId: WEB_ID,
+          clientId: WEB_ID || ANDROID_ID,
+          scopes: ['profile', 'email', 'openid'],
+        }
       : ({ androidClientId: 'placeholder', iosClientId: 'placeholder', webClientId: 'placeholder' } as any),
   );
 
@@ -63,7 +69,9 @@ export default function SignupScreen({ route, navigation }: any) {
       }
     } else if (response?.type === 'error') {
       setGoogleLoading(false);
-      Alert.alert('Google Sign-Up', response.error?.message || 'Google sign-up was cancelled or encountered an error.');
+      const errMsg = response.error?.message || (response as any).params?.error_description || 'Google sign-up was cancelled or encountered an error.';
+      console.warn('[GoogleAuth:Signup] Auth response error:', response.error);
+      Alert.alert('Google Sign-Up', errMsg);
     } else if (response?.type === 'dismiss' || response?.type === 'cancel') {
       setGoogleLoading(false);
     }

@@ -47,16 +47,20 @@ export default function LoginScreen({ route, navigation }: any) {
   }, [route?.params?.initialEmail, route?.params?.email]);
 
   // ── Google Auth ──────────────────────────────────────────────────────────
-  // Only enable Google Sign-In when at least one client ID is configured.
-  // If none are set the hook would throw — guard it with undefined fallbacks.
-  const ANDROID_ID = settings.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || undefined;
-  const IOS_ID     = settings.google_ios_client_id     || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || undefined;
-  const WEB_ID     = settings.google_web_client_id     || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID      || undefined;
-  const googleConfigured = !!(ANDROID_ID || IOS_ID || WEB_ID);
+  const ANDROID_ID = (settings.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '').trim() || undefined;
+  const IOS_ID     = (settings.google_ios_client_id     || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || '').trim() || undefined;
+  const WEB_ID     = (settings.google_web_client_id     || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID      || '').trim() || undefined;
+  const googleConfigured = Boolean(ANDROID_ID || IOS_ID || WEB_ID);
 
   const [request, response, promptAsync] = Google.useAuthRequest(
     googleConfigured
-      ? { androidClientId: ANDROID_ID, iosClientId: IOS_ID, webClientId: WEB_ID }
+      ? {
+          androidClientId: ANDROID_ID,
+          iosClientId: IOS_ID,
+          webClientId: WEB_ID,
+          clientId: WEB_ID || ANDROID_ID,
+          scopes: ['profile', 'email', 'openid'],
+        }
       : ({ androidClientId: 'placeholder', iosClientId: 'placeholder', webClientId: 'placeholder' } as any),
   );
 
@@ -78,7 +82,9 @@ export default function LoginScreen({ route, navigation }: any) {
       }
     } else if (response?.type === 'error') {
       setGoogleLoading(false);
-      Alert.alert('Google Sign-In', response.error?.message || 'Google sign-in was cancelled or encountered an error.');
+      const errMsg = response.error?.message || (response as any).params?.error_description || 'Google sign-in was cancelled or encountered an error.';
+      console.warn('[GoogleAuth:Login] Auth response error:', response.error);
+      Alert.alert('Google Sign-In', errMsg);
     } else if (response?.type === 'dismiss' || response?.type === 'cancel') {
       setGoogleLoading(false);
     }
@@ -228,6 +234,15 @@ export default function LoginScreen({ route, navigation }: any) {
         console.warn('Could not fetch userinfo directly from Google API:', e);
       }
 
+      // Sync push token immediately if available
+      let pushToken: string | undefined;
+      try {
+        const { getPushTokenAsync } = await import('../utils/pushNotifications');
+        pushToken = (await getPushTokenAsync().catch(() => null)) || undefined;
+      } catch {
+        // Safe to ignore push token failure
+      }
+
       // Exchange with our backend
       const res = await apiClient.post('/auth/google', {
         idToken: idToken || accessToken,
@@ -236,11 +251,13 @@ export default function LoginScreen({ route, navigation }: any) {
         name,
         picture,
         role: 'CUSTOMER',
+        pushToken,
       });
       await login(res.data.token, res.data.user);
       navigateAfterLogin(res.data.user);
     } catch (err: any) {
-      const msg = err.response?.data?.error || err.response?.data?.detail || 'Could not complete Google sign-in.';
+      console.error('[GoogleAuth:Login] Login failed:', err?.response?.data || err?.message);
+      const msg = err.response?.data?.error || err.response?.data?.detail || 'Could not complete Google sign-in. Please try again.';
       Alert.alert('Google Sign-In Failed', msg);
     } finally {
       setGoogleLoading(false);
@@ -250,11 +267,20 @@ export default function LoginScreen({ route, navigation }: any) {
   const handleGoogleAuth = async (idToken: string) => {
     setGoogleLoading(true);
     try {
-      const res = await apiClient.post('/auth/google', { idToken, role: 'CUSTOMER' });
+      let pushToken: string | undefined;
+      try {
+        const { getPushTokenAsync } = await import('../utils/pushNotifications');
+        pushToken = (await getPushTokenAsync().catch(() => null)) || undefined;
+      } catch {
+        // Safe to ignore
+      }
+
+      const res = await apiClient.post('/auth/google', { idToken, role: 'CUSTOMER', pushToken });
       await login(res.data.token, res.data.user);
       navigateAfterLogin(res.data.user);
     } catch (err: any) {
-      Alert.alert('Google Sign-In Failed', err.response?.data?.error || 'Could not complete Google sign-in.');
+      console.error('[GoogleAuth:Login] handleGoogleAuth failed:', err?.response?.data || err?.message);
+      Alert.alert('Google Sign-In Failed', err.response?.data?.error || 'Could not complete Google sign-in. Please try again.');
     } finally {
       setGoogleLoading(false);
     }

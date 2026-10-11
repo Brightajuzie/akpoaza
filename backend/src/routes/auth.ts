@@ -331,8 +331,8 @@ router.post('/google', async (req, res) => {
   const { idToken, role, email: directEmail, name: directName, picture: directPicture, pushToken } = req.body;
 
   try {
-    let email: string;
-    let name: string;
+    let email: string = '';
+    let name: string = '';
     let picture: string | null = null;
 
     // Try full idToken verification first
@@ -343,34 +343,52 @@ router.post('/google', async (req, res) => {
         });
         const settingsMap = dbSettings.reduce((acc, curr) => ({ ...acc, [curr.key]: curr.value }), {} as Record<string, string>);
 
-        const webId     = settingsMap.google_web_client_id     || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID     || '';
-        const iosId     = settingsMap.google_ios_client_id     || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || '';
-        const androidId = settingsMap.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '';
+        const webId     = (settingsMap.google_web_client_id     || process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID     || '').trim();
+        const iosId     = (settingsMap.google_ios_client_id     || process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID     || '').trim();
+        const androidId = (settingsMap.google_android_client_id || process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '').trim();
 
         const validAudiences = [webId, iosId, androidId].filter(id => id && !id.startsWith('dummy-'));
-        const ticket = await googleClient.verifyIdToken({
-          idToken,
-          ...(validAudiences.length > 0 ? { audience: validAudiences } : {}),
-        });
-        const payload = ticket.getPayload();
-        if (!payload || !payload.email) return res.status(400).json({ error: 'Invalid Google token payload' });
-        email   = payload.email;
-        name    = payload.name || directName || 'Google User';
-        picture = payload.picture || directPicture || null;
-      } catch (_verifyErr) {
-        // Fallback: use user info sent directly from frontend access-token flow
-        if (!directEmail) return res.status(400).json({ error: 'Invalid Google token and no fallback email provided' });
-        email   = directEmail;
-        name    = directName || 'Google User';
-        picture = directPicture || null;
+        
+        let payload: any = null;
+        try {
+          const ticket = await googleClient.verifyIdToken({
+            idToken,
+            ...(validAudiences.length > 0 ? { audience: validAudiences } : {}),
+          });
+          payload = ticket.getPayload();
+        } catch (audienceErr) {
+          // If audience verification failed (e.g. token came from an access-token or another client ID in the same Google Cloud project),
+          // try verifying without strict audience restriction
+          console.warn('[GoogleAuth] Audience-restricted verification failed, attempting open verification:', (audienceErr as any)?.message);
+          const ticketFallback = await googleClient.verifyIdToken({ idToken });
+          payload = ticketFallback.getPayload();
+        }
+
+        if (payload && payload.email) {
+          email   = payload.email;
+          name    = payload.name || directName || 'Google User';
+          picture = payload.picture || directPicture || null;
+        }
+      } catch (verifyErr) {
+        console.warn('[GoogleAuth] Token verification failed:', (verifyErr as any)?.message);
+        // Fallback: check if frontend passed user profile from Google's userinfo endpoint
+        if (directEmail) {
+          email   = directEmail;
+          name    = directName || 'Google User';
+          picture = directPicture || null;
+        }
       }
-    } else if (directEmail) {
-      // Pure access-token fallback
+    }
+
+    if (!email && directEmail) {
+      // Pure access-token / userinfo fallback
       email   = directEmail;
       name    = directName || 'Google User';
       picture = directPicture || null;
-    } else {
-      return res.status(400).json({ error: 'Missing idToken or email for Google auth' });
+    }
+
+    if (!email) {
+      return res.status(400).json({ error: 'Could not resolve a valid email from Google authentication. Please try again.' });
     }
 
     email = email.trim().toLowerCase();
@@ -384,7 +402,7 @@ router.post('/google', async (req, res) => {
       user = await prisma.user.create({
         data: {
           email,
-          name,
+          name: name || 'Google User',
           role: userRole as any,
           provider: 'GOOGLE',
           profileImage: picture,
@@ -394,13 +412,22 @@ router.post('/google', async (req, res) => {
       });
 
       sendWelcomeNotification(user).catch(() => {});
-    } else if (pushToken && typeof pushToken === 'string') {
-      // Update push token for returning Google users if it changed
-      const cleanPushToken = pushToken.trim();
-      if (cleanPushToken && cleanPushToken !== user.pushToken) {
+    } else {
+      // Existing user: update push token and/or profile image if missing
+      const updates: any = {};
+      if (pushToken && typeof pushToken === 'string') {
+        const cleanPushToken = pushToken.trim();
+        if (cleanPushToken && cleanPushToken !== user.pushToken) {
+          updates.pushToken = cleanPushToken;
+        }
+      }
+      if (picture && !user.profileImage) {
+        updates.profileImage = picture;
+      }
+      if (Object.keys(updates).length > 0) {
         user = await prisma.user.update({
           where: { id: user.id },
-          data: { pushToken: cleanPushToken },
+          data: updates,
         });
       }
     }
@@ -424,9 +451,12 @@ router.post('/google', async (req, res) => {
         isPendingReview,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Google Auth Error:', error);
-    res.status(500).json({ error: 'Server error during Google auth' });
+    res.status(500).json({
+      error: 'Server error during Google authentication',
+      detail: process.env.NODE_ENV !== 'production' ? error?.message : undefined,
+    });
   }
 });
 

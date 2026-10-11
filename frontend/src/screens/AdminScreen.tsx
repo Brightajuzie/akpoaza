@@ -2087,16 +2087,19 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
     setPricingSaving(true);
     try {
       await updateSettings({
-        rider_base_fare:        String(baseFare),
-        rider_price_per_km:     String(perKm),
-        rider_platform_fee_pct: String(pctFee),
+        rider_base_fare:          String(baseFare),
+        rider_price_per_km:       String(perKm),
+        rider_platform_fee_pct:   String(pctFee),
+        google_web_client_id:     googleWebClientId.trim(),
+        google_ios_client_id:     googleIosClientId.trim(),
+        google_android_client_id: googleAndroidClientId.trim(),
       });
       Alert.alert(
-        '✅ Pricing Updated',
-        `Base Fare: ₦${baseFare.toLocaleString()}\nPer km: ₦${perKm.toLocaleString()}\nPlatform Fee: ${pctFee}%\n\nAll new delivery quotes will use these rates immediately.`
+        '✅ Settings Updated',
+        `Rider pricing & Google OAuth credentials saved successfully.\n\nBase Fare: ₦${baseFare.toLocaleString()}\nPer km: ₦${perKm.toLocaleString()}\nPlatform Fee: ${pctFee}%`
       );
     } catch (e) {
-      Alert.alert('Error', 'Failed to save rider pricing settings.');
+      Alert.alert('Error', 'Failed to save rider pricing & Google credentials.');
     } finally {
       setPricingSaving(false);
     }
@@ -3745,7 +3748,7 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
               >
                 {pricingSaving
                   ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.saveSettingsBtnText}>💾 Save Pricing Settings</Text>}
+                  : <Text style={styles.saveSettingsBtnText}>💾 Save Pricing & Google OAuth Settings</Text>}
               </TouchableOpacity>
             </View>
 

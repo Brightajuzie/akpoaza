@@ -98,7 +98,7 @@ router.get('/vendor', auth_1.authenticateToken, (req, res, next) => __awaiter(vo
 // Guest Checkout for unauthenticated users
 router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c;
-    const { items, paymentProvider, guestEmail, guestName, guestPhone, deliveryAddress, latitude, longitude } = req.body;
+    const { items, paymentProvider, guestEmail, guestName, guestPhone, deliveryAddress, state: reqState, latitude, longitude } = req.body;
     if (!guestEmail || !guestName) {
         return res.status(400).json({ error: 'Guest email and name are required for checkout' });
     }
@@ -115,12 +115,14 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
                     name: guestName.trim(),
                     phone: guestPhone ? guestPhone.trim() : null,
                     address: deliveryAddress ? deliveryAddress.trim() : null,
+                    state: reqState ? String(reqState).trim() : null,
                     role: 'CUSTOMER',
                     verificationStatus: 'VERIFIED',
                 },
             });
         }
         const userId = user.id;
+        const orderState = reqState ? String(reqState).trim() : (user.state || null);
         // 2. Validate products and calculate total amount
         const productIds = items.map((i) => String(i.productId));
         const dbProducts = yield prisma_1.default.product.findMany({
@@ -147,7 +149,7 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
                 price: dbProduct.price,
             });
         }
-        // 3. Proximity Rider Assignment
+        // 3. Proximity & Regional Rider Assignment
         let assignedRiderId = null;
         let riderDistance = null;
         const cLat = latitude ? parseFloat(latitude) : null;
@@ -173,9 +175,15 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
                 };
             })
                 .sort((a, b) => a.dist - b.dist);
-            if (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100) {
-                assignedRiderId = ridersWithDist[0].rider.id;
-                riderDistance = Math.round(ridersWithDist[0].dist * 10) / 10;
+            const sameStateRiders = orderState
+                ? ridersWithDist.filter((r) => r.rider.state === orderState)
+                : ridersWithDist;
+            const chosen = (sameStateRiders.length > 0 && sameStateRiders[0].dist <= 100)
+                ? sameStateRiders[0]
+                : (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100 ? ridersWithDist[0] : null);
+            if (chosen) {
+                assignedRiderId = chosen.rider.id;
+                riderDistance = Math.round(chosen.dist * 10) / 10;
             }
         }
         // 4. Create Order with stock deduction in transaction
@@ -194,6 +202,7 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
                     userId,
                     riderId: assignedRiderId,
                     deliveryAddress: deliveryAddress || (user === null || user === void 0 ? void 0 : user.address) || null,
+                    state: orderState,
                     totalAmount: computedTotalAmount,
                     paymentProvider: sanitizePaymentProvider(paymentProvider),
                     paymentRef: isPOD ? `POD_${user.id.slice(0, 6)}_${Date.now()}` : undefined,
@@ -205,6 +214,16 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
                 include: { items: true, rider: true },
             });
         }));
+        const noRiderAvailable = !assignedRiderId;
+        if (noRiderAvailable) {
+            (0, notify_1.sendNotification)({
+                userId,
+                title: '⚠️ No Delivery Rider Currently Available',
+                body: `No rider is currently available in ${orderState || 'your area'}. Your order has been placed and our regional agent will assign a rider shortly.`,
+                type: 'ORDER',
+                referenceId: order.id,
+            }).catch(() => { });
+        }
         // ── Multi-channel notifications for guest checkout ──────────────────
         try {
             const itemsSummary = dbProducts.map(p => {
@@ -337,13 +356,15 @@ router.post('/guest-checkout', (req, res, next) => __awaiter(void 0, void 0, voi
 router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d;
     const userId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-    const { items, paymentProvider, deliveryAddress, latitude, longitude } = req.body;
+    const { items, paymentProvider, deliveryAddress, state: reqState, latitude, longitude } = req.body;
     if (!userId)
         return res.status(401).json({ error: 'Unauthorized' });
     if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'Items are required for checkout' });
     }
     try {
+        const user = yield prisma_1.default.user.findUnique({ where: { id: userId }, select: { state: true } });
+        const orderState = reqState ? String(reqState).trim() : ((user === null || user === void 0 ? void 0 : user.state) || null);
         // 1. Gather all product IDs to query
         const productIds = items.map((i) => String(i.productId));
         const dbProducts = yield prisma_1.default.product.findMany({
@@ -371,7 +392,7 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
                 price: dbProduct.price, // Trusting db price
             });
         }
-        // 2.5 Proximity Rider Assignment
+        // 2.5 Proximity & Regional Rider Assignment
         let assignedRiderId = null;
         let riderDistance = null;
         const cLat = latitude ? parseFloat(latitude) : null;
@@ -397,9 +418,15 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
                 };
             })
                 .sort((a, b) => a.dist - b.dist);
-            if (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100) {
-                assignedRiderId = ridersWithDist[0].rider.id;
-                riderDistance = Math.round(ridersWithDist[0].dist * 10) / 10;
+            const sameStateRiders = orderState
+                ? ridersWithDist.filter((r) => r.rider.state === orderState)
+                : ridersWithDist;
+            const chosen = (sameStateRiders.length > 0 && sameStateRiders[0].dist <= 100)
+                ? sameStateRiders[0]
+                : (ridersWithDist.length > 0 && ridersWithDist[0].dist <= 100 ? ridersWithDist[0] : null);
+            if (chosen) {
+                assignedRiderId = chosen.rider.id;
+                riderDistance = Math.round(chosen.dist * 10) / 10;
             }
         }
         // 3. Process stock deduction and order creation in a transaction
@@ -422,6 +449,7 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
                     userId,
                     riderId: assignedRiderId,
                     deliveryAddress: deliveryAddress || null,
+                    state: orderState,
                     totalAmount: computedTotalAmount,
                     paymentProvider: sanitizePaymentProvider(paymentProvider),
                     paymentRef: isPOD ? `POD_${userId.slice(0, 6)}_${Date.now()}` : undefined,
@@ -433,6 +461,16 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
                 include: { items: true, rider: true },
             });
         }));
+        const noRiderAvailable = !assignedRiderId;
+        if (noRiderAvailable) {
+            (0, notify_1.sendNotification)({
+                userId,
+                title: '⚠️ No Delivery Rider Currently Available',
+                body: `No rider is currently available in ${orderState || 'your area'}. Your order has been placed and our regional agent will assign a rider shortly.`,
+                type: 'ORDER',
+                referenceId: order.id,
+            }).catch(() => { });
+        }
         // ── Multi-channel notifications ──────────────────────────────────────
         try {
             const customer = yield prisma_1.default.user.findUnique({
@@ -558,10 +596,37 @@ router.post('/checkout', auth_1.authenticateToken, (req, res, next) => __awaiter
         next(error);
     }
 }));
-// Update checkout details (delivery address, contact info, payment provider) for an existing order
+// Get a single order by ID (for checkout / order review)
+router.get('/:id', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    const { id } = req.params;
+    try {
+        const order = yield prisma_1.default.order.findUnique({
+            where: { id },
+            include: {
+                items: {
+                    include: {
+                        product: {
+                            include: {
+                                images: { orderBy: { position: 'asc' } },
+                            },
+                        },
+                    },
+                },
+                user: { select: { id: true, name: true, email: true, phone: true } },
+            },
+        });
+        if (!order)
+            return res.status(404).json({ error: 'Order not found' });
+        res.json(order);
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+// Update checkout details (delivery address, contact info, payment provider, and items) for an existing order
 router.patch('/:id/checkout-details', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     const { id } = req.params;
-    const { deliveryAddress, guestName, guestEmail, guestPhone, paymentProvider } = req.body;
+    const { deliveryAddress, guestName, guestEmail, guestPhone, paymentProvider, items } = req.body;
     try {
         const order = yield prisma_1.default.order.findUnique({
             where: { id },
@@ -578,6 +643,34 @@ router.patch('/:id/checkout-details', (req, res, next) => __awaiter(void 0, void
             updatedData.paymentProvider = sanitizePaymentProvider(paymentProvider);
             if (isPOD && (!order.paymentRef || !order.paymentRef.startsWith('POD_'))) {
                 updatedData.paymentRef = `POD_${order.id.slice(-6).toUpperCase()}_${Date.now()}`;
+            }
+        }
+        if (items && Array.isArray(items) && items.length > 0) {
+            const productIds = items.map((i) => String(i.productId || i.id));
+            const dbProducts = yield prisma_1.default.product.findMany({
+                where: { id: { in: productIds } },
+            });
+            const dbProductsMap = new Map(dbProducts.map(p => [p.id, p]));
+            let newTotal = 0;
+            const newItemsData = [];
+            for (const item of items) {
+                const pId = item.productId || item.id;
+                const dbProduct = dbProductsMap.get(pId);
+                if (dbProduct) {
+                    const qty = Math.max(1, Number(item.quantity) || 1);
+                    newTotal += dbProduct.price * qty;
+                    newItemsData.push({
+                        orderId: id,
+                        productId: dbProduct.id,
+                        quantity: qty,
+                        price: dbProduct.price,
+                    });
+                }
+            }
+            if (newItemsData.length > 0) {
+                yield prisma_1.default.orderItem.deleteMany({ where: { orderId: id } });
+                yield prisma_1.default.orderItem.createMany({ data: newItemsData });
+                updatedData.totalAmount = newTotal;
             }
         }
         const updatedOrder = yield prisma_1.default.order.update({

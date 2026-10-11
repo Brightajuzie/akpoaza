@@ -40,16 +40,23 @@ router.get('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, 
         next(error);
     }
 }));
-// Admin: Get ALL bookings across all users
+// Admin/Agent: Get ALL bookings across all users (Agent filtered to their state)
 // NOTE: Declared before /:id routes so Express never risks shadowing this static path.
 router.get('/admin/all', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
     const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
-    if (role !== 'ADMIN') {
-        return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+    if (role !== 'ADMIN' && role !== 'AGENT') {
+        return res.status(403).json({ error: 'Forbidden. Admin or Agent access required.' });
     }
     try {
+        let whereClause = {};
+        if (role === 'AGENT') {
+            const agentUser = yield prisma_1.default.user.findUnique({ where: { id: req.user.userId }, select: { state: true } });
+            if (agentUser === null || agentUser === void 0 ? void 0 : agentUser.state)
+                whereClause.state = agentUser.state;
+        }
         const bookings = yield prisma_1.default.booking.findMany({
+            where: whereClause,
             orderBy: { createdAt: 'desc' },
             include: {
                 service: true,
@@ -85,7 +92,7 @@ router.get('/:id', auth_1.authenticateToken, (req, res, next) => __awaiter(void 
 }));
 // Guest Booking for unauthenticated users
 router.post('/guest-booking', (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
-    const { serviceId, scheduledAt, address, latitude, longitude, autoAssign, handymanId: reqHandymanId, guestEmail, guestName, guestPhone } = req.body;
+    const { serviceId, scheduledAt, address, state: reqState, latitude, longitude, autoAssign, handymanId: reqHandymanId, guestEmail, guestName, guestPhone } = req.body;
     if (!guestEmail || !guestName) {
         return res.status(400).json({ error: 'Guest email and name are required' });
     }
@@ -101,12 +108,14 @@ router.post('/guest-booking', (req, res, next) => __awaiter(void 0, void 0, void
                     name: guestName.trim(),
                     phone: guestPhone ? guestPhone.trim() : null,
                     address: address.trim(),
+                    state: reqState ? String(reqState).trim() : null,
                     role: 'CUSTOMER',
                     verificationStatus: 'VERIFIED',
                 },
             });
         }
         const customerId = user.id;
+        const bookingState = reqState ? String(reqState).trim() : (user.state || null);
         let service = yield prisma_1.default.service.findUnique({ where: { id: serviceId } });
         if (!service) {
             service = yield prisma_1.default.service.findFirst({
@@ -160,16 +169,25 @@ router.post('/guest-booking', (req, res, next) => __awaiter(void 0, void 0, void
                 dist: getDistanceKm(customerLat, customerLng, hm.latitude, hm.longitude),
             }))
                 .sort((a, b) => a.dist - b.dist);
-            let best = availableWithDist.find((x) => x.hm.specialty === service.category && x.dist <= MAX_RADIUS_KM);
-            if (!best) {
+            const sameStateAvailable = bookingState
+                ? availableWithDist.filter((x) => x.hm.state === bookingState)
+                : availableWithDist;
+            // 1st pass: same state, matching specialty within primary radius
+            let best = sameStateAvailable.find((x) => x.hm.specialty === service.category && x.dist <= MAX_RADIUS_KM);
+            // 2nd pass: same state, any specialty within primary radius
+            if (!best)
+                best = sameStateAvailable.find((x) => x.dist <= MAX_RADIUS_KM);
+            // 3rd pass: any state, matching specialty within primary radius
+            if (!best)
+                best = availableWithDist.find((x) => x.hm.specialty === service.category && x.dist <= MAX_RADIUS_KM);
+            // 4th pass: any state, any specialty within primary radius
+            if (!best)
                 best = availableWithDist.find((x) => x.dist <= MAX_RADIUS_KM);
-            }
-            if (!best) {
-                best = availableWithDist.find((x) => x.hm.specialty === service.category && x.dist <= FALLBACK_RADIUS_KM);
-            }
-            if (!best) {
+            // 5th pass: fallback radius
+            if (!best)
+                best = sameStateAvailable.find((x) => x.hm.specialty === service.category && x.dist <= FALLBACK_RADIUS_KM);
+            if (!best)
                 best = availableWithDist.find((x) => x.dist <= FALLBACK_RADIUS_KM);
-            }
             if (best) {
                 handymanId = best.hm.id;
                 matchDistance = Math.round(best.dist * 10) / 10;
@@ -183,6 +201,7 @@ router.post('/guest-booking', (req, res, next) => __awaiter(void 0, void 0, void
                 handymanId,
                 scheduledAt: new Date(scheduledAt),
                 address,
+                state: bookingState,
                 latitude: customerLat,
                 longitude: customerLng,
                 totalPrice: service.basePrice,
@@ -190,7 +209,17 @@ router.post('/guest-booking', (req, res, next) => __awaiter(void 0, void 0, void
             },
             include: { handyman: true, service: true },
         });
-        res.status(201).json(Object.assign(Object.assign({}, newBooking), { matchDistance, isGuest: true, guestEmail: user.email }));
+        const noWorkmanAvailable = !handymanId;
+        if (noWorkmanAvailable) {
+            (0, notify_1.sendNotification)({
+                userId: customerId,
+                title: '⚠️ No Workman Currently Available',
+                body: `No workman is currently available in ${bookingState || 'your area'}. Your booking is pending and our regional agent will assign one shortly.`,
+                type: 'BOOKING',
+                referenceId: newBooking.id,
+            }).catch(() => { });
+        }
+        res.status(201).json(Object.assign(Object.assign({}, newBooking), { matchDistance, isGuest: true, guestEmail: user.email, noWorkmanAvailable }));
     }
     catch (error) {
         next(error);
@@ -200,13 +229,16 @@ router.post('/guest-booking', (req, res, next) => __awaiter(void 0, void 0, void
 router.post('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, _b, _c, _d, _e, _f, _g;
     const customerId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
-    const { serviceId, scheduledAt, address, latitude, longitude, autoAssign, handymanId: reqHandymanId } = req.body;
+    const { serviceId, scheduledAt, address, state: reqState, latitude, longitude, autoAssign, handymanId: reqHandymanId } = req.body;
     if (!customerId)
         return res.status(401).json({ error: 'Unauthorized' });
     if (!serviceId || !scheduledAt || !address) {
         return res.status(400).json({ error: 'Missing serviceId, scheduledAt, or address' });
     }
     try {
+        // Get customer's state
+        const customerUser = yield prisma_1.default.user.findUnique({ where: { id: customerId }, select: { state: true } });
+        const bookingState = reqState ? String(reqState).trim() : ((customerUser === null || customerUser === void 0 ? void 0 : customerUser.state) || null);
         // Look up service in DB to retrieve verified price
         let service = yield prisma_1.default.service.findUnique({ where: { id: serviceId } });
         if (!service) {
@@ -242,8 +274,7 @@ router.post('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0,
         else if (autoAssign && customerLat !== null && customerLng !== null) {
             const MAX_RADIUS_KM = 50; // primary search radius
             const FALLBACK_RADIUS_KM = 100; // wider fallback radius
-            // Find handymen actively IN_PROGRESS (on-site at a job) — ACCEPTED just means paid/confirmed
-            // but does not mean the handyman is currently occupied.
+            // Find handymen actively IN_PROGRESS
             const busyHandymanRecords = yield prisma_1.default.booking.findMany({
                 where: { status: 'IN_PROGRESS' },
                 select: { handymanId: true },
@@ -266,17 +297,27 @@ router.post('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0,
                 dist: getDistanceKm(customerLat, customerLng, hm.latitude, hm.longitude),
             }))
                 .sort((a, b) => a.dist - b.dist);
-            // 1st pass — matching specialty within primary radius
-            let best = availableWithDist.find((x) => x.hm.specialty === service.category && x.dist <= MAX_RADIUS_KM);
-            // 2nd pass — any specialty within primary radius
+            const sameStateAvailable = bookingState
+                ? availableWithDist.filter((x) => x.hm.state === bookingState)
+                : availableWithDist;
+            // 1st pass — same state, matching specialty within primary radius
+            let best = sameStateAvailable.find((x) => x.hm.specialty === service.category && x.dist <= MAX_RADIUS_KM);
+            // 2nd pass — same state, any specialty within primary radius
+            if (!best) {
+                best = sameStateAvailable.find((x) => x.dist <= MAX_RADIUS_KM);
+            }
+            // 3rd pass — any state, matching specialty within primary radius
+            if (!best) {
+                best = availableWithDist.find((x) => x.hm.specialty === service.category && x.dist <= MAX_RADIUS_KM);
+            }
+            // 4th pass — any state, any verified available handyman within primary radius
             if (!best) {
                 best = availableWithDist.find((x) => x.dist <= MAX_RADIUS_KM);
             }
-            // 3rd pass — matching specialty within fallback radius
+            // 5th pass — fallback radius
             if (!best) {
-                best = availableWithDist.find((x) => x.hm.specialty === service.category && x.dist <= FALLBACK_RADIUS_KM);
+                best = sameStateAvailable.find((x) => x.hm.specialty === service.category && x.dist <= FALLBACK_RADIUS_KM);
             }
-            // 4th pass — any verified available handyman within fallback radius
             if (!best) {
                 best = availableWithDist.find((x) => x.dist <= FALLBACK_RADIUS_KM);
             }
@@ -293,6 +334,7 @@ router.post('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0,
                 handymanId,
                 scheduledAt: new Date(scheduledAt),
                 address,
+                state: bookingState,
                 latitude: customerLat,
                 longitude: customerLng,
                 totalPrice: service.basePrice,
@@ -300,6 +342,16 @@ router.post('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0,
             },
             include: { handyman: true, service: true, customer: true }
         });
+        const noWorkmanAvailable = !handymanId;
+        if (noWorkmanAvailable) {
+            (0, notify_1.sendNotification)({
+                userId: customerId,
+                title: '⚠️ No Workman Currently Available',
+                body: `No workman is currently available in ${bookingState || 'your area'}. Your booking is pending and our regional agent will assign one shortly.`,
+                type: 'BOOKING',
+                referenceId: newBooking.id,
+            }).catch(() => { });
+        }
         // ── Multi-channel notifications on service request ──────────────────────
         const scheduledStr = new Date(scheduledAt).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
         const custName = ((_b = newBooking.customer) === null || _b === void 0 ? void 0 : _b.name) || 'Customer';
