@@ -2866,30 +2866,7 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                     );
                   })}
 
-                  {/* 📱 Play Store, APK & 📦 AAB Download Links */}
-                  <TouchableOpacity
-                    style={[styles.adminVercelLinkBtn, { backgroundColor: '#0F172A14', borderColor: '#0F172A30', marginRight: 6 }]}
-                    onPress={() => Linking.openURL(playstoreUrlInput || playstoreUrl)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.adminVercelLinkText, { color: '#0F172A' }]}>▶ Play Store ↗</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.adminVercelLinkBtn, { backgroundColor: '#22C55E14', borderColor: '#22C55E40', marginRight: 6 }]}
-                    onPress={() => Linking.openURL(apkUrl)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.adminVercelLinkText, { color: '#16A34A' }]}>📱 Download APK ↓</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[styles.adminVercelLinkBtn, { backgroundColor: theme.primary + '12', borderColor: theme.primary + '30' }]}
-                    onPress={() => Linking.openURL(aabUrl)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.adminVercelLinkText, { color: theme.primary }]}>📦 Download AAB ↓</Text>
-                  </TouchableOpacity>
+                  {/* Play Store / download links hidden */}
                 </View>
               ) : (
                 /* 📱 MOBILE: ACTIVE TAB SELECTOR WITH RETAINED ARROW */

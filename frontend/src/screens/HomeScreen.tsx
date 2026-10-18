@@ -1250,39 +1250,7 @@ export default function HomeScreen({ navigation }: any) {
     </TouchableOpacity>
   );
 
-  const renderDownloadBanner = () => Platform.OS === 'web' && (
-    <View style={[styles.downloadBanner, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' }]}>
-      <View style={styles.downloadBannerLeft}>
-        <Text style={styles.downloadBannerIcon}>📱</Text>
-        <View>
-          <Text style={[styles.downloadBannerTitle, { color: isDark ? '#F1F5F9' : '#0F172A' }]}>Get the FixMart App</Text>
-          <Text style={[styles.downloadBannerSub, { color: isDark ? '#64748B' : '#94A3B8' }]}>Available on Google Play Store & Direct Android APK</Text>
-        </View>
-      </View>
-      <View style={styles.downloadBannerBtns}>
-        <TouchableOpacity
-          style={[styles.playStoreBtn, { backgroundColor: '#0F172A' }]}
-          onPress={() => Linking.openURL(playstoreUrl || 'https://play.google.com/store/apps/details?id=com.akpoaza.kachlinks&pcampaignid=web_share&pli=1')}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.playStoreTriangle}>▶</Text>
-          <View style={styles.playStoreBtnTextBox}>
-            <Text style={styles.playStoreSubText}>GET IT ON</Text>
-            <Text style={styles.playStoreMainText}>Google Play</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.downloadBtn, { backgroundColor: '#16A34A' }]}
-          onPress={() => triggerDownload(apkUrl, 'fixmart-latest.apk')}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.downloadBtnText}>📥 Direct APK</Text>
-          <Text style={[styles.downloadBtnText, { fontSize: 10, fontWeight: '500', opacity: 0.9 }]}>v6.0.3 · Fast Install</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  const renderDownloadBanner = () => null; // Download/Play Store links hidden
 
   const renderFooter = () => (
     <View style={[styles.footer, { borderTopColor: isDark ? '#334155' : '#E2E8F0' }]}>
@@ -1293,15 +1261,8 @@ export default function HomeScreen({ navigation }: any) {
           <Text style={{ color: theme.primary, fontWeight: '900' }}>Mart</Text>
         </Text>
       </View>
-      <View style={styles.footerAppBadges}>
-        <TouchableOpacity
-          onPress={() => triggerDownload(apkUrl, 'fixmart-latest.apk')}
-          style={[styles.footerAppBadge, { backgroundColor: '#16A34A' }]}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.footerAppBadgeText}>📥 Direct APK (v6.0.3)</Text>
-        </TouchableOpacity>
-      </View>
+      {/* App download badges hidden */}
+
       <Text style={[styles.footerText, { color: isDark ? '#475569' : '#94A3B8' }]}>{footerText || '© 2026 FixMart. All rights reserved.'}</Text>
     </View>
   );

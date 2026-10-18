@@ -37,6 +37,12 @@ import { errorHandler } from './middleware/errorHandler';
 import prisma from './lib/prisma';
 import { triggerSplitWebhook } from './lib/wallet';
 import { renderPrivacyPolicyHtml, renderAccountDeletionHtml } from './lib/legal';
+import {
+  sendDailyVendorProductReminder,
+  sendDailyServicemanUpdateReminder,
+  sendDailyCustomerNewProductsAlert,
+} from './lib/notify';
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -324,6 +330,7 @@ if (process.env.NODE_ENV !== 'test') {
     // ── Resilient background cron worker ─────────────────────────────────────
     // Uses exponential back-off so a cold Supabase database doesn't spam logs.
     // Resets to the base interval (30 s) once the DB is reachable again.
+    let   lastDailyReminderDate = '';
     const CRON_BASE_MS  = 30_000;   // 30 s normal interval
     const CRON_MAX_MS   = 300_000;  // 5 min maximum back-off
     let   cronDelay     = CRON_BASE_MS;
@@ -365,6 +372,67 @@ if (process.env.NODE_ENV !== 'test') {
             })
           ]);
           console.log(`[CronWorker] Automatically settled ${ids.length} standard batch withdrawals.`);
+        }
+
+        // 3. Daily 5 AM WAT (04:00 UTC) reminders — vendors, servicemen, customers
+        //    Guard: only fire at 5:00 AM WAT and once per day
+        const watHour = (now.getUTCHours() + 1) % 24; // WAT = UTC+1
+        const watMinute = now.getUTCMinutes();
+        const todayStr = now.toISOString().slice(0, 10);
+        if (watHour === 5 && watMinute === 0 && lastDailyReminderDate !== todayStr) {
+          lastDailyReminderDate = todayStr;
+          console.log('[CronWorker] Running daily 5 AM WAT reminders...');
+          try {
+            const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // last 24 h
+
+            // Count products created since yesterday for customer alerts
+            const newProductCount = await prisma.product.count({
+              where: { createdAt: { gte: since } }
+            });
+
+            // Fetch users grouped by role
+            const [vendors, servicemen, customers] = await Promise.all([
+              prisma.user.findMany({
+                where: { role: 'VENDOR' },
+                select: { id: true, name: true, email: true, phone: true, pushToken: true }
+              }),
+              prisma.user.findMany({
+                where: { role: 'HANDYMAN' },
+                select: { id: true, name: true, email: true, phone: true, pushToken: true }
+              }),
+              prisma.user.findMany({
+                where: { role: 'CUSTOMER' },
+                select: { id: true, name: true, email: true, phone: true, pushToken: true }
+              }),
+            ]);
+
+            // Send in small batches to avoid overwhelming SMTP/Twilio
+            const batchSize = 20;
+
+            const sendBatch = async <T>(items: T[], fn: (item: T) => Promise<any>) => {
+              for (let i = 0; i < items.length; i += batchSize) {
+                await Promise.allSettled(items.slice(i, i + batchSize).map(fn));
+                if (i + batchSize < items.length) {
+                  await new Promise(r => setTimeout(r, 2000)); // 2s pause between batches
+                }
+              }
+            };
+
+            await sendBatch(vendors, u => sendDailyVendorProductReminder(u));
+            console.log(`[CronWorker] Sent vendor reminders to ${vendors.length} vendors.`);
+
+            await sendBatch(servicemen, u => sendDailyServicemanUpdateReminder(u));
+            console.log(`[CronWorker] Sent profile reminders to ${servicemen.length} servicemen.`);
+
+            if (newProductCount > 0) {
+              await sendBatch(customers, u => sendDailyCustomerNewProductsAlert(u, newProductCount));
+              console.log(`[CronWorker] Sent new-products alert (${newProductCount} products) to ${customers.length} customers.`);
+            } else {
+              console.log('[CronWorker] No new products since yesterday — skipping customer alert.');
+            }
+          } catch (dailyErr: any) {
+            console.error('[CronWorker] Daily 5 AM reminder error:', dailyErr?.message ?? dailyErr);
+          }
         }
 
         // DB is healthy — reset to normal interval

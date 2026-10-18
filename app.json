@@ -101,7 +101,7 @@
     },
     "web": {
       "bundler": "metro",
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/logo_transparent.png"
     },
     "extra": {
       "eas": {

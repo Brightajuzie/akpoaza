@@ -49,6 +49,7 @@ const errorHandler_1 = require("./middleware/errorHandler");
 const prisma_1 = __importDefault(require("./lib/prisma"));
 const wallet_2 = require("./lib/wallet");
 const legal_1 = require("./lib/legal");
+const notify_1 = require("./lib/notify");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
 // Trust Render's (and most cloud providers') reverse proxy so that
@@ -297,6 +298,7 @@ if (process.env.NODE_ENV !== 'test') {
         // ── Resilient background cron worker ─────────────────────────────────────
         // Uses exponential back-off so a cold Supabase database doesn't spam logs.
         // Resets to the base interval (30 s) once the DB is reachable again.
+        let lastDailyReminderDate = '';
         const CRON_BASE_MS = 30000; // 30 s normal interval
         const CRON_MAX_MS = 300000; // 5 min maximum back-off
         let cronDelay = CRON_BASE_MS;
@@ -304,6 +306,7 @@ if (process.env.NODE_ENV !== 'test') {
         // Prisma error codes for "can't reach DB" — treat these as transient
         const DB_UNREACHABLE_CODES = new Set(['P1001', 'P1002', 'P1008', 'P1017']);
         const runCron = () => __awaiter(void 0, void 0, void 0, function* () {
+            var _a;
             try {
                 const now = new Date();
                 // 1. Auto-release HELD escrows that have passed their autoReleaseAt time
@@ -332,6 +335,61 @@ if (process.env.NODE_ENV !== 'test') {
                         })
                     ]);
                     console.log(`[CronWorker] Automatically settled ${ids.length} standard batch withdrawals.`);
+                }
+                // 3. Daily 5 AM WAT (04:00 UTC) reminders — vendors, servicemen, customers
+                //    Guard: only fire at 5:00 AM WAT and once per day
+                const watHour = (now.getUTCHours() + 1) % 24; // WAT = UTC+1
+                const watMinute = now.getUTCMinutes();
+                const todayStr = now.toISOString().slice(0, 10);
+                if (watHour === 5 && watMinute === 0 && lastDailyReminderDate !== todayStr) {
+                    lastDailyReminderDate = todayStr;
+                    console.log('[CronWorker] Running daily 5 AM WAT reminders...');
+                    try {
+                        const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // last 24 h
+                        // Count products created since yesterday for customer alerts
+                        const newProductCount = yield prisma_1.default.product.count({
+                            where: { createdAt: { gte: since } }
+                        });
+                        // Fetch users grouped by role
+                        const [vendors, servicemen, customers] = yield Promise.all([
+                            prisma_1.default.user.findMany({
+                                where: { role: 'VENDOR' },
+                                select: { id: true, name: true, email: true, phone: true, pushToken: true }
+                            }),
+                            prisma_1.default.user.findMany({
+                                where: { role: 'HANDYMAN' },
+                                select: { id: true, name: true, email: true, phone: true, pushToken: true }
+                            }),
+                            prisma_1.default.user.findMany({
+                                where: { role: 'CUSTOMER' },
+                                select: { id: true, name: true, email: true, phone: true, pushToken: true }
+                            }),
+                        ]);
+                        // Send in small batches to avoid overwhelming SMTP/Twilio
+                        const batchSize = 20;
+                        const sendBatch = (items, fn) => __awaiter(void 0, void 0, void 0, function* () {
+                            for (let i = 0; i < items.length; i += batchSize) {
+                                yield Promise.allSettled(items.slice(i, i + batchSize).map(fn));
+                                if (i + batchSize < items.length) {
+                                    yield new Promise(r => setTimeout(r, 2000)); // 2s pause between batches
+                                }
+                            }
+                        });
+                        yield sendBatch(vendors, u => (0, notify_1.sendDailyVendorProductReminder)(u));
+                        console.log(`[CronWorker] Sent vendor reminders to ${vendors.length} vendors.`);
+                        yield sendBatch(servicemen, u => (0, notify_1.sendDailyServicemanUpdateReminder)(u));
+                        console.log(`[CronWorker] Sent profile reminders to ${servicemen.length} servicemen.`);
+                        if (newProductCount > 0) {
+                            yield sendBatch(customers, u => (0, notify_1.sendDailyCustomerNewProductsAlert)(u, newProductCount));
+                            console.log(`[CronWorker] Sent new-products alert (${newProductCount} products) to ${customers.length} customers.`);
+                        }
+                        else {
+                            console.log('[CronWorker] No new products since yesterday — skipping customer alert.');
+                        }
+                    }
+                    catch (dailyErr) {
+                        console.error('[CronWorker] Daily 5 AM reminder error:', (_a = dailyErr === null || dailyErr === void 0 ? void 0 : dailyErr.message) !== null && _a !== void 0 ? _a : dailyErr);
+                    }
                 }
                 // DB is healthy — reset to normal interval
                 if (cronDelay !== CRON_BASE_MS) {

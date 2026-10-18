@@ -1088,3 +1088,164 @@ export async function sendUserGuideNotification(user: {
   });
 }
 
+
+// ─── Daily 5 AM Reminder Functions ───────────────────────────────────────────
+
+/**
+ * sendDailyVendorProductReminder — Remind vendors to upload/update products at 5 AM daily.
+ */
+export async function sendDailyVendorProductReminder(user: {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  pushToken?: string | null;
+}) {
+  const title = '🛒 Good Morning! Time to Boost Your FixMart Sales';
+  const body = `Hi ${user.name}, start your day strong! Upload new products or update your existing listings to appear at the top of customer searches today.`;
+  const smsText = `[FixMart] Good morning ${user.name}! Add or update your products today to attract more buyers. Visit: https://fixmart.com.ng`;
+
+  const emailHtml = `
+    <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+      Good morning, <strong>${user.name}</strong>! 🌅
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+      Customers are already browsing FixMart right now. Make sure your storefront is stocked and up to date!
+    </p>
+    <div style="background:#FAF5FF;border:1px solid #E9D5FF;border-radius:12px;padding:20px;margin:20px 0;">
+      <p style="margin:0 0 12px;font-size:16px;color:#7E22CE;font-weight:700;">📦 Today's Vendor Action Checklist:</p>
+      <ul style="font-size:14px;color:#1E293B;line-height:2;margin:0;padding-left:20px;">
+        <li>Upload at least <strong>one new product</strong> with clear photos and pricing</li>
+        <li>Update stock quantities for existing listings</li>
+        <li>Respond to any pending customer inquiries</li>
+        <li>Check your earnings dashboard and pending orders</li>
+      </ul>
+    </div>
+    <div style="text-align:center;margin:28px 0 16px;">
+      <a href="https://fixmart.com.ng" target="_blank"
+        style="display:inline-block;background:#7C3AED;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(124,58,237,0.35);">
+        🛒 Upload Products Now
+      </a>
+    </div>
+  `;
+
+  return sendNotification({
+    userId: user.id,
+    title,
+    body,
+    type: 'GENERAL',
+    email: user.email ?? undefined,
+    phone: user.phone ?? undefined,
+    pushToken: user.pushToken ?? undefined,
+    emailSubject: `🌅 Good Morning ${user.name} — Stock Your FixMart Store Today!`,
+    emailHtml,
+    smsText,
+  });
+}
+
+/**
+ * sendDailyServicemanUpdateReminder — Remind service providers to update profiles at 5 AM daily.
+ */
+export async function sendDailyServicemanUpdateReminder(user: {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  pushToken?: string | null;
+}) {
+  const title = '🔧 Good Morning! Keep Your Service Profile Fresh';
+  const body = `Hi ${user.name}, customers check profiles before booking. Update your availability, portfolio photos, and rates today to win more jobs!`;
+  const smsText = `[FixMart] Good morning ${user.name}! Update your service profile today — fresh profiles get more bookings. Visit: https://fixmart.com.ng`;
+
+  const emailHtml = `
+    <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+      Good morning, <strong>${user.name}</strong>! 🌅
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+      Homeowners and contractors are searching for skilled artisans right now. An updated, complete profile significantly increases your chances of getting booked today!
+    </p>
+    <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:20px;margin:20px 0;">
+      <p style="margin:0 0 12px;font-size:16px;color:#15803D;font-weight:700;">🔧 Today's Action Checklist:</p>
+      <ul style="font-size:14px;color:#1E293B;line-height:2;margin:0;padding-left:20px;">
+        <li>Update your <strong>availability status</strong> (Available / Busy)</li>
+        <li>Add fresh portfolio photos of recent completed jobs</li>
+        <li>Review and respond to pending booking requests</li>
+        <li>Verify your service rates and coverage area are current</li>
+        <li>Complete KYC verification if not done — it builds customer trust</li>
+      </ul>
+    </div>
+    <div style="text-align:center;margin:28px 0 16px;">
+      <a href="https://fixmart.com.ng" target="_blank"
+        style="display:inline-block;background:#16A34A;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(22,163,74,0.35);">
+        🔧 Update My Profile
+      </a>
+    </div>
+  `;
+
+  return sendNotification({
+    userId: user.id,
+    title,
+    body,
+    type: 'GENERAL',
+    email: user.email ?? undefined,
+    phone: user.phone ?? undefined,
+    pushToken: user.pushToken ?? undefined,
+    emailSubject: `🌅 Good Morning ${user.name} — Get More Bookings Today on FixMart!`,
+    emailHtml,
+    smsText,
+  });
+}
+
+/**
+ * sendDailyCustomerNewProductsAlert — Alert customers about new products added since yesterday at 5 AM.
+ */
+export async function sendDailyCustomerNewProductsAlert(user: {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  pushToken?: string | null;
+}, newProductCount: number) {
+  if (newProductCount < 1) return;
+
+  const title = `🆕 ${newProductCount} New Product${newProductCount > 1 ? 's' : ''} Just Added on FixMart!`;
+  const body = `Good morning ${user.name}! ${newProductCount} new item${newProductCount > 1 ? 's have' : ' has'} been added since yesterday. Shop now for the best deals on building materials, tools & services.`;
+  const smsText = `[FixMart] ${newProductCount} new product${newProductCount > 1 ? 's' : ''} added overnight! Shop now: https://fixmart.com.ng`;
+
+  const emailHtml = `
+    <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+      Good morning, <strong>${user.name}</strong>! 🌅
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+      Fresh products are waiting for you! Our vendors added <strong>${newProductCount} new listing${newProductCount > 1 ? 's' : ''}</strong> overnight — browse before they sell out.
+    </p>
+    <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:12px;padding:20px;margin:20px 0;">
+      <p style="margin:0 0 12px;font-size:16px;color:#1D4ED8;font-weight:700;">🛍️ What's New on FixMart:</p>
+      <ul style="font-size:14px;color:#1E293B;line-height:2;margin:0;padding-left:20px;">
+        <li>Building materials, tiles, paints &amp; plumbing supplies</li>
+        <li>Power tools, hand tools &amp; electrical fittings</li>
+        <li>Replacement parts and home improvement items</li>
+        <li>Verified artisan services near your location</li>
+      </ul>
+    </div>
+    <div style="text-align:center;margin:28px 0 16px;">
+      <a href="https://fixmart.com.ng" target="_blank"
+        style="display:inline-block;background:#007AFF;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(0,122,255,0.35);">
+        🛒 Shop New Arrivals
+      </a>
+    </div>
+  `;
+
+  return sendNotification({
+    userId: user.id,
+    title,
+    body,
+    type: 'GENERAL',
+    email: user.email ?? undefined,
+    phone: user.phone ?? undefined,
+    pushToken: user.pushToken ?? undefined,
+    emailSubject: `🆕 ${newProductCount} New Product${newProductCount > 1 ? 's' : ''} on FixMart — Shop Now, ${user.name}!`,
+    emailHtml,
+    smsText,
+  });
+}
