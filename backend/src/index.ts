@@ -41,6 +41,7 @@ import {
   sendDailyVendorProductReminder,
   sendDailyServicemanUpdateReminder,
   sendDailyCustomerNewProductsAlert,
+  sendSundayWeekendNotification,
 } from './lib/notify';
 
 
@@ -331,6 +332,7 @@ if (process.env.NODE_ENV !== 'test') {
     // Uses exponential back-off so a cold Supabase database doesn't spam logs.
     // Resets to the base interval (30 s) once the DB is reachable again.
     let   lastDailyReminderDate = '';
+    let   lastSundayReminderDate = '';
     const CRON_BASE_MS  = 30_000;   // 30 s normal interval
     const CRON_MAX_MS   = 300_000;  // 5 min maximum back-off
     let   cronDelay     = CRON_BASE_MS;
@@ -432,6 +434,36 @@ if (process.env.NODE_ENV !== 'test') {
             }
           } catch (dailyErr: any) {
             console.error('[CronWorker] Daily 5 AM reminder error:', dailyErr?.message ?? dailyErr);
+          }
+        }
+
+        // 4. Every Sunday at 6:25 AM WAT (05:25 UTC): Send customized weekend & Sunday message to all users via email
+        const watDate = new Date(now.getTime() + 60 * 60 * 1000); // WAT = UTC+1
+        const watDay = watDate.getUTCDay(); // 0 = Sunday
+        const watHourSunday = watDate.getUTCHours();
+        const watMinuteSunday = watDate.getUTCMinutes();
+
+        if (watDay === 0 && watHourSunday === 6 && watMinuteSunday === 25 && lastSundayReminderDate !== todayStr) {
+          lastSundayReminderDate = todayStr;
+          console.log('[CronWorker] Running Sunday 6:25 AM WAT weekend message to all users via email...');
+          try {
+            const allUsers = await prisma.user.findMany({
+              where: { email: { not: '' } },
+              select: { id: true, name: true, email: true, phone: true, pushToken: true, role: true },
+            });
+
+            console.log(`[CronWorker] Dispatching Sunday email to ${allUsers.length} users...`);
+            const batchSize = 15;
+            for (let i = 0; i < allUsers.length; i += batchSize) {
+              const batch = allUsers.slice(i, i + batchSize);
+              await Promise.allSettled(batch.map(u => sendSundayWeekendNotification(u)));
+              if (i + batchSize < allUsers.length) {
+                await new Promise(r => setTimeout(r, 2000)); // 2s pause between batches to protect SMTP limits
+              }
+            }
+            console.log(`[CronWorker] Completed Sunday 6:25 AM email delivery to ${allUsers.length} users.`);
+          } catch (sundayErr: any) {
+            console.error('[CronWorker] Sunday reminder error:', sundayErr?.message ?? sundayErr);
           }
         }
 

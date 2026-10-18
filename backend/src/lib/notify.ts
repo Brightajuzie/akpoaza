@@ -957,6 +957,87 @@ export async function sendWeekendNotification(user: {
 }
 
 /**
+ * sendSundayWeekendNotification — Customized Sunday & Weekend message sent to all users via email at 6:25 AM every Sunday.
+ */
+export async function sendSundayWeekendNotification(user: {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  pushToken?: string | null;
+  role?: string;
+}) {
+  const title = `✨ Happy Sunday, ${user.name}! Wishing You a Peaceful & Restful Day`;
+  const body = `Happy Sunday, ${user.name}! Rest, recharge, and spend quality time with loved ones today. If you need any quick household fixes or want to prepare early for the coming week, FixMart's verified artisans and delivery riders are on standby.`;
+  const smsText = `[FixMart] Happy Sunday, ${user.name}! Rest & recharge today while we handle your repairs & errands. Book verified pros or order materials: https://fixmart.com.ng`;
+  const whatsAppText = `✨ *Happy Sunday, ${user.name}!* 🌅\n\nMay your day be peaceful, joyful, and restful! ☕\n\nFixMart is here to help you get ready for a successful week ahead:\n🛠️ *Sunday & Weekend Checklist:*\n• Rest & recharge with family\n• Book verified electricians, plumbers or AC technicians for Monday/Tuesday\n• Order genuine hardware, replacement parts & tools\n• Send urgent packages across town with express dispatch\n\n🔒 *All transactions secured by FixMart Escrow*\n\n👉 *Visit FixMart:* https://fixmart.com.ng`;
+
+  const customHtml = `
+    <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+      Hello <strong>${user.name}</strong>,
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+      <strong>Happy Sunday from the entire FixMart team!</strong> 🌅 We hope today brings you rest, peace, and precious time with family and loved ones.
+    </p>
+
+    <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:20px;margin:20px 0;">
+      <p style="margin:0 0 12px;font-size:16px;color:#15803D;font-weight:700;">☕ Relax &amp; Prepare for a Winning Week Ahead:</p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 8px 0;width:24px;">🔧</td>
+          <td style="padding:4px 0 8px 0;">
+            <strong>Beat the Monday Rush:</strong> Don't start your new week with leaking taps, faulty ACs, or electrical issues. Book a verified artisan today to arrive at your convenient time.
+          </td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 8px 0;width:24px;">🛒</td>
+          <td style="padding:4px 0 8px 0;">
+            <strong>Genuine Hardware &amp; Supplies:</strong> Browse verified merchants for construction materials, quality electrical fittings, paints, and tools with express doorstep delivery.
+          </td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 8px 0;width:24px;">🛵</td>
+          <td style="padding:4px 0 8px 0;">
+            <strong>Express Sunday Delivery:</strong> Need to send gifts, groceries, packages or tools? Our dispatch riders are active with live GPS tracking.
+          </td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 8px 0;width:24px;">🛡️</td>
+          <td style="padding:4px 0 8px 0;">
+            <strong>100% Escrow Protected:</strong> Your money stays securely held in FixMart Escrow until your ordered product arrives or service is fully completed and approved by you.
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="text-align:center;margin:28px 0 16px;">
+      <a href="https://fixmart.com.ng" target="_blank"
+        style="display:inline-block;background:#16A34A;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(22,163,74,0.35);">
+        ✨ Explore FixMart Services &amp; Store
+      </a>
+    </div>
+
+    <p style="font-size:13px;color:#64748B;line-height:1.5;text-align:center;margin-top:20px;">
+      Have a blessed Sunday and an extraordinary week ahead! 🌟
+    </p>
+  `;
+
+  return sendNotification({
+    userId: user.id,
+    title,
+    body,
+    type: 'GENERAL',
+    email: user.email ?? undefined,
+    phone: user.phone ?? undefined,
+    pushToken: user.pushToken ?? undefined,
+    emailSubject: `✨ Happy Sunday, ${user.name}! Rest & Prepare for a Successful Week Ahead`,
+    emailHtml: customHtml,
+    smsText,
+    whatsAppText,
+  });
+}
+
+/**
  * sendIncompleteRegistrationNotification — Nudge for users missing phone, address, or KYC.
  */
 export async function sendIncompleteRegistrationNotification(user: {
