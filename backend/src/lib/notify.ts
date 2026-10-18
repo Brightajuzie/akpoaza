@@ -42,6 +42,10 @@ export interface NotifyPayload {
   emailHtml?: string;
   /** Custom SMS text body (defaults to `[FixMart] ${title}\n${body}`) */
   smsText?: string;
+  /** Custom WhatsApp text body (defaults to `[FixMart] *${title}*\n\n${body}`) */
+  whatsAppText?: string;
+  /** Explicit toggle to control WhatsApp dispatch (defaults to true if WhatsApp is configured) */
+  sendWhatsApp?: boolean;
 }
 
 // ─── Lazy singletons & Dynamic SMTP Config ──────────────────────────────────
@@ -70,6 +74,7 @@ async function getSmtpConfig(): Promise<{
       const keys = [
         'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from',
         'twilio_account_sid', 'twilio_auth_token', 'twilio_from_number',
+        'twilio_whatsapp_from', 'whatsapp_enabled',
       ];
       const dbSettings = await prisma.appSetting.findMany({
         where: { key: { in: keys } },
@@ -255,13 +260,32 @@ export function normalizePhoneNumber(phone: string, defaultCountryCode = '234'):
   return `+${clean}`;
 }
 
-async function getTwilioClient(): Promise<{ client: twilio.Twilio | null; fromNumber: string | null }> {
+async function getTwilioClient(): Promise<{
+  client: twilio.Twilio | null;
+  fromNumber: string | null;
+  whatsappFromNumber: string | null;
+  whatsappEnabled: boolean;
+}> {
   const s = _cachedSettings || {};
   const sid = s['twilio_account_sid'] || process.env.TWILIO_ACCOUNT_SID;
   const token = s['twilio_auth_token'] || process.env.TWILIO_AUTH_TOKEN;
   const fromNumber = s['twilio_from_number'] || process.env.TWILIO_FROM_NUMBER;
-  if (!sid || !token || !fromNumber) return { client: null, fromNumber: null };
-  return { client: twilio(sid, token), fromNumber };
+  const rawWhatsAppFrom = s['twilio_whatsapp_from'] || process.env.TWILIO_WHATSAPP_FROM;
+  const whatsappEnabled = s['whatsapp_enabled'] !== 'false';
+
+  let whatsappFromNumber: string | null = null;
+  if (rawWhatsAppFrom) {
+    whatsappFromNumber = rawWhatsAppFrom.startsWith('whatsapp:')
+      ? rawWhatsAppFrom
+      : `whatsapp:${rawWhatsAppFrom}`;
+  } else if (fromNumber) {
+    whatsappFromNumber = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
+  }
+
+  if (!sid || !token) {
+    return { client: null, fromNumber: null, whatsappFromNumber: null, whatsappEnabled: false };
+  }
+  return { client: twilio(sid, token), fromNumber: fromNumber || null, whatsappFromNumber, whatsappEnabled };
 }
 
 /**
@@ -288,6 +312,35 @@ export async function sendTestSms(recipientPhone: string): Promise<{ success: bo
   return {
     success: true,
     message: `Test SMS dispatched successfully to ${toPhone}! (SID: ${msg.sid})`,
+  };
+}
+
+/**
+ * sendTestWhatsApp — sends a verification test WhatsApp message using the configured Twilio WhatsApp credentials.
+ * Returns { success: true, message: string } or throws with error details.
+ */
+export async function sendTestWhatsApp(recipientPhone: string): Promise<{ success: boolean; message: string }> {
+  const { client, whatsappFromNumber } = await getTwilioClient();
+  if (!client || !whatsappFromNumber) {
+    throw new Error('Twilio WhatsApp credentials incomplete. Please configure Twilio Account SID, Auth Token, and WhatsApp Sender Number.');
+  }
+
+  const rawPhone = normalizePhoneNumber(recipientPhone);
+  if (!rawPhone) {
+    throw new Error('Please provide a valid recipient phone number.');
+  }
+
+  const toWhatsApp = rawPhone.startsWith('whatsapp:') ? rawPhone : `whatsapp:${rawPhone}`;
+
+  const msg = await client.messages.create({
+    body: `🟢 *[FixMart]* Test WhatsApp Message: Twilio WhatsApp integration verified and active!\n\nTime: ${new Date().toLocaleTimeString()}\nWelcome to FixMart notifications! 🛠️`,
+    from: whatsappFromNumber,
+    to: toWhatsApp,
+  });
+
+  return {
+    success: true,
+    message: `Test WhatsApp message dispatched successfully to ${toWhatsApp}! (SID: ${msg.sid})`,
   };
 }
 
@@ -523,6 +576,24 @@ export async function sendNotification(payload: NotifyPayload) {
         }).catch((e) => console.error('[notify] SMS send failed to', toPhone, e?.message));
       }
     }).catch((e) => console.error('[notify] getTwilioClient error:', e));
+  }
+
+  // 6. WhatsApp (fire-and-forget — skipped in test mode)
+  if (!isTest && userPhone && (payload.sendWhatsApp !== false)) {
+    getTwilioClient().then(({ client, whatsappFromNumber, whatsappEnabled }) => {
+      if (client && whatsappFromNumber && whatsappEnabled) {
+        const rawPhone = normalizePhoneNumber(userPhone!);
+        if (rawPhone) {
+          const toWhatsApp = rawPhone.startsWith('whatsapp:') ? rawPhone : `whatsapp:${rawPhone}`;
+          const whatsappBody = payload.whatsAppText || payload.smsText || `[FixMart] *${title}*\n\n${body}`;
+          client.messages.create({
+            body: whatsappBody,
+            from: whatsappFromNumber,
+            to: toWhatsApp,
+          }).catch((e) => console.error('[notify] WhatsApp send failed to', toWhatsApp, e?.message));
+        }
+      }
+    }).catch((e) => console.error('[notify] getTwilioClient error for WhatsApp:', e));
   }
 
   return notification;
@@ -1129,6 +1200,8 @@ export async function sendDailyVendorProductReminder(user: {
     </div>
   `;
 
+  const whatsAppText = `🌅 *Good morning ${user.name}!* Time to boost your FixMart sales!\n\nCustomers are browsing right now. Keep your store active:\n📦 *Today's Action Checklist:*\n1️⃣ Upload at least 1 new product\n2️⃣ Update stock quantities\n3️⃣ Respond to pending customer orders\n\n👉 *Manage Store:* https://fixmart.com.ng`;
+
   return sendNotification({
     userId: user.id,
     title,
@@ -1140,6 +1213,7 @@ export async function sendDailyVendorProductReminder(user: {
     emailSubject: `🌅 Good Morning ${user.name} — Stock Your FixMart Store Today!`,
     emailHtml,
     smsText,
+    whatsAppText,
   });
 }
 
@@ -1156,6 +1230,7 @@ export async function sendDailyServicemanUpdateReminder(user: {
   const title = '🔧 Good Morning! Keep Your Service Profile Fresh';
   const body = `Hi ${user.name}, customers check profiles before booking. Update your availability, portfolio photos, and rates today to win more jobs!`;
   const smsText = `[FixMart] Good morning ${user.name}! Update your service profile today — fresh profiles get more bookings. Visit: https://fixmart.com.ng`;
+  const whatsAppText = `🌅 *Good morning ${user.name}!* Keep your FixMart service profile fresh!\n\nHomeowners & contractors are looking for skilled artisans right now:\n🔧 *Today's Action Checklist:*\n1️⃣ Update availability status (Available / Busy)\n2️⃣ Upload new completed job photos\n3️⃣ Check and respond to booking requests\n4️⃣ Verify rates and coverage area\n\n👉 *Update Profile:* https://fixmart.com.ng`;
 
   const emailHtml = `
     <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
@@ -1193,6 +1268,7 @@ export async function sendDailyServicemanUpdateReminder(user: {
     emailSubject: `🌅 Good Morning ${user.name} — Get More Bookings Today on FixMart!`,
     emailHtml,
     smsText,
+    whatsAppText,
   });
 }
 
@@ -1211,6 +1287,7 @@ export async function sendDailyCustomerNewProductsAlert(user: {
   const title = `🆕 ${newProductCount} New Product${newProductCount > 1 ? 's' : ''} Just Added on FixMart!`;
   const body = `Good morning ${user.name}! ${newProductCount} new item${newProductCount > 1 ? 's have' : ' has'} been added since yesterday. Shop now for the best deals on building materials, tools & services.`;
   const smsText = `[FixMart] ${newProductCount} new product${newProductCount > 1 ? 's' : ''} added overnight! Shop now: https://fixmart.com.ng`;
+  const whatsAppText = `🌅 *Good morning ${user.name}!* 🛍️\n\n*${newProductCount} new product${newProductCount > 1 ? 's' : ''}* just added to FixMart overnight!\n\nBrowse building materials, tools & artisan services before they sell out.\n\n👉 *Shop Now:* https://fixmart.com.ng`;
 
   const emailHtml = `
     <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
@@ -1247,5 +1324,6 @@ export async function sendDailyCustomerNewProductsAlert(user: {
     emailSubject: `🆕 ${newProductCount} New Product${newProductCount > 1 ? 's' : ''} on FixMart — Shop Now, ${user.name}!`,
     emailHtml,
     smsText,
+    whatsAppText,
   });
 }

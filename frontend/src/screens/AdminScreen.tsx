@@ -171,15 +171,19 @@ export default function AdminScreen() {
   const [smtpSaving, setSmtpSaving]                   = useState(false);
   const [smtpSyncStatus, setSmtpSyncStatus]           = useState<string | null>(null);
 
-  // Twilio SMS Gateway (Admin only)
+  // Twilio SMS & WhatsApp Gateway (Admin only)
   const [twilioAccountSid, setTwilioAccountSid]       = useState('');
   const [twilioAuthToken, setTwilioAuthToken]         = useState('');
   const [twilioFromNumber, setTwilioFromNumber]       = useState('');
+  const [twilioWhatsAppFrom, setTwilioWhatsAppFrom]   = useState('');
+  const [whatsappEnabled, setWhatsappEnabled]         = useState(true);
   const [twilioShowToken, setTwilioShowToken]         = useState(false);
   const [twilioSaving, setTwilioSaving]               = useState(false);
   const [twilioSyncStatus, setTwilioSyncStatus]       = useState<string | null>(null);
   const [testSmsRecipient, setTestSmsRecipient]       = useState('');
   const [testSmsSending, setTestSmsSending]           = useState(false);
+  const [testWhatsAppRecipient, setTestWhatsAppRecipient] = useState('');
+  const [testWhatsAppSending, setTestWhatsAppSending] = useState(false);
 
   // Rider Delivery Pricing (Admin only)
   const [riderBaseFare, setRiderBaseFare]           = useState('1000');
@@ -1140,14 +1144,19 @@ export default function AdminScreen() {
       if (settings.smtp_user && !testEmailRecipient) {
         setTestEmailRecipient(settings.smtp_user);
       }
-      // Twilio SMS
+      // Twilio SMS & WhatsApp
       setTwilioAccountSid(settings.twilio_account_sid || '');
       if (settings.twilio_auth_token) {
         setTwilioAuthToken(settings.twilio_auth_token);
       }
       setTwilioFromNumber(settings.twilio_from_number || '');
+      setTwilioWhatsAppFrom(settings.twilio_whatsapp_from || '');
+      setWhatsappEnabled(settings.whatsapp_enabled !== 'false');
       if (userInfo?.phone && !testSmsRecipient) {
         setTestSmsRecipient(userInfo.phone);
+      }
+      if (userInfo?.phone && !testWhatsAppRecipient) {
+        setTestWhatsAppRecipient(userInfo.phone);
       }
     }
   }, [settings]);
@@ -2007,16 +2016,18 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
       const twilioUpdates: Record<string, string> = {
         twilio_account_sid: twilioAccountSid.trim(),
         twilio_from_number: twilioFromNumber.trim(),
+        twilio_whatsapp_from: twilioWhatsAppFrom.trim(),
+        whatsapp_enabled: whatsappEnabled ? 'true' : 'false',
       };
       if (twilioAuthToken.trim()) {
         twilioUpdates.twilio_auth_token = twilioAuthToken.trim();
       }
 
       await updateSettings(twilioUpdates);
-      setTwilioSyncStatus('✅ Twilio SMS credentials synced successfully!');
+      setTwilioSyncStatus('✅ Twilio SMS & WhatsApp credentials synced successfully!');
       Alert.alert(
-        '✅ Twilio Credentials Synced',
-        'Your Twilio Account SID, Auth Token, and Sender Number have been saved to the database and synced. You can now use "Test Send" below to test SMS delivery.'
+        '✅ Twilio SMS & WhatsApp Credentials Synced',
+        'Your Twilio Account SID, Auth Token, Sender Number, and WhatsApp Number have been saved to the database and synced.'
       );
     } catch (err: any) {
       const msg = err?.response?.data?.error || err?.message || 'Failed to sync Twilio settings.';
@@ -2044,6 +2055,8 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
       const twilioUpdates: Record<string, string> = {
         twilio_account_sid: twilioAccountSid.trim(),
         twilio_from_number: twilioFromNumber.trim(),
+        twilio_whatsapp_from: twilioWhatsAppFrom.trim(),
+        whatsapp_enabled: whatsappEnabled ? 'true' : 'false',
       };
       if (twilioAuthToken.trim()) {
         twilioUpdates.twilio_auth_token = twilioAuthToken.trim();
@@ -2062,6 +2075,47 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
       Alert.alert('❌ Test SMS Failed', errMsg);
     } finally {
       setTestSmsSending(false);
+    }
+  };
+
+  const handleSendTestWhatsApp = async () => {
+    const targetPhone = (testWhatsAppRecipient || testSmsRecipient || userInfo?.phone || '').trim();
+    if (!targetPhone) {
+      Alert.alert('Recipient Missing', 'Please enter a recipient phone number (e.g. 08012345678 or +234...) to send the test WhatsApp message to.');
+      return;
+    }
+
+    const hasConfiguredToken = Boolean(twilioAuthToken.trim() || settings.twilio_auth_token || settings.twilio_configured === 'true');
+    if (!twilioAccountSid.trim() || !hasConfiguredToken) {
+      Alert.alert('Incomplete Twilio Settings', 'Please enter your Account SID and Auth Token, then click "Save & Sync Twilio Credentials" first.');
+      return;
+    }
+
+    setTestWhatsAppSending(true);
+    try {
+      const twilioUpdates: Record<string, string> = {
+        twilio_account_sid: twilioAccountSid.trim(),
+        twilio_from_number: twilioFromNumber.trim(),
+        twilio_whatsapp_from: twilioWhatsAppFrom.trim(),
+        whatsapp_enabled: whatsappEnabled ? 'true' : 'false',
+      };
+      if (twilioAuthToken.trim()) {
+        twilioUpdates.twilio_auth_token = twilioAuthToken.trim();
+      }
+
+      await updateSettings(twilioUpdates);
+
+      const res = await apiClient.post('/settings/test-whatsapp', { recipientPhone: targetPhone });
+      Alert.alert(
+        '✅ WhatsApp Message Dispatched!',
+        res.data?.message || `A test WhatsApp message was dispatched to ${targetPhone}. Please check your WhatsApp app.`
+      );
+    } catch (err: any) {
+      console.error('Test WhatsApp error:', err);
+      const errMsg = err?.response?.data?.error || err?.message || 'Failed to send test WhatsApp message. Please check your Twilio WhatsApp configuration and recipient number.';
+      Alert.alert('❌ Test WhatsApp Failed', errMsg);
+    } finally {
+      setTestWhatsAppSending(false);
     }
   };
 
@@ -4314,12 +4368,12 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                 </View>
               </View>
 
-              {/* 7. Twilio SMS Notification Gateway */}
-              <Text style={styles.sectionHeading}>7. Twilio SMS Notification Gateway</Text>
+              {/* 7. Twilio SMS & WhatsApp Notification Gateway */}
+              <Text style={styles.sectionHeading}>7. Twilio SMS & WhatsApp Notification Gateway</Text>
               <View style={styles.subSettingsCard}>
-                <Text style={styles.subCardTitle}>📱 Twilio SMS Dispatcher</Text>
+                <Text style={styles.subCardTitle}>📱 Twilio SMS & WhatsApp Dispatcher</Text>
                 <Text style={styles.subCardNote}>
-                  Configure your Twilio account credentials to send immediate SMS notifications directly to customers, artisans, riders, and vendors for orders, bookings, and important system alerts.
+                  Configure your Twilio credentials to dispatch immediate SMS and WhatsApp messages directly to customers, artisans, riders, and vendors for orders, bookings, reminders, and broadcast campaigns.
                 </Text>
 
                 {/* Account SID */}
@@ -4370,9 +4424,9 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                   </View>
                 </View>
 
-                {/* From Number */}
+                {/* SMS From Number */}
                 <View style={styles.formGroup}>
-                  <Text style={styles.label}>Twilio Sender Phone Number ("From" Number)</Text>
+                  <Text style={styles.label}>Twilio Sender Phone Number (SMS "From" Number)</Text>
                   <TextInput
                     style={styles.input}
                     value={twilioFromNumber}
@@ -4382,23 +4436,65 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                     keyboardType="phone-pad"
                   />
                   <Text style={{ fontSize: 11, color: subtextColor, marginTop: 3 }}>
-                    The active Twilio phone number registered on your account (must include country code prefix, e.g. +1...).
+                    The active Twilio phone number registered on your account for SMS delivery.
                   </Text>
                 </View>
 
-                {/* Twilio Status Banner */}
-                {(twilioAccountSid && (twilioAuthToken || settings.twilio_auth_token) && twilioFromNumber) ? (
+                {/* WhatsApp Messages Option */}
+                <View style={{ marginTop: 8, paddingTop: 12, borderTopWidth: 1, borderTopColor: borderColor }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: textColor }}>
+                        🟢 WhatsApp Messages Option
+                      </Text>
+                      <Text style={{ fontSize: 11, color: subtextColor, marginTop: 2 }}>
+                        Enable automated notifications & morning reminders via WhatsApp.
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 20,
+                        backgroundColor: whatsappEnabled ? '#22C55E' : (isDark ? '#475569' : '#CBD5E1'),
+                      }}
+                      onPress={() => setWhatsappEnabled(!whatsappEnabled)}
+                    >
+                      <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>
+                        {whatsappEnabled ? 'ENABLED' : 'DISABLED'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.formGroup}>
+                    <Text style={styles.label}>Twilio WhatsApp Sender ("From" Number)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={twilioWhatsAppFrom}
+                      onChangeText={setTwilioWhatsAppFrom}
+                      placeholder="e.g. whatsapp:+14155238886 (Twilio Sandbox) or +234..."
+                      autoCapitalize="none"
+                      keyboardType="phone-pad"
+                    />
+                    <Text style={{ fontSize: 11, color: subtextColor, marginTop: 3 }}>
+                      Twilio WhatsApp sender number. Defaults to Twilio Sandbox (<Text style={{ fontWeight: '700' }}>whatsapp:+14155238886</Text>) or your verified WhatsApp business profile.
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Status Banners */}
+                {(twilioAccountSid && (twilioAuthToken || settings.twilio_auth_token) && (twilioFromNumber || twilioWhatsAppFrom)) ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#064E3B' : '#ECFDF5', padding: 10, borderRadius: 8, marginTop: 8, borderWidth: 1, borderColor: isDark ? '#059669' : '#A7F3D0' }}>
                     <Text style={{ fontSize: 13, marginRight: 6 }}>🔒</Text>
                     <Text style={{ fontSize: 12, color: isDark ? '#6EE7B7' : '#065F46', fontWeight: '700', flex: 1 }}>
-                      Twilio SMS Active & Synced (From: {twilioFromNumber})
+                      Twilio Active: SMS {twilioFromNumber ? `(${twilioFromNumber})` : '(off)'} | WhatsApp {whatsappEnabled ? (twilioWhatsAppFrom || 'Ready') : '(disabled)'}
                     </Text>
                   </View>
                 ) : (
                   <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#78350F' : '#FEF3C7', padding: 10, borderRadius: 8, marginTop: 8, borderWidth: 1, borderColor: isDark ? '#B45309' : '#FDE68A' }}>
                     <Text style={{ fontSize: 13, marginRight: 6 }}>⚠️</Text>
                     <Text style={{ fontSize: 12, color: isDark ? '#FCD34D' : '#92400E', fontWeight: '600', flex: 1 }}>
-                      Twilio SMS not fully configured. Enter Account SID, Auth Token, and From Number.
+                      Twilio not fully configured. Enter Account SID, Auth Token, and Sender Number.
                     </Text>
                   </View>
                 )}
@@ -4421,20 +4517,20 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
                     <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>
-                      💾 Save & Sync Twilio Credentials
+                      💾 Save & Sync Twilio SMS & WhatsApp Credentials
                     </Text>
                   )}
                 </TouchableOpacity>
 
-                {/* Live Test SMS Tool */}
+                {/* Live Test Tools */}
                 <View style={{ marginTop: 12, paddingTop: 14, borderTopWidth: 1, borderTopColor: borderColor }}>
                   <Text style={{ fontSize: 13, fontWeight: '800', color: textColor, marginBottom: 4 }}>
                     📱 Send Verification Test SMS
                   </Text>
                   <Text style={{ fontSize: 11, color: subtextColor, marginBottom: 8 }}>
-                    Test your credentials in real-time. A test SMS will be dispatched to this phone number.
+                    Test your SMS credentials in real-time. A test SMS will be dispatched to this phone number.
                   </Text>
-                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 14 }}>
                     <TextInput
                       style={[styles.input, { flex: 1 }]}
                       value={testSmsRecipient}
@@ -4459,7 +4555,43 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                       {testSmsSending ? (
                         <ActivityIndicator color="#fff" size="small" />
                       ) : (
-                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Test Send</Text>
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Test SMS</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: textColor, marginBottom: 4 }}>
+                    🟢 Send Verification Test WhatsApp Message
+                  </Text>
+                  <Text style={{ fontSize: 11, color: subtextColor, marginBottom: 8 }}>
+                    Test your WhatsApp credentials in real-time. Dispatches a formatted test message via Twilio WhatsApp.
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TextInput
+                      style={[styles.input, { flex: 1 }]}
+                      value={testWhatsAppRecipient}
+                      onChangeText={setTestWhatsAppRecipient}
+                      placeholder="e.g. 08012345678 or +234..."
+                      autoCapitalize="none"
+                      keyboardType="phone-pad"
+                    />
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: '#16A34A',
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        borderRadius: 8,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        opacity: testWhatsAppSending ? 0.7 : 1,
+                      }}
+                      onPress={handleSendTestWhatsApp}
+                      disabled={testWhatsAppSending}
+                    >
+                      {testWhatsAppSending ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Test WhatsApp</Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -5533,7 +5665,8 @@ Home & Office Deep Cleaning,Comprehensive dusting sanitisation and deep floor sc
                   • In-App User Dashboard & Notification Bell{'\n'}
                   • Mobile Push Notifications (Lockscreen alert on phone){'\n'}
                   • Official FixMart HTML Email (via SMTP Server){'\n'}
-                  • Direct SMS Delivery (via Twilio when configured)
+                  • Direct SMS Delivery (via Twilio when configured){'\n'}
+                  • Direct WhatsApp Messages (via Twilio WhatsApp Gateway)
                 </Text>
               </View>
 
