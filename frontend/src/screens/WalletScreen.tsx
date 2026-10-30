@@ -52,6 +52,13 @@ export default function WalletScreen({ navigation }: any) {
   const [instant, setInstant] = useState(false);
   const [accountNumber, setAccountNumber] = useState('');
   const [bankName, setBankName] = useState('');
+  const [bankCode, setBankCode] = useState('');
+  const [banks, setBanks] = useState<{ id: string | number; code: string; name: string }[]>([]);
+  const [loadingBanks, setLoadingBanks] = useState(false);
+  const [bankSearch, setBankSearch] = useState('');
+  const [bankPickerVisible, setBankPickerVisible] = useState(false);
+  const [accountName, setAccountName] = useState('');
+  const [resolvingAccount, setResolvingAccount] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // First-time withdrawal OTP states
@@ -75,6 +82,49 @@ export default function WalletScreen({ navigation }: any) {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filterType, setFilterType] = useState('All'); // Options: All, Withdrawal, Transaction
 
+  const fetchBanks = async () => {
+    try {
+      setLoadingBanks(true);
+      const res = await apiClient.get('/wallet/banks');
+      if (res.data?.banks && Array.isArray(res.data.banks)) {
+        setBanks(res.data.banks);
+      }
+    } catch (err) {
+      console.warn('[WalletScreen] Could not fetch banks list:', err);
+    } finally {
+      setLoadingBanks(false);
+    }
+  };
+
+  const resolveAccount = async (accNum: string, bCode: string) => {
+    if (accNum.length !== 10 || !bCode) return;
+    try {
+      setResolvingAccount(true);
+      const res = await apiClient.post('/wallet/resolve-account', {
+        accountNumber: accNum,
+        bankCode: bCode,
+      });
+      if (res.data?.accountName) {
+        setAccountName(res.data.accountName);
+      }
+    } catch (err) {
+      setAccountName('');
+    } finally {
+      setResolvingAccount(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBanks();
+  }, []);
+
+  useEffect(() => {
+    if (accountNumber.trim().length === 10 && bankCode) {
+      resolveAccount(accountNumber.trim(), bankCode);
+    } else {
+      setAccountName('');
+    }
+  }, [accountNumber, bankCode]);
 
   const fetchWalletData = async () => {
     try {
@@ -285,6 +335,8 @@ export default function WalletScreen({ navigation }: any) {
         instant,
         accountNumber: accountNumber.trim(),
         bankName: bankName.trim(),
+        bankCode: bankCode || undefined,
+        accountName: accountName.trim() || undefined,
       };
       if (otp.trim()) {
         payload.otp = otp.trim();
@@ -308,6 +360,8 @@ export default function WalletScreen({ navigation }: any) {
       setAmount('');
       setAccountNumber('');
       setBankName('');
+      setBankCode('');
+      setAccountName('');
       setInstant(false);
       setOtp('');
       setOtpSent(false);
@@ -648,17 +702,20 @@ export default function WalletScreen({ navigation }: any) {
                 onChangeText={setAmount}
               />
 
-              {/* Bank Name */}
+              {/* Bank Name Selector */}
               <Text style={styles.inputLabel}>Bank Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. GTBank, Zenith, Access"
-                value={bankName}
-                onChangeText={setBankName}
-              />
+              <TouchableOpacity
+                style={[styles.input, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+                onPress={() => setBankPickerVisible(true)}
+              >
+                <Text style={{ color: bankName ? '#1E293B' : '#94A3B8', fontSize: 14, fontWeight: bankName ? '600' : '400', flex: 1 }}>
+                  {bankName || (loadingBanks ? 'Loading banks...' : 'Tap to select bank (Access, GTBank, OPay, etc.)')}
+                </Text>
+                <Text style={{ fontSize: 14, color: '#64748B', marginLeft: 8 }}>▼</Text>
+              </TouchableOpacity>
 
               {/* Account Number */}
-              <Text style={styles.inputLabel}>Account Number</Text>
+              <Text style={styles.inputLabel}>Account Number (10 digits)</Text>
               <TextInput
                 style={styles.input}
                 placeholder="10-digit NUBAN number"
@@ -667,6 +724,18 @@ export default function WalletScreen({ navigation }: any) {
                 value={accountNumber}
                 onChangeText={setAccountNumber}
               />
+
+              {/* Account Name Verification Status */}
+              {resolvingAccount ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 }}>
+                  <ActivityIndicator size="small" color={theme.primary} style={{ marginRight: 8 }} />
+                  <Text style={{ color: '#64748B', fontSize: 13, fontWeight: '500' }}>Verifying account holder with bank...</Text>
+                </View>
+              ) : accountName ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#86EFAC', borderRadius: 8, padding: 10, marginBottom: 12 }}>
+                  <Text style={{ color: '#166534', fontWeight: '700', fontSize: 13, flex: 1 }}>✅ Verified Name: {accountName}</Text>
+                </View>
+              ) : null}
 
               {/* Payout Options */}
               <Text style={styles.inputLabel}>Settlement Speed</Text>
@@ -820,6 +889,68 @@ export default function WalletScreen({ navigation }: any) {
               </View>
             </View>
           </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Bank Selection Search Modal */}
+      <Modal
+        visible={bankPickerVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setBankPickerVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: '80%', paddingBottom: 16 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: '#1E293B' }}>Select Bank</Text>
+              <TouchableOpacity onPress={() => setBankPickerVisible(false)}>
+                <Text style={{ fontSize: 15, color: '#EF4444', fontWeight: '700' }}>✕ Close</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={[styles.input, { marginBottom: 12 }]}
+              placeholder="Search bank name (e.g. Access, Kuda, GTB...)"
+              value={bankSearch}
+              onChangeText={setBankSearch}
+            />
+
+            <FlatList
+              data={banks.filter((b) => b.name.toLowerCase().includes(bankSearch.toLowerCase()))}
+              keyExtractor={(item) => String(item.code || item.id)}
+              style={{ maxHeight: 360 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={{
+                    paddingVertical: 14,
+                    paddingHorizontal: 12,
+                    borderBottomWidth: 1,
+                    borderBottomColor: '#F1F5F9',
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                  onPress={() => {
+                    setBankName(item.name);
+                    setBankCode(item.code);
+                    setBankPickerVisible(false);
+                  }}
+                >
+                  <Text style={{ fontSize: 15, color: '#1E293B', fontWeight: bankCode === item.code ? '700' : '500', flex: 1 }}>
+                    {item.name}
+                  </Text>
+                  {bankCode === item.code && (
+                    <Text style={{ color: theme.primary, fontWeight: '800', marginLeft: 8 }}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <View style={{ padding: 24, alignItems: 'center' }}>
+                  <Text style={{ color: '#64748B' }}>No banks matching "{bankSearch}"</Text>
+                </View>
+              }
+            />
+          </View>
         </View>
       </Modal>
 

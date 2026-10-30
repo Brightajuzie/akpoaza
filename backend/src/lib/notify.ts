@@ -46,6 +46,8 @@ export interface NotifyPayload {
   whatsAppText?: string;
   /** Explicit toggle to control WhatsApp dispatch (defaults to true if WhatsApp is configured) */
   sendWhatsApp?: boolean;
+  /** When true, awaits email/SMS/WhatsApp dispatch before returning (useful for scripts & cron runners) */
+  awaitDelivery?: boolean;
 }
 
 // ─── Lazy singletons & Dynamic SMTP Config ──────────────────────────────────
@@ -171,6 +173,10 @@ async function getMailer(): Promise<{ mailer: nodemailer.Transporter | null; fro
   if (_mailer) return { mailer: _mailer, from: config.from };
 
   _mailer = nodemailer.createTransport({
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 100,
+    rateLimit: 5,
     host: config.host,
     port: config.port,
     secure: config.secure,
@@ -178,10 +184,10 @@ async function getMailer(): Promise<{ mailer: nodemailer.Transporter | null; fro
       user: config.user,
       pass: config.pass,
     },
-    // Fail fast (10 s) rather than hanging on bad credentials
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000,
+    // Resilient timeout configurations
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
   });
 
   return { mailer: _mailer, from: config.from };
@@ -404,7 +410,7 @@ function sendExpoPush(
 
 // ─── Email HTML template ───────────────────────────────────────────────────────
 
-function buildEmailHtml(title: string, body: string, customHtml?: string): string {
+export function buildEmailHtml(title: string, body: string, customHtml?: string): string {
   const content = customHtml || `<p style="font-size:16px;color:#334155;line-height:1.6;margin:0 0 16px;">${body.replace(/\n/g, '<br>')}</p>`;
   const logoFallbackUrl = getEmailLogoUrl();
   const currentYear = new Date().getFullYear();
@@ -546,12 +552,14 @@ export async function sendNotification(payload: NotifyPayload) {
     });
   }
 
-  // 4. Email (fire-and-forget — skipped in test mode)
+  const pendingDispatches: Promise<any>[] = [];
+
+  // 4. Email (skipped in test mode)
   if (!isTest && userEmail) {
-    getMailer().then(({ mailer, from }) => {
+    const emailPromise = getMailer().then(async ({ mailer, from }) => {
       if (mailer) {
         const attachments = getEmailAttachments();
-        mailer.sendMail({
+        await mailer.sendMail({
           from,
           to: userEmail,
           subject: emailSubject || title,
@@ -561,32 +569,34 @@ export async function sendNotification(payload: NotifyPayload) {
         }).catch((e) => console.error('[notify] email send failed:', e));
       }
     }).catch((e) => console.error('[notify] getMailer error:', e));
+    pendingDispatches.push(emailPromise);
   }
 
-  // 5. SMS (fire-and-forget — skipped in test mode)
+  // 5. SMS (skipped in test mode)
   if (!isTest && userPhone) {
-    getTwilioClient().then(({ client, fromNumber }) => {
+    const smsPromise = getTwilioClient().then(async ({ client, fromNumber }) => {
       if (client && fromNumber) {
         const toPhone = normalizePhoneNumber(userPhone!);
         const smsBody = payload.smsText || `[FixMart] ${title}\n${body}`;
-        client.messages.create({
+        await client.messages.create({
           body: smsBody.substring(0, 160),
           from: fromNumber,
           to: toPhone,
         }).catch((e) => console.error('[notify] SMS send failed to', toPhone, e?.message));
       }
     }).catch((e) => console.error('[notify] getTwilioClient error:', e));
+    pendingDispatches.push(smsPromise);
   }
 
-  // 6. WhatsApp (fire-and-forget — skipped in test mode)
+  // 6. WhatsApp (skipped in test mode)
   if (!isTest && userPhone && (payload.sendWhatsApp !== false)) {
-    getTwilioClient().then(({ client, whatsappFromNumber, whatsappEnabled }) => {
+    const whatsAppPromise = getTwilioClient().then(async ({ client, whatsappFromNumber, whatsappEnabled }) => {
       if (client && whatsappFromNumber && whatsappEnabled) {
         const rawPhone = normalizePhoneNumber(userPhone!);
         if (rawPhone) {
           const toWhatsApp = rawPhone.startsWith('whatsapp:') ? rawPhone : `whatsapp:${rawPhone}`;
           const whatsappBody = payload.whatsAppText || payload.smsText || `[FixMart] *${title}*\n\n${body}`;
-          client.messages.create({
+          await client.messages.create({
             body: whatsappBody,
             from: whatsappFromNumber,
             to: toWhatsApp,
@@ -594,9 +604,44 @@ export async function sendNotification(payload: NotifyPayload) {
         }
       }
     }).catch((e) => console.error('[notify] getTwilioClient error for WhatsApp:', e));
+    pendingDispatches.push(whatsAppPromise);
+  }
+
+  if (payload.awaitDelivery && pendingDispatches.length > 0) {
+    await Promise.allSettled(pendingDispatches);
   }
 
   return notification;
+}
+
+/**
+ * sendEmailDirect — directly dispatches an email via configured SMTP and returns delivery outcome.
+ */
+export async function sendEmailDirect(options: {
+  to: string;
+  subject: string;
+  text?: string;
+  html?: string;
+}): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const { mailer, from } = await getMailer();
+    if (!mailer) {
+      return { success: false, error: 'SMTP mailer is not configured or incomplete.' };
+    }
+    const attachments = getEmailAttachments();
+    const info = await mailer.sendMail({
+      from,
+      to: options.to,
+      subject: options.subject,
+      text: options.text || '',
+      html: options.html,
+      attachments,
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (err: any) {
+    console.error(`[notify] sendEmailDirect failed for ${options.to}:`, err?.message || err);
+    return { success: false, error: err?.message || String(err) };
+  }
 }
 
 /**

@@ -9,14 +9,21 @@ import { sendNotification } from '../lib/notify';
 import { dispatchReceiptNotification, generateReceiptData, renderReceiptHtml } from '../lib/receipt';
 import { sanitizePaymentProvider } from './orders';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import {
+  isDummyFlutterwaveKey,
+  getActiveFlutterwaveKey,
+  getActiveFlutterwaveWebhookSecret,
+  verifyFlutterwaveTransaction,
+  getNigerianBanks,
+  resolveBankAccount,
+  initiateBankTransfer,
+  FLUTTERWAVE_BASE_URL,
+} from '../lib/flutterwave';
 
 const router = Router();
 
 // Paystack generic configuration
 const PAYSTACK_BASE_URL = 'https://api.paystack.co';
-
-// Flutterwave generic configuration
-const FLUTTERWAVE_BASE_URL = 'https://api.flutterwave.com/v3';
 
 // Helper to determine the server's base URL
 function getBaseUrl(req: Request): string {
@@ -109,7 +116,7 @@ function verifyOpayWebhookSignature(payload: any, secretKey: string): boolean {
 }
 
 // Shared helper to process payment verification across all providers
-async function processPaymentVerification({
+export async function processPaymentVerification({
   provider,
   reference,
   checkoutType,
@@ -404,8 +411,9 @@ async function processPaymentVerification({
     const funding = await prisma.walletFunding.findUnique({ where: { id } });
     if (!funding) throw new Error('Wallet funding request not found');
 
-    // See the matching guard in the 'order' branch above for why this is needed.
-    if (reference && funding.paymentRef === reference) {
+    // Idempotency guard: only return early if funding is already marked PAID
+    // (Note: /checkout pre-populates funding.paymentRef with txRef while status is still PENDING)
+    if (funding.status === 'PAID') {
       return { type: 'wallet_funding', record: funding, duplicate: true };
     }
 
@@ -1030,7 +1038,7 @@ router.post('/checkout', async (req: Request, res: Response, next: NextFunction)
       }
 
       const txRef = `FLW_${id}_${Date.now()}`;
-      const isDummy = !activeFlutterwaveKey || activeFlutterwaveKey.includes('dummy') || activeFlutterwaveKey.startsWith('FLWSECK_TEST-dummy');
+      const isDummy = isDummyFlutterwaveKey(activeFlutterwaveKey);
 
       if (checkoutType === 'wallet_funding') {
         await prisma.walletFunding.update({
@@ -1437,69 +1445,92 @@ router.get('/flutterwave/verify/:transactionId', async (req: Request, res: Respo
   const { transactionId } = req.params;
 
   try {
-    const flutterwaveSetting = await prisma.appSetting.findUnique({ where: { key: 'flutterwave_secret_key' } });
-    const activeFlutterwaveKey = flutterwaveSetting?.value || process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK_TEST-dummy';
-    const isDummy = !activeFlutterwaveKey || activeFlutterwaveKey.includes('dummy') || activeFlutterwaveKey.startsWith('FLWSECK_TEST-dummy');
+    const activeFlutterwaveKey = await getActiveFlutterwaveKey();
+    const isDummy = isDummyFlutterwaveKey(activeFlutterwaveKey);
 
-    // Sandbox mock mode — ONLY when no real secret key is configured. See
-    // the matching comment on /paystack/verify: /checkout mints the SAME
-    // "FLW_<id>_<timestamp>" txRef for both mock AND real Flutterwave
-    // transactions, so deciding this from the reference's own prefix would
-    // let anyone skip real verification by crafting that prefix themselves.
     if (isDummy) {
       const parts = transactionId.split('_');
-      const id = parts[1];
-      if (!id) return res.status(400).json({ error: 'Invalid reference signature.' });
-
-      const order = await prisma.order.findUnique({ where: { id } });
-      if (order) {
-        const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
-        const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'order', id, chargedAmount });
-        return res.json({ status: 'success', message: 'Order payment verified via Flutterwave sandbox.', ...result });
+      let id = parts[1];
+      if (!id) {
+        const wf = await prisma.walletFunding.findFirst({ where: { paymentRef: transactionId } });
+        if (wf) id = wf.id;
       }
 
-      const booking = await prisma.booking.findUnique({ where: { id } });
-      if (booking) {
-        const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
-        const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'booking', id, chargedAmount });
-        return res.json({ status: 'success', message: 'Booking payment verified via Flutterwave sandbox.', ...result });
-      }
+      if (id) {
+        const order = await prisma.order.findUnique({ where: { id } });
+        if (order) {
+          const chargedAmount = order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount;
+          const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'order', id, chargedAmount });
+          return res.json({ status: 'success', message: 'Order payment verified via Flutterwave sandbox.', ...result });
+        }
 
-      const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
-      if (parcel) {
-        const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
-        return res.json({ status: 'success', message: 'Parcel payment verified via Flutterwave sandbox.', ...result });
-      }
+        const booking = await prisma.booking.findUnique({ where: { id } });
+        if (booking) {
+          const chargedAmount = booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice;
+          const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'booking', id, chargedAmount });
+          return res.json({ status: 'success', message: 'Booking payment verified via Flutterwave sandbox.', ...result });
+        }
 
-      const funding = await prisma.walletFunding.findUnique({ where: { id } });
-      if (funding) {
-        const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'wallet_funding', id, chargedAmount: funding.amount });
-        return res.json({ status: 'success', message: 'Wallet funding verified via Flutterwave sandbox.', ...result });
+        const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
+        if (parcel) {
+          const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'parcel', id, chargedAmount: parcel.totalAmount });
+          return res.json({ status: 'success', message: 'Parcel payment verified via Flutterwave sandbox.', ...result });
+        }
+
+        const funding = await prisma.walletFunding.findUnique({ where: { id } });
+        if (funding) {
+          const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: transactionId, checkoutType: 'wallet_funding', id, chargedAmount: funding.amount });
+          return res.json({ status: 'success', message: 'Wallet funding verified via Flutterwave sandbox.', ...result });
+        }
       }
 
       return res.status(404).json({ error: 'Target record not found for transaction ID.' });
     }
 
-    // Live Flutterwave API verification
-    const response = await axios.get(`${FLUTTERWAVE_BASE_URL}/transactions/${encodeURIComponent(transactionId)}/verify`, {
-      timeout: 10_000,
-      headers: {
-        Authorization: `Bearer ${activeFlutterwaveKey}`,
-      },
-    });
-
-    const data = response.data?.data;
-    if (data && (data.status === 'successful' || data.status === 'success')) {
-      const { checkoutType, id } = data.meta || {};
-      if (!checkoutType || !id) {
-        return res.status(400).json({ error: 'Payment verified but is missing order metadata; cannot fulfil it.' });
-      }
-      const chargedAmount = data.amount;
-      const result = await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: String(transactionId), checkoutType, id, chargedAmount });
-      return res.json({ status: 'success', message: 'Flutterwave payment verified.', ...result });
+    // Live Flutterwave API verification using unified helper (handles both numeric ID and string tx_ref)
+    const verifyResult = await verifyFlutterwaveTransaction(transactionId);
+    if (!verifyResult.successful) {
+      return res.status(400).json({ error: `Payment not successful. Status: ${verifyResult.status || 'failed'}` });
     }
 
-    return res.status(400).json({ error: `Payment not successful. Status: ${data?.status || 'failed'}` });
+    let { checkoutType, id } = verifyResult.meta || {};
+    const txRef = verifyResult.txRef;
+
+    if (!id && txRef) {
+      id = txRef.split('_')[1];
+    }
+
+    if (!id && txRef) {
+      const wf = await prisma.walletFunding.findFirst({ where: { paymentRef: txRef } });
+      if (wf) { id = wf.id; checkoutType = 'wallet_funding'; }
+      else {
+        const ord = await prisma.order.findFirst({ where: { paymentRef: txRef } });
+        if (ord) { id = ord.id; checkoutType = 'order'; }
+        else {
+          const bk = await prisma.booking.findFirst({ where: { paymentRef: txRef } });
+          if (bk) { id = bk.id; checkoutType = 'booking'; }
+          else {
+            const pcl = await prisma.parcelDelivery.findFirst({ where: { paymentRef: txRef } });
+            if (pcl) { id = pcl.id; checkoutType = 'parcel'; }
+          }
+        }
+      }
+    }
+
+    if (!checkoutType || !id) {
+      return res.status(400).json({ error: 'Payment verified with Flutterwave but missing target order/booking metadata.' });
+    }
+
+    const chargedAmount = verifyResult.amount;
+    const result = await processPaymentVerification({
+      provider: 'FLUTTERWAVE',
+      reference: txRef || String(transactionId),
+      checkoutType,
+      id,
+      chargedAmount,
+    });
+
+    return res.json({ status: 'success', message: 'Flutterwave payment verified successfully.', ...result });
   } catch (error: any) {
     next(error);
   }
@@ -1507,43 +1538,47 @@ router.get('/flutterwave/verify/:transactionId', async (req: Request, res: Respo
 
 // Flutterwave Redirect Callback
 router.get('/flutterwave/callback', async (req: Request, res: Response, next: NextFunction) => {
-  const txRef = (req.query.tx_ref || req.query.transaction_id || req.query.reference) as string;
-  const status = req.query.status as string;
+  const status = (req.query.status as string || '').toLowerCase();
+  const txRef = (req.query.tx_ref || req.query.reference) as string;
+  const flwTxId = req.query.transaction_id as string;
+  const lookupRef = txRef || flwTxId;
   const frontendUrl = getFrontendUrl(req);
 
-  if (status === 'cancelled' || !txRef) {
-    return res.redirect(`${frontendUrl}/?payment_status=cancelled`);
+  if (status === 'cancelled') {
+    return res.redirect(`${frontendUrl}/?payment_status=cancelled&ref=${encodeURIComponent(lookupRef || '')}`);
+  }
+
+  if (!lookupRef) {
+    return res.redirect(`${frontendUrl}/?payment_status=failed&error=missing_reference`);
   }
 
   try {
-    let id = txRef.split('_')[1];
+    let id = txRef ? txRef.split('_')[1] : null;
+    let matchedType: string | null = null;
     let chargedAmountOverride: number | null = null;
 
-    const flutterwaveSetting = await prisma.appSetting.findUnique({ where: { key: 'flutterwave_secret_key' } });
-    const activeFlutterwaveKey = flutterwaveSetting?.value || process.env.FLUTTERWAVE_SECRET_KEY || 'FLWSECK_TEST-dummy';
-    const isDummy = !activeFlutterwaveKey || activeFlutterwaveKey.includes('dummy') || activeFlutterwaveKey.startsWith('FLWSECK_TEST-dummy');
+    const activeFlutterwaveKey = await getActiveFlutterwaveKey();
+    const isDummy = isDummyFlutterwaveKey(activeFlutterwaveKey);
 
-    // Whenever a real key is configured, verification with Flutterwave is
-    // mandatory — see the matching comment on /paystack/callback for why
-    // this can't be decided from txRef's own prefix.
     if (!isDummy) {
       try {
-        const verifyRes = await axios.get(`${FLUTTERWAVE_BASE_URL}/transactions/${encodeURIComponent(txRef)}/verify`, {
-          headers: { Authorization: `Bearer ${activeFlutterwaveKey}` },
-          timeout: 10000,
-        });
-        const vStatus = verifyRes.data?.data?.status;
-        if (vStatus !== 'successful' && vStatus !== 'success') {
-          return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl, `Payment status: ${vStatus || 'unknown'}.`));
+        const verifyResult = await verifyFlutterwaveTransaction(flwTxId || txRef);
+        if (!verifyResult.successful) {
+          return res.send(renderFailureHtml('Flutterwave', lookupRef, frontendUrl, `Payment status: ${verifyResult.status || 'unknown'}.`));
         }
-        if (verifyRes.data?.data?.meta?.id) {
-          id = verifyRes.data.data.meta.id;
+
+        if (verifyResult.meta?.id) {
+          id = verifyResult.meta.id;
         }
-        if (verifyRes.data?.data?.amount) {
-          chargedAmountOverride = verifyRes.data.data.amount;
+        if (verifyResult.meta?.checkoutType) {
+          matchedType = verifyResult.meta.checkoutType;
         }
-      } catch (e) {
-        return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl));
+        if (verifyResult.amount) {
+          chargedAmountOverride = verifyResult.amount;
+        }
+      } catch (e: any) {
+        console.error('[Flutterwave callback verification error]:', e?.message || e);
+        return res.send(renderFailureHtml('Flutterwave', lookupRef, frontendUrl, 'Transaction verification failed with Flutterwave.'));
       }
     }
 
@@ -1551,65 +1586,89 @@ router.get('/flutterwave/callback', async (req: Request, res: Response, next: Ne
       id = String(req.query.id);
     }
 
-    if (!id) {
-      const wf = await prisma.walletFunding.findFirst({ where: { paymentRef: txRef } });
+    if (!id && lookupRef) {
+      const wf = await prisma.walletFunding.findFirst({ where: { OR: [{ id: lookupRef }, { paymentRef: lookupRef }, { paymentRef: txRef }] } });
       if (wf) {
         id = wf.id;
+        matchedType = 'wallet_funding';
       } else {
-        const ord = await prisma.order.findFirst({ where: { paymentRef: txRef } });
+        const ord = await prisma.order.findFirst({ where: { OR: [{ id: lookupRef }, { paymentRef: lookupRef }, { paymentRef: txRef }] } });
         if (ord) {
           id = ord.id;
+          matchedType = 'order';
         } else {
-          const bk = await prisma.booking.findFirst({ where: { paymentRef: txRef } });
+          const bk = await prisma.booking.findFirst({ where: { OR: [{ id: lookupRef }, { paymentRef: lookupRef }, { paymentRef: txRef }] } });
           if (bk) {
             id = bk.id;
+            matchedType = 'booking';
           } else {
-            const pcl = await prisma.parcelDelivery.findFirst({ where: { paymentRef: txRef } });
-            if (pcl) id = pcl.id;
-          }
-        }
-      }
-    }
-
-    let matchedType: string | null = null;
-
-    if (id) {
-      const order = await prisma.order.findUnique({ where: { id } });
-      if (order) {
-        const chargedAmount = chargedAmountOverride || (order.isSplitPayment ? (order.amountPaid > 0 ? order.totalAmount - order.amountPaid : order.totalAmount / 2) : order.totalAmount);
-        await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'order', id, chargedAmount });
-        matchedType = 'order';
-      } else {
-        const booking = await prisma.booking.findUnique({ where: { id } });
-        if (booking) {
-          const chargedAmount = chargedAmountOverride || (booking.isSplitPayment ? (booking.amountPaid > 0 ? booking.totalPrice - booking.amountPaid : booking.totalPrice / 2) : booking.totalPrice);
-          await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'booking', id, chargedAmount });
-          matchedType = 'booking';
-        } else {
-          const parcel = await prisma.parcelDelivery.findUnique({ where: { id } });
-          if (parcel) {
-            await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'parcel', id, chargedAmount: chargedAmountOverride || parcel.totalAmount });
-            matchedType = 'parcel';
-          } else {
-            const funding = await prisma.walletFunding.findUnique({ where: { id } });
-            if (funding) {
-              await processPaymentVerification({ provider: 'FLUTTERWAVE', reference: txRef, checkoutType: 'wallet_funding', id, chargedAmount: chargedAmountOverride || funding.amount });
-              matchedType = 'wallet_funding';
+            const pcl = await prisma.parcelDelivery.findFirst({ where: { OR: [{ id: lookupRef }, { paymentRef: lookupRef }, { paymentRef: txRef }] } });
+            if (pcl) {
+              id = pcl.id;
+              matchedType = 'parcel';
             }
           }
         }
       }
-    } else {
-      return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
     }
 
-    if (!matchedType) {
-      return res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl, 'Could not determine which order/booking this payment belongs to.'));
+    if (id && !matchedType) {
+      const ord = await prisma.order.findUnique({ where: { id } });
+      if (ord) matchedType = 'order';
+      else {
+        const bk = await prisma.booking.findUnique({ where: { id } });
+        if (bk) matchedType = 'booking';
+        else {
+          const pcl = await prisma.parcelDelivery.findUnique({ where: { id } });
+          if (pcl) matchedType = 'parcel';
+          else {
+            const wf = await prisma.walletFunding.findUnique({ where: { id } });
+            if (wf) matchedType = 'wallet_funding';
+          }
+        }
+      }
     }
 
-    res.send(await renderPaymentSuccessPage({ checkoutType: matchedType, id, provider: 'Flutterwave', reference: txRef, frontendUrl }));
-  } catch (error) {
-    res.send(renderFailureHtml('Flutterwave', txRef, frontendUrl));
+    if (!id || !matchedType) {
+      return res.send(renderFailureHtml('Flutterwave', lookupRef, frontendUrl, 'Could not determine which order, booking, or wallet top-up this payment belongs to.'));
+    }
+
+    // Process the verified payment
+    let chargedAmount = chargedAmountOverride;
+    if (!chargedAmount) {
+      if (matchedType === 'order') {
+        const o = await prisma.order.findUnique({ where: { id } });
+        if (o) chargedAmount = o.isSplitPayment ? (o.amountPaid > 0 ? o.totalAmount - o.amountPaid : o.totalAmount / 2) : o.totalAmount;
+      } else if (matchedType === 'booking') {
+        const b = await prisma.booking.findUnique({ where: { id } });
+        if (b) chargedAmount = b.isSplitPayment ? (b.amountPaid > 0 ? b.totalPrice - b.amountPaid : b.totalPrice / 2) : b.totalPrice;
+      } else if (matchedType === 'parcel') {
+        const p = await prisma.parcelDelivery.findUnique({ where: { id } });
+        if (p) chargedAmount = p.totalAmount;
+      } else if (matchedType === 'wallet_funding') {
+        const w = await prisma.walletFunding.findUnique({ where: { id } });
+        if (w) chargedAmount = w.amount;
+      }
+    }
+
+    await processPaymentVerification({
+      provider: 'FLUTTERWAVE',
+      reference: txRef || lookupRef,
+      checkoutType: matchedType as any,
+      id,
+      chargedAmount: chargedAmount || 0,
+    });
+
+    res.send(await renderPaymentSuccessPage({
+      checkoutType: matchedType,
+      id,
+      provider: 'Flutterwave',
+      reference: txRef || lookupRef,
+      frontendUrl,
+    }));
+  } catch (error: any) {
+    console.error('[Flutterwave callback error]:', error);
+    res.send(renderFailureHtml('Flutterwave', lookupRef, frontendUrl));
   }
 });
 
@@ -2346,6 +2405,174 @@ router.post('/opay/webhook', async (req: Request, res: Response, next: NextFunct
   } catch (err) {
     console.error('[OPayWebhookError]', err);
     res.json({ code: '00000', message: 'SUCCESS' });
+  }
+});
+
+// ─── FLUTTERWAVE OFFICIAL WEBHOOK ──────────────────────────────────────────────
+router.post('/flutterwave/webhook', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const signature = req.headers['verif-hash'];
+    const webhookSecret = await getActiveFlutterwaveWebhookSecret();
+    const secretKey = await getActiveFlutterwaveKey();
+    const isDummy = isDummyFlutterwaveKey(secretKey);
+
+    // Verify webhook signature if secret configured and not in dummy mode
+    if (!isDummy && webhookSecret) {
+      if (!signature || signature !== webhookSecret) {
+        console.warn('[FlutterwaveWebhook] Invalid verif-hash signature header; rejecting webhook.');
+        return res.status(401).json({ error: 'Invalid webhook signature' });
+      }
+    }
+
+    const payload = req.body;
+    console.log('[FlutterwaveWebhook] Received event:', payload?.event, payload?.['event.type']);
+
+    const event = payload?.event || payload?.['event.type'];
+    const data = payload?.data || {};
+
+    // 1. Charge Completed event
+    if (event === 'charge.completed' || event === 'charge.success') {
+      const status = (data.status || '').toLowerCase();
+      if (status === 'successful' || status === 'success') {
+        const txRef = data.tx_ref;
+        const flwId = data.id;
+        const meta = data.meta || {};
+        let { checkoutType, id } = meta;
+
+        if (!id && txRef) {
+          id = txRef.split('_')[1];
+        }
+
+        if (!id && txRef) {
+          const wf = await prisma.walletFunding.findFirst({ where: { paymentRef: txRef } });
+          if (wf) { id = wf.id; checkoutType = 'wallet_funding'; }
+          else {
+            const ord = await prisma.order.findFirst({ where: { paymentRef: txRef } });
+            if (ord) { id = ord.id; checkoutType = 'order'; }
+            else {
+              const bk = await prisma.booking.findFirst({ where: { paymentRef: txRef } });
+              if (bk) { id = bk.id; checkoutType = 'booking'; }
+              else {
+                const pcl = await prisma.parcelDelivery.findFirst({ where: { paymentRef: txRef } });
+                if (pcl) { id = pcl.id; checkoutType = 'parcel'; }
+              }
+            }
+          }
+        }
+
+        if (id && !checkoutType) {
+          const ord = await prisma.order.findUnique({ where: { id } });
+          if (ord) checkoutType = 'order';
+          else {
+            const bk = await prisma.booking.findUnique({ where: { id } });
+            if (bk) checkoutType = 'booking';
+            else {
+              const pcl = await prisma.parcelDelivery.findUnique({ where: { id } });
+              if (pcl) checkoutType = 'parcel';
+              else {
+                const wf = await prisma.walletFunding.findUnique({ where: { id } });
+                if (wf) checkoutType = 'wallet_funding';
+              }
+            }
+          }
+        }
+
+        if (id && checkoutType) {
+          await processPaymentVerification({
+            provider: 'FLUTTERWAVE',
+            reference: txRef || String(flwId),
+            checkoutType,
+            id,
+            chargedAmount: data.amount || 0,
+          });
+          console.log(`[FlutterwaveWebhook] Successfully processed ${checkoutType} payment: ${id}`);
+        }
+      }
+    }
+
+    // 2. Transfer Completed event (Bank Payout updates)
+    if (event === 'transfer.completed') {
+      const transferRef = data.reference;
+      const transferStatus = (data.status || '').toUpperCase();
+      console.log(`[FlutterwaveWebhook] Transfer event for ref: ${transferRef}, status: ${transferStatus}`);
+
+      if (transferRef) {
+        const parts = transferRef.split('_');
+        const possibleId = parts.length >= 2 && parts[0] === 'TRF' ? parts[1] : transferRef;
+
+        const withdrawal = await prisma.withdrawal.findFirst({
+          where: {
+            OR: [
+              { id: possibleId },
+              { id: transferRef },
+            ]
+          }
+        });
+
+        if (withdrawal) {
+          if (transferStatus === 'SUCCESSFUL') {
+            await prisma.withdrawal.update({
+              where: { id: withdrawal.id },
+              data: { status: 'COMPLETED' },
+            });
+            await prisma.transaction.updateMany({
+              where: { referenceId: withdrawal.id, type: 'WITHDRAWAL' },
+              data: { status: 'COMPLETED' },
+            });
+            console.log(`[FlutterwaveWebhook] Withdrawal ${withdrawal.id} marked COMPLETED.`);
+          } else if (transferStatus === 'FAILED' && withdrawal.status !== 'FAILED') {
+            // Automatic refund to user's wallet
+            await prisma.$transaction([
+              prisma.withdrawal.update({
+                where: { id: withdrawal.id },
+                data: { status: 'FAILED' },
+              }),
+              prisma.wallet.update({
+                where: { id: withdrawal.walletId },
+                data: { balance: { increment: withdrawal.amount } },
+              }),
+              prisma.transaction.create({
+                data: {
+                  walletId: withdrawal.walletId,
+                  amount: withdrawal.amount,
+                  type: 'REFUND',
+                  status: 'COMPLETED',
+                  description: `Refund for failed bank payout to ${withdrawal.bankName} (${data.complete_message || 'Transfer failed'})`,
+                  referenceId: withdrawal.id,
+                },
+              }),
+            ]);
+            console.log(`[FlutterwaveWebhook] Withdrawal ${withdrawal.id} failed; refunded ₦${withdrawal.amount} to wallet.`);
+          }
+        }
+      }
+    }
+
+    return res.status(200).json({ status: 'success' });
+  } catch (err: any) {
+    console.error('[FlutterwaveWebhookError]:', err);
+    return res.status(500).json({ error: 'Webhook processing error' });
+  }
+});
+
+// Supported Banks List
+router.get('/banks', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const banks = await getNigerianBanks();
+    res.json({ success: true, count: banks.length, banks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Resolve Account Number to Beneficiary Name
+router.post('/banks/resolve', async (req: Request, res: Response, next: NextFunction) => {
+  const { accountNumber, bankCode } = req.body;
+  try {
+    const result = await resolveBankAccount(accountNumber, bankCode);
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'Account resolution failed' });
   }
 });
 

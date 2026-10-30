@@ -193,7 +193,7 @@ router.post('/admin/message', auth_1.authenticateToken, (req, res) => __awaiter(
             data: {
                 userId: admin.userId,
                 title: `✅ Dispatched: ${title.trim()}`,
-                body: `Broadcast delivered to ${recipients.length} user(s) (${targetDesc}). Channels: In-App, Push Notifications, Email, SMS.`,
+                body: `Broadcast delivered to ${recipients.length} user(s) (${targetDesc}). Channels: In-App, Push Notifications, Email, SMS, WhatsApp.`,
                 type: 'ADMIN_MESSAGE',
             },
         }).catch((e) => console.error('[admin/message] Admin self-notify error:', e));
@@ -202,13 +202,14 @@ router.post('/admin/message', auth_1.authenticateToken, (req, res) => __awaiter(
             inApp: recipients.length,
             emailQueued: recipients.filter((r) => !!r.email).length,
             smsQueued: recipients.filter((r) => !!r.phone).length,
+            whatsAppQueued: recipients.filter((r) => !!r.phone).length,
             pushQueued: recipients.filter((r) => !!r.pushToken).length,
         };
         res.json({
             success: true,
             recipientCount: recipients.length,
             stats,
-            message: `Message dispatched successfully to ${recipients.length} recipient(s). In-app: ${stats.inApp}, Emails: ${stats.emailQueued}, SMS: ${stats.smsQueued}, Phone Push: ${stats.pushQueued}.`,
+            message: `Message dispatched successfully to ${recipients.length} recipient(s). In-app: ${stats.inApp}, Emails: ${stats.emailQueued}, SMS: ${stats.smsQueued}, WhatsApp: ${stats.whatsAppQueued}, Phone Push: ${stats.pushQueued}.`,
         });
     }
     catch (error) {
@@ -410,6 +411,7 @@ router.post('/admin/campaigns/dispatch', auth_1.authenticateToken, (req, res) =>
             inApp: recipients.length,
             emailQueued: recipients.filter((r) => !!r.email).length,
             smsQueued: recipients.filter((r) => !!r.phone).length,
+            whatsAppQueued: recipients.filter((r) => !!r.phone).length,
             pushQueued: recipients.filter((r) => !!r.pushToken).length,
         };
         // Self-notify the admin
@@ -417,7 +419,7 @@ router.post('/admin/campaigns/dispatch', auth_1.authenticateToken, (req, res) =>
             data: {
                 userId: admin.userId,
                 title: `✅ Campaign Sent: ${campaignId}`,
-                body: `Multi-channel campaign dispatched to ${recipients.length} user(s). In-App: ${stats.inApp}, Emails: ${stats.emailQueued}, Push: ${stats.pushQueued}, SMS: ${stats.smsQueued}.`,
+                body: `Multi-channel campaign dispatched to ${recipients.length} user(s). In-App: ${stats.inApp}, Emails: ${stats.emailQueued}, Push: ${stats.pushQueued}, SMS: ${stats.smsQueued}, WhatsApp: ${stats.whatsAppQueued}.`,
                 type: 'ADMIN_MESSAGE',
             },
         }).catch(() => { });

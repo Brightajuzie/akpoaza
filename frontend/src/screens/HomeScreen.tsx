@@ -77,6 +77,7 @@ export default function HomeScreen({ navigation }: any) {
   const isMobile = width < 768;
   const isCompactHeight = height < 760;  // Devices with <= 5.6" screen height
   const isVeryCompact  = height <= 720;  // Devices with <= 5.3" screen height
+  const isAndroid = Platform.OS === 'android'; // Compact sizing on Android
   const isDark = colorMode === 'dark';
 
   // ── State ────────────────────────────────────────────────────────────────
@@ -284,7 +285,7 @@ export default function HomeScreen({ navigation }: any) {
 
   // ── Sub-renders ──────────────────────────────────────────────────────────
   const slideW = Math.min(width, 1200) - (isMobile ? 24 : 40);
-  const slideH = isDesktop ? 400 : isTablet ? 280 : isVeryCompact ? 120 : isCompactHeight ? 145 : (width < 380 ? 175 : 190);
+  const slideH = isDesktop ? 400 : isTablet ? 280 : isVeryCompact ? 110 : isCompactHeight ? 130 : isAndroid ? 165 : (width < 380 ? 175 : 190);
 
   const renderSlide = (slide: any) => {
     if (slide.imageUrl) {
@@ -434,7 +435,7 @@ export default function HomeScreen({ navigation }: any) {
   );
 
   const renderMobileNavbar = () => (
-    <View style={[styles.mobileNavbar, { backgroundColor: theme.card, borderBottomColor: theme.border }, isCompactHeight && { paddingTop: 8, paddingBottom: 6 }, isVeryCompact && { paddingTop: 5, paddingBottom: 4, paddingHorizontal: 12 }]}>
+    <View style={[styles.mobileNavbar, { backgroundColor: theme.card, borderBottomColor: theme.border }, isAndroid && { paddingTop: 8, paddingBottom: 6 }, isCompactHeight && { paddingTop: 8, paddingBottom: 6 }, isVeryCompact && { paddingTop: 5, paddingBottom: 4, paddingHorizontal: 12 }]}>
       <View style={{ flex: 1, marginRight: 8 }}>
         <TouchableOpacity
           style={styles.navBrand}
@@ -668,7 +669,7 @@ export default function HomeScreen({ navigation }: any) {
         style={[
           styles.heroSection,
           isDesktop && styles.heroSectionDesktop,
-          isCompactHeight && styles.heroSectionCompact,
+          (isAndroid || isCompactHeight) && styles.heroSectionCompact,
           isVeryCompact && styles.heroSectionVeryCompact
         ]}
         start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
@@ -698,7 +699,7 @@ export default function HomeScreen({ navigation }: any) {
             <Text style={[
               styles.heroHeadline,
               { color: isDark ? '#F1F5F9' : '#0F172A' },
-              isCompactHeight && styles.heroHeadlineCompact,
+              (isAndroid || isCompactHeight) && styles.heroHeadlineCompact,
               isVeryCompact && styles.heroHeadlineVeryCompact
             ]}>
               Everything you need.{'\n'}
@@ -707,7 +708,7 @@ export default function HomeScreen({ navigation }: any) {
             <Text style={[
               styles.heroSubline,
               { color: isDark ? '#94A3B8' : '#64748B' },
-              isCompactHeight && styles.heroSublineCompact,
+              (isAndroid || isCompactHeight) && styles.heroSublineCompact,
               isVeryCompact && styles.heroSublineVeryCompact
             ]}>
               Shop products, book verified handymen, request delivery riders — all from one trusted marketplace.
@@ -719,7 +720,7 @@ export default function HomeScreen({ navigation }: any) {
                 style={[
                   styles.heroCtaPrimary,
                   { backgroundColor: theme.primary },
-                  isCompactHeight && styles.heroCtaCompact,
+                  (isAndroid || isCompactHeight) && styles.heroCtaCompact,
                   isVeryCompact && styles.heroCtaVeryCompact
                 ]}
                 onPress={() => navigation.navigate('Products')}
@@ -727,7 +728,7 @@ export default function HomeScreen({ navigation }: any) {
               >
                 <Text style={[
                   styles.heroCtaPrimaryText,
-                  isCompactHeight && styles.heroCtaTextCompact,
+                  (isAndroid || isCompactHeight) && styles.heroCtaTextCompact,
                   isVeryCompact && styles.heroCtaTextVeryCompact
                 ]}>🛍️ Shop Products</Text>
               </TouchableOpacity>
@@ -735,7 +736,7 @@ export default function HomeScreen({ navigation }: any) {
                 style={[
                   styles.heroCtaSecondary,
                   { borderColor: theme.primary + '50', backgroundColor: theme.primary + '10' },
-                  isCompactHeight && styles.heroCtaCompact,
+                  (isAndroid || isCompactHeight) && styles.heroCtaCompact,
                   isVeryCompact && styles.heroCtaVeryCompact
                 ]}
                 onPress={() => navigation.navigate('Services')}
@@ -744,7 +745,7 @@ export default function HomeScreen({ navigation }: any) {
                 <Text style={[
                   styles.heroCtaSecondaryText,
                   { color: theme.primary },
-                  isCompactHeight && styles.heroCtaTextCompact,
+                  (isAndroid || isCompactHeight) && styles.heroCtaTextCompact,
                   isVeryCompact && styles.heroCtaTextVeryCompact
                 ]}>⚡ Book Workman</Text>
               </TouchableOpacity>
@@ -752,7 +753,7 @@ export default function HomeScreen({ navigation }: any) {
           </View>
 
           {/* Right: Quick Action Tiles */}
-          <View style={[styles.heroRight, isDesktop && styles.heroRightDesktop, isVeryCompact ? { marginTop: 6 } : (isCompactHeight && { marginTop: 14 })]}>
+          <View style={[styles.heroRight, isDesktop && styles.heroRightDesktop, isVeryCompact ? { marginTop: 6 } : ((isAndroid || isCompactHeight) && { marginTop: 14 })]}>
             <View style={[styles.quickActionsGrid, !isDesktop && styles.quickActionsGridMobile]}>
               {QUICK_ACTIONS.map((action) => (
                 <TouchableOpacity
@@ -761,7 +762,7 @@ export default function HomeScreen({ navigation }: any) {
                     styles.quickTile,
                     { backgroundColor: isDark ? theme.card : '#FFFFFF', borderColor: isDark ? theme.border : '#E2E8F0' },
                     isDesktop && styles.quickTileDesktop,
-                    isVeryCompact ? styles.quickTileVeryCompact : (isCompactHeight && styles.quickTileCompact)
+                    isVeryCompact ? styles.quickTileVeryCompact : ((isAndroid || isCompactHeight) && styles.quickTileCompact)
                   ]}
                   onPress={() => handleActionPress(action.screen)}
                   activeOpacity={0.82}
@@ -769,27 +770,27 @@ export default function HomeScreen({ navigation }: any) {
                   <View style={[
                     styles.quickTileIcon,
                     { backgroundColor: isDark ? action.bgDark : action.bgLight },
-                    isVeryCompact ? styles.quickTileIconVeryCompact : (isCompactHeight && styles.quickTileIconCompact)
+                    isVeryCompact ? styles.quickTileIconVeryCompact : ((isAndroid || isCompactHeight) && styles.quickTileIconCompact)
                   ]}>
                     <Text style={[
                       styles.quickTileEmoji,
-                      isVeryCompact ? styles.quickTileEmojiVeryCompact : (isCompactHeight && styles.quickTileEmojiCompact)
+                      isVeryCompact ? styles.quickTileEmojiVeryCompact : ((isAndroid || isCompactHeight) && styles.quickTileEmojiCompact)
                     ]}>{action.icon}</Text>
                   </View>
                   <Text style={[
                     styles.quickTileLabel,
                     { color: isDark ? '#F1F5F9' : '#1E293B' },
-                    isVeryCompact ? styles.quickTileLabelVeryCompact : (isCompactHeight && styles.quickTileLabelCompact)
+                    isVeryCompact ? styles.quickTileLabelVeryCompact : ((isAndroid || isCompactHeight) && styles.quickTileLabelCompact)
                   ]}>{action.label}</Text>
                   <View style={[
                     styles.quickTileArrow,
                     { backgroundColor: action.accent + '18' },
-                    isVeryCompact ? styles.quickTileArrowVeryCompact : (isCompactHeight && styles.quickTileArrowCompact)
+                    isVeryCompact ? styles.quickTileArrowVeryCompact : ((isAndroid || isCompactHeight) && styles.quickTileArrowCompact)
                   ]}>
                     <Text style={[
                       styles.quickTileArrowText,
                       { color: action.accent },
-                      isVeryCompact ? styles.quickTileArrowTextVeryCompact : (isCompactHeight && styles.quickTileArrowTextCompact)
+                      isVeryCompact ? styles.quickTileArrowTextVeryCompact : ((isAndroid || isCompactHeight) && styles.quickTileArrowTextCompact)
                     ]}>→</Text>
                   </View>
                 </TouchableOpacity>
@@ -805,7 +806,7 @@ export default function HomeScreen({ navigation }: any) {
     <View style={[
       styles.trustBar,
       { backgroundColor: isDark ? '#1E293B' : '#F8FAFC', borderColor: isDark ? '#334155' : '#E2E8F0' },
-      isVeryCompact ? { paddingVertical: 4 } : (isCompactHeight && { paddingVertical: 8 })
+      isVeryCompact ? { paddingVertical: 4 } : (isAndroid || isCompactHeight ? { paddingVertical: 8 } : undefined)
     ]}>
       {[
         { icon: '✅', val: '10K+', label: 'Orders Delivered' },
@@ -846,7 +847,7 @@ export default function HomeScreen({ navigation }: any) {
     <View style={[
       styles.searchSection,
       isMobile && { paddingHorizontal: 16 },
-      isVeryCompact ? { paddingTop: 6 } : (isCompactHeight && { paddingTop: 10 })
+      isVeryCompact ? { paddingTop: 6 } : (isAndroid || isCompactHeight ? { paddingTop: 10 } : undefined)
     ]}>
       <View style={[
         styles.searchBox,
@@ -1017,8 +1018,8 @@ export default function HomeScreen({ navigation }: any) {
         >
           {promotedProducts.map((product) => {
             const isFeatured = !!product.featured;
-            const cardWidth = isDesktop ? 220 : isTablet ? 190 : isVeryCompact ? 132 : isCompactHeight ? 148 : 165;
-            const imgHeight = isDesktop ? 150 : isTablet ? 135 : isVeryCompact ? 88 : isCompactHeight ? 105 : 120;
+            const cardWidth = isDesktop ? 220 : isTablet ? 190 : isVeryCompact ? 132 : isCompactHeight ? 148 : isAndroid ? 152 : 165;
+            const imgHeight = isDesktop ? 150 : isTablet ? 135 : isVeryCompact ? 88 : isCompactHeight ? 105 : isAndroid ? 108 : 120;
             const rawImgUrl = product.images?.[0]?.url || product.imageUrl;
             const imgUri = rawImgUrl ? (getImageUri(rawImgUrl) || rawImgUrl) : null;
 
@@ -1163,7 +1164,7 @@ export default function HomeScreen({ navigation }: any) {
                 style={[
                   styles.spotCard,
                   { backgroundColor: isDark ? '#1E293B' : '#FFFFFF', borderColor: isDark ? '#334155' : '#E2E8F0' },
-                  isVeryCompact ? { width: 132 } : (isCompactHeight && { width: 148 })
+                  isVeryCompact ? { width: 132 } : (isAndroid || isCompactHeight ? { width: 148 } : undefined)
                 ]}
                 onPress={() => {
                   if (item.itemType === 'product') navigation.navigate('ProductDetail', { productId: item.id });
@@ -1172,9 +1173,9 @@ export default function HomeScreen({ navigation }: any) {
                 activeOpacity={0.88}
               >
                 {spotImgUri ? (
-                  <Image source={{ uri: spotImgUri }} style={[styles.spotImage, isVeryCompact ? { height: 88 } : (isCompactHeight && { height: 105 })]} resizeMode="cover" />
+                  <Image source={{ uri: spotImgUri }} style={[styles.spotImage, isVeryCompact ? { height: 88 } : ((isAndroid || isCompactHeight) && { height: 105 })]} resizeMode="cover" />
                 ) : (
-                  <View style={[styles.spotPlaceholder, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }, isVeryCompact ? { height: 88 } : (isCompactHeight && { height: 105 })]}>
+                  <View style={[styles.spotPlaceholder, { backgroundColor: isDark ? '#334155' : '#F1F5F9' }, isVeryCompact ? { height: 88 } : ((isAndroid || isCompactHeight) && { height: 105 })]}>
                     <Text style={styles.spotPlaceholderIcon}>{item.itemType === 'product' ? '📦' : '⚡'}</Text>
                   </View>
                 )}
@@ -1649,7 +1650,7 @@ const styles = StyleSheet.create({
   navAvatarText: { fontSize: 15, fontWeight: '800' },
 
   // ── Page Layout ───────────────────────────────────────────────────────────
-  pageContent: { paddingBottom: 40 },
+  pageContent: { paddingBottom: Platform.OS === 'android' ? 24 : 40 },
   pageContentWeb: { paddingTop: 0 },
 
   // ── Hero ──────────────────────────────────────────────────────────────────
@@ -1935,7 +1936,7 @@ const styles = StyleSheet.create({
   // ── Slider ────────────────────────────────────────────────────────────────
   sliderSection: {
     marginHorizontal: 20,
-    marginTop: 20,
+    marginTop: Platform.OS === 'android' ? 12 : 20,
     borderRadius: 20,
     overflow: 'hidden',
     shadowOffset: { width: 0, height: 4 },
@@ -1990,7 +1991,7 @@ const styles = StyleSheet.create({
 
   // ── Section ───────────────────────────────────────────────────────────────
   sectionBlock: {
-    marginTop: 28,
+    marginTop: Platform.OS === 'android' ? 18 : 28,
     paddingHorizontal: 20,
   },
   sectionHeader: {
@@ -2050,7 +2051,7 @@ const styles = StyleSheet.create({
   // ── Rider Banner ──────────────────────────────────────────────────────────
   riderBanner: {
     marginHorizontal: 20,
-    marginTop: 20,
+    marginTop: Platform.OS === 'android' ? 12 : 20,
     borderRadius: 20,
     overflow: 'hidden',
   },
@@ -2084,7 +2085,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 20,
-    marginTop: 20,
+    marginTop: Platform.OS === 'android' ? 12 : 20,
     padding: 18,
     borderRadius: 16,
     borderWidth: 1,

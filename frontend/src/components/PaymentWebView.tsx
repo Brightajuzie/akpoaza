@@ -39,10 +39,10 @@ function extractReference(url: string, provider?: string | null): string {
         'PAYSTACK_REF'
       );
     } else if (provider === 'FLUTTERWAVE') {
-      // Flutterwave: ?transaction_id=xxx or ?tx_ref=xxx
+      // Flutterwave: prefer tx_ref (FixMart merchant reference) then transaction_id
       return (
-        parsed.searchParams.get('transaction_id') ||
         parsed.searchParams.get('tx_ref') ||
+        parsed.searchParams.get('transaction_id') ||
         parsed.searchParams.get('reference') ||
         'FLW_REF'
       );
@@ -62,34 +62,26 @@ function extractReference(url: string, provider?: string | null): string {
 
 /**
  * Detects whether a navigation URL signals a successful payment.
- *
- * This used to match any URL that merely *looked like* a gateway callback
- * (e.g. any navigation to `/api/payments/paystack/callback`, regardless of
- * outcome) — but the backend serves that exact same path whether or not it
- * actually verified the payment (see renderSuccessHtml/renderFailureHtml in
- * payments.ts), and `onNavigationStateChange` fires the instant that URL is
- * requested, before the page's own postMessage/redirect JS has run. So the
- * app could show "Payment Successful!" purely because the WebView navigated
- * to a callback-shaped URL, even for a payment the backend had just refused
- * to verify. Every one of those pages' own JS goes on to redirect the
- * WebView to `${frontendUrl}/?payment_status=success|failed|cancelled&ref=…`
- * once the real, verified outcome is known — checking that param is what's
- * actually authoritative.
  */
 function isSuccessUrl(url: string): boolean {
   try {
-    return new URL(url).searchParams.get('payment_status') === 'success';
+    const u = new URL(url);
+    const pStatus = u.searchParams.get('payment_status');
+    const status = (u.searchParams.get('status') || '').toLowerCase();
+    return pStatus === 'success' || status === 'successful' || status === 'success';
   } catch {
-    return url.includes('payment_status=success');
+    return url.includes('payment_status=success') || url.includes('status=successful');
   }
 }
 
 function isCancelUrl(url: string): boolean {
   try {
-    const status = new URL(url).searchParams.get('payment_status');
-    return status === 'cancelled' || status === 'failed';
+    const u = new URL(url);
+    const pStatus = u.searchParams.get('payment_status');
+    const status = (u.searchParams.get('status') || '').toLowerCase();
+    return pStatus === 'cancelled' || pStatus === 'failed' || status === 'cancelled' || status === 'failed';
   } catch {
-    return url.includes('payment_status=cancelled') || url.includes('payment_status=failed');
+    return url.includes('payment_status=cancelled') || url.includes('status=cancelled') || url.includes('payment_status=failed');
   }
 }
 

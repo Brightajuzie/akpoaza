@@ -4,6 +4,13 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { getOrCreateWallet } from '../lib/wallet';
 import { sendNotification } from '../lib/notify';
+import {
+  getNigerianBanks,
+  resolveBankAccount,
+  initiateBankTransfer,
+  verifyFlutterwaveTransaction,
+} from '../lib/flutterwave';
+import { processPaymentVerification } from './payments';
 
 const router = Router();
 
@@ -106,6 +113,27 @@ router.post('/fund', authenticateToken, async (req: AuthRequest, res: Response, 
   }
 });
 
+// Fetch supported Nigerian banks for withdrawals and payouts
+router.get('/banks', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const banks = await getNigerianBanks();
+    res.json({ success: true, count: banks.length, banks });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Verify 10-digit account number with bank and resolve account holder's name
+router.post('/resolve-account', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const { accountNumber, bankCode } = req.body;
+  try {
+    const result = await resolveBankAccount(accountNumber, bankCode);
+    res.json(result);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'Could not resolve bank account details.' });
+  }
+});
+
 // Check & verify funding status for client-side auto-refresh
 router.get('/fund/verify/:idOrRef', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const userId = req.user?.userId;
@@ -124,6 +152,28 @@ router.get('/fund/verify/:idOrRef', authenticateToken, async (req: AuthRequest, 
 
     if (!funding) {
       return res.status(404).json({ error: 'Wallet funding record not found.' });
+    }
+
+    // If still pending, actively verify with payment gateway
+    if (funding.status !== 'PAID' && funding.paymentRef) {
+      try {
+        if (funding.paymentProvider === 'FLUTTERWAVE') {
+          const verifyResult = await verifyFlutterwaveTransaction(funding.paymentRef);
+          if (verifyResult.successful) {
+            await processPaymentVerification({
+              provider: 'FLUTTERWAVE',
+              reference: funding.paymentRef,
+              checkoutType: 'wallet_funding',
+              id: funding.id,
+              chargedAmount: verifyResult.amount || funding.amount,
+            });
+            // Re-fetch updated funding
+            funding = await prisma.walletFunding.findUnique({ where: { id: funding.id } }) || funding;
+          }
+        }
+      } catch (verifyErr) {
+        // Verification attempt failed, continue returning current record
+      }
     }
 
     const wallet = await getOrCreateWallet(userId);
@@ -402,6 +452,47 @@ router.post('/withdraw', authenticateToken, async (req: AuthRequest, res: Respon
       return { updatedWallet, withdrawal };
     });
 
+    // If instant withdrawal, dispatch real transfer via Flutterwave API
+    if (isInstant) {
+      try {
+        const transferRes = await initiateBankTransfer({
+          bankCode: String(bankCode || '044').trim(),
+          accountNumber: String(accountNumber).trim(),
+          amount: netAmount,
+          narration: `FixMart Payout - ${accountNumber}`,
+          reference: `TRF_${result.withdrawal.id}_${Date.now()}`,
+        });
+        console.log(`[Withdrawal] Instant bank payout dispatched: ${transferRes.reference} (ID: ${transferRes.transferId})`);
+      } catch (transferErr: any) {
+        // Rollback deduction if live transfer failed immediately
+        console.error('[Withdrawal Transfer Failed]', transferErr.message);
+        await prisma.$transaction([
+          prisma.wallet.update({
+            where: { id: wallet.id },
+            data: { balance: { increment: numAmount } },
+          }),
+          prisma.withdrawal.update({
+            where: { id: result.withdrawal.id },
+            data: { status: 'FAILED' },
+          }),
+          prisma.transaction.create({
+            data: {
+              walletId: wallet.id,
+              amount: numAmount,
+              type: 'REFUND',
+              status: 'COMPLETED',
+              description: `Refund: transfer rejected by bank (${transferErr.message})`,
+              referenceId: result.withdrawal.id,
+            },
+          }),
+        ]);
+
+        return res.status(400).json({
+          error: `Bank transfer could not be dispatched: ${transferErr.message}. Your wallet balance has not been deducted.`,
+        });
+      }
+    }
+
     // Notify user of successful withdrawal submission
     sendNotification({
       userId,
@@ -426,7 +517,7 @@ router.post('/withdraw', authenticateToken, async (req: AuthRequest, res: Respon
   }
 });
 
-// Admin: Manual trigger to process batch withdrawals (simulates T+1 overnight settlement)
+// Admin: Process batch withdrawals through bank transfers
 router.post('/admin/process-batch-payouts', authenticateToken, async (req: AuthRequest, res: Response, next: NextFunction) => {
   const role = req.user?.role;
   if (role !== 'ADMIN') {
@@ -442,23 +533,63 @@ router.post('/admin/process-batch-payouts', authenticateToken, async (req: AuthR
       return res.json({ success: true, count: 0, message: 'No pending standard withdrawals to process.' });
     }
 
-    const processedIds = pendingWithdrawals.map(w => w.id);
+    let successCount = 0;
+    let failCount = 0;
 
-    await prisma.$transaction([
-      prisma.withdrawal.updateMany({
-        where: { id: { in: processedIds } },
-        data: { status: 'COMPLETED' }
-      }),
-      prisma.transaction.updateMany({
-        where: { referenceId: { in: processedIds }, type: 'WITHDRAWAL' },
-        data: { status: 'COMPLETED' }
-      })
-    ]);
+    for (const w of pendingWithdrawals) {
+      try {
+        await initiateBankTransfer({
+          bankCode: w.bankCode || '044',
+          accountNumber: w.accountNumber || '',
+          amount: w.netAmount,
+          narration: `FixMart Batch Payout - ${w.accountNumber}`,
+          reference: `TRF_${w.id}_${Date.now()}`,
+        });
+
+        await prisma.$transaction([
+          prisma.withdrawal.update({
+            where: { id: w.id },
+            data: { status: 'COMPLETED' },
+          }),
+          prisma.transaction.updateMany({
+            where: { referenceId: w.id, type: 'WITHDRAWAL' },
+            data: { status: 'COMPLETED' },
+          }),
+        ]);
+        successCount++;
+      } catch (err: any) {
+        console.error(`[Batch Payout Failed for ${w.id}]:`, err.message);
+        // Refund failed withdrawal to wallet
+        await prisma.$transaction([
+          prisma.withdrawal.update({
+            where: { id: w.id },
+            data: { status: 'FAILED' },
+          }),
+          prisma.wallet.update({
+            where: { id: w.walletId },
+            data: { balance: { increment: w.amount } },
+          }),
+          prisma.transaction.create({
+            data: {
+              walletId: w.walletId,
+              amount: w.amount,
+              type: 'REFUND',
+              status: 'COMPLETED',
+              description: `Refund: batch payout failed (${err.message})`,
+              referenceId: w.id,
+            },
+          }),
+        ]);
+        failCount++;
+      }
+    }
 
     res.json({
       success: true,
-      count: processedIds.length,
-      message: `Successfully processed ${processedIds.length} standard withdrawals.`,
+      count: pendingWithdrawals.length,
+      successCount,
+      failCount,
+      message: `Processed ${pendingWithdrawals.length} withdrawals: ${successCount} sent to bank, ${failCount} refunded due to bank errors.`,
     });
   } catch (error) {
     next(error);

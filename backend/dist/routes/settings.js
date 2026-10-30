@@ -93,6 +93,12 @@ router.get('/', auth_1.optionalAuthenticateToken, (req, res, next) => __awaiter(
             if (!settingsObj['twilio_from_number'] && process.env.TWILIO_FROM_NUMBER) {
                 settingsObj['twilio_from_number'] = process.env.TWILIO_FROM_NUMBER;
             }
+            if (!settingsObj['twilio_whatsapp_from'] && process.env.TWILIO_WHATSAPP_FROM) {
+                settingsObj['twilio_whatsapp_from'] = process.env.TWILIO_WHATSAPP_FROM;
+            }
+            if (!settingsObj['whatsapp_enabled']) {
+                settingsObj['whatsapp_enabled'] = process.env.WHATSAPP_ENABLED || 'true';
+            }
             settingsObj['smtp_pass_configured'] = (settingsObj['smtp_pass'] || process.env.SMTP_PASS) ? 'true' : 'false';
         }
         res.json(settingsObj);
@@ -200,6 +206,18 @@ router.put('/', auth_1.authenticateToken, (req, res, next) => __awaiter(void 0, 
             process.env.TWILIO_FROM_NUMBER = clean;
             envUpdates['TWILIO_FROM_NUMBER'] = clean;
         }
+        if (updates.twilio_whatsapp_from !== undefined) {
+            const clean = String(updates.twilio_whatsapp_from).trim();
+            updates.twilio_whatsapp_from = clean;
+            process.env.TWILIO_WHATSAPP_FROM = clean;
+            envUpdates['TWILIO_WHATSAPP_FROM'] = clean;
+        }
+        if (updates.whatsapp_enabled !== undefined) {
+            const clean = String(updates.whatsapp_enabled).trim();
+            updates.whatsapp_enabled = clean;
+            process.env.WHATSAPP_ENABLED = clean;
+            envUpdates['WHATSAPP_ENABLED'] = clean;
+        }
         // Remove any special flags from the DB upsert
         delete updates.clear_smtp_pass;
         delete updates.clear_twilio_auth_token;
@@ -290,6 +308,37 @@ router.post('/test-sms', auth_1.authenticateToken, (req, res) => __awaiter(void 
         console.error('[test-sms] Failed to send test SMS:', err);
         res.status(400).json({
             error: (err === null || err === void 0 ? void 0 : err.message) || 'Failed to send test SMS. Please verify your Twilio credentials and recipient phone number.',
+        });
+    }
+}));
+// Send a test WhatsApp message via Twilio (Admin only)
+router.post('/test-whatsapp', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b;
+    const role = (_a = req.user) === null || _a === void 0 ? void 0 : _a.role;
+    if (role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+    }
+    let { recipientPhone } = req.body;
+    if (!recipientPhone) {
+        if ((_b = req.user) === null || _b === void 0 ? void 0 : _b.userId) {
+            const adminUser = yield prisma_1.default.user.findUnique({
+                where: { id: req.user.userId },
+                select: { phone: true },
+            });
+            recipientPhone = adminUser === null || adminUser === void 0 ? void 0 : adminUser.phone;
+        }
+    }
+    if (!recipientPhone) {
+        return res.status(400).json({ error: 'Recipient phone number is required for the test WhatsApp message.' });
+    }
+    try {
+        const result = yield (0, notify_1.sendTestWhatsApp)(recipientPhone);
+        res.json(result);
+    }
+    catch (err) {
+        console.error('[test-whatsapp] Failed to send test WhatsApp message:', err);
+        res.status(400).json({
+            error: (err === null || err === void 0 ? void 0 : err.message) || 'Failed to send test WhatsApp message. Please verify your Twilio credentials and WhatsApp sender number.',
         });
     }
 }));

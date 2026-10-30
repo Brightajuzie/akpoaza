@@ -11,6 +11,7 @@ import {
   sendUserGuideNotification,
   sendWelcomeNotification,
 } from '../lib/notify';
+import { broadcastMondayEngagementMessages } from '../lib/broadcast';
 
 const router = Router();
 
@@ -464,6 +465,30 @@ router.post('/admin/campaigns/dispatch', authenticateToken, async (req: AuthRequ
   } catch (error) {
     console.error('POST /notifications/admin/campaigns/dispatch error:', error);
     res.status(500).json({ error: 'Failed to dispatch campaign' });
+  }
+});
+
+/**
+ * POST /notifications/admin/broadcast-monday-engagement
+ * Admin only — triggers the customized Monday morning engagement campaign to all
+ * Vendors, Customers, Handymen (Artisans), and Riders across WhatsApp, Email, SMS, and In-App.
+ */
+router.post('/admin/broadcast-monday-engagement', authenticateToken, async (req: AuthRequest, res: Response) => {
+  const role = req.user?.role;
+  if (role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Forbidden. Admin access required.' });
+  }
+
+  try {
+    const summary = await broadcastMondayEngagementMessages();
+    res.json({
+      success: true,
+      message: 'Monday engagement messages dispatched successfully across WhatsApp, Email, SMS, and In-App channels.',
+      summary,
+    });
+  } catch (error: any) {
+    console.error('POST /notifications/admin/broadcast-monday-engagement error:', error);
+    res.status(500).json({ error: error.message || 'Failed to dispatch Monday broadcast.' });
   }
 });
 

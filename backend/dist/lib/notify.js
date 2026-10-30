@@ -27,11 +27,13 @@ exports.resetMailer = resetMailer;
 exports.sendTestEmail = sendTestEmail;
 exports.normalizePhoneNumber = normalizePhoneNumber;
 exports.sendTestSms = sendTestSms;
+exports.sendTestWhatsApp = sendTestWhatsApp;
 exports.sendNotification = sendNotification;
 exports.notifyMany = notifyMany;
 exports.sendWelcomeNotification = sendWelcomeNotification;
 exports.sendFirstWeekOfMonthNotification = sendFirstWeekOfMonthNotification;
 exports.sendWeekendNotification = sendWeekendNotification;
+exports.sendSundayWeekendNotification = sendSundayWeekendNotification;
 exports.sendIncompleteRegistrationNotification = sendIncompleteRegistrationNotification;
 exports.sendNonUploadNotification = sendNonUploadNotification;
 exports.sendUserGuideNotification = sendUserGuideNotification;
@@ -61,6 +63,7 @@ function getSmtpConfig() {
                 const keys = [
                     'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from',
                     'twilio_account_sid', 'twilio_auth_token', 'twilio_from_number',
+                    'twilio_whatsapp_from', 'whatsapp_enabled',
                 ];
                 const dbSettings = yield prisma_1.default.appSetting.findMany({
                     where: { key: { in: keys } },
@@ -242,9 +245,21 @@ function getTwilioClient() {
         const sid = s['twilio_account_sid'] || process.env.TWILIO_ACCOUNT_SID;
         const token = s['twilio_auth_token'] || process.env.TWILIO_AUTH_TOKEN;
         const fromNumber = s['twilio_from_number'] || process.env.TWILIO_FROM_NUMBER;
-        if (!sid || !token || !fromNumber)
-            return { client: null, fromNumber: null };
-        return { client: (0, twilio_1.default)(sid, token), fromNumber };
+        const rawWhatsAppFrom = s['twilio_whatsapp_from'] || process.env.TWILIO_WHATSAPP_FROM;
+        const whatsappEnabled = s['whatsapp_enabled'] !== 'false';
+        let whatsappFromNumber = null;
+        if (rawWhatsAppFrom) {
+            whatsappFromNumber = rawWhatsAppFrom.startsWith('whatsapp:')
+                ? rawWhatsAppFrom
+                : `whatsapp:${rawWhatsAppFrom}`;
+        }
+        else if (fromNumber) {
+            whatsappFromNumber = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
+        }
+        if (!sid || !token) {
+            return { client: null, fromNumber: null, whatsappFromNumber: null, whatsappEnabled: false };
+        }
+        return { client: (0, twilio_1.default)(sid, token), fromNumber: fromNumber || null, whatsappFromNumber, whatsappEnabled };
     });
 }
 /**
@@ -269,6 +284,32 @@ function sendTestSms(recipientPhone) {
         return {
             success: true,
             message: `Test SMS dispatched successfully to ${toPhone}! (SID: ${msg.sid})`,
+        };
+    });
+}
+/**
+ * sendTestWhatsApp — sends a verification test WhatsApp message using the configured Twilio WhatsApp credentials.
+ * Returns { success: true, message: string } or throws with error details.
+ */
+function sendTestWhatsApp(recipientPhone) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const { client, whatsappFromNumber } = yield getTwilioClient();
+        if (!client || !whatsappFromNumber) {
+            throw new Error('Twilio WhatsApp credentials incomplete. Please configure Twilio Account SID, Auth Token, and WhatsApp Sender Number.');
+        }
+        const rawPhone = normalizePhoneNumber(recipientPhone);
+        if (!rawPhone) {
+            throw new Error('Please provide a valid recipient phone number.');
+        }
+        const toWhatsApp = rawPhone.startsWith('whatsapp:') ? rawPhone : `whatsapp:${rawPhone}`;
+        const msg = yield client.messages.create({
+            body: `🟢 *[FixMart]* Test WhatsApp Message: Twilio WhatsApp integration verified and active!\n\nTime: ${new Date().toLocaleTimeString()}\nWelcome to FixMart notifications! 🛠️`,
+            from: whatsappFromNumber,
+            to: toWhatsApp,
+        });
+        return {
+            success: true,
+            message: `Test WhatsApp message dispatched successfully to ${toWhatsApp}! (SID: ${msg.sid})`,
         };
     });
 }
@@ -487,6 +528,23 @@ function sendNotification(payload) {
                     }).catch((e) => console.error('[notify] SMS send failed to', toPhone, e === null || e === void 0 ? void 0 : e.message));
                 }
             }).catch((e) => console.error('[notify] getTwilioClient error:', e));
+        }
+        // 6. WhatsApp (fire-and-forget — skipped in test mode)
+        if (!isTest && userPhone && (payload.sendWhatsApp !== false)) {
+            getTwilioClient().then(({ client, whatsappFromNumber, whatsappEnabled }) => {
+                if (client && whatsappFromNumber && whatsappEnabled) {
+                    const rawPhone = normalizePhoneNumber(userPhone);
+                    if (rawPhone) {
+                        const toWhatsApp = rawPhone.startsWith('whatsapp:') ? rawPhone : `whatsapp:${rawPhone}`;
+                        const whatsappBody = payload.whatsAppText || payload.smsText || `[FixMart] *${title}*\n\n${body}`;
+                        client.messages.create({
+                            body: whatsappBody,
+                            from: whatsappFromNumber,
+                            to: toWhatsApp,
+                        }).catch((e) => console.error('[notify] WhatsApp send failed to', toWhatsApp, e === null || e === void 0 ? void 0 : e.message));
+                    }
+                }
+            }).catch((e) => console.error('[notify] getTwilioClient error for WhatsApp:', e));
         }
         return notification;
     });
@@ -830,6 +888,80 @@ function sendWeekendNotification(user) {
     });
 }
 /**
+ * sendSundayWeekendNotification — Customized Sunday & Weekend message sent to all users via email at 6:25 AM every Sunday.
+ */
+function sendSundayWeekendNotification(user) {
+    return __awaiter(this, void 0, void 0, function* () {
+        var _a, _b, _c;
+        const title = `✨ Happy Sunday, ${user.name}! Wishing You a Peaceful & Restful Day`;
+        const body = `Happy Sunday, ${user.name}! Rest, recharge, and spend quality time with loved ones today. If you need any quick household fixes or want to prepare early for the coming week, FixMart's verified artisans and delivery riders are on standby.`;
+        const smsText = `[FixMart] Happy Sunday, ${user.name}! Rest & recharge today while we handle your repairs & errands. Book verified pros or order materials: https://fixmart.com.ng`;
+        const whatsAppText = `✨ *Happy Sunday, ${user.name}!* 🌅\n\nMay your day be peaceful, joyful, and restful! ☕\n\nFixMart is here to help you get ready for a successful week ahead:\n🛠️ *Sunday & Weekend Checklist:*\n• Rest & recharge with family\n• Book verified electricians, plumbers or AC technicians for Monday/Tuesday\n• Order genuine hardware, replacement parts & tools\n• Send urgent packages across town with express dispatch\n\n🔒 *All transactions secured by FixMart Escrow*\n\n👉 *Visit FixMart:* https://fixmart.com.ng`;
+        const customHtml = `
+    <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
+      Hello <strong>${user.name}</strong>,
+    </p>
+    <p style="font-size:15px;color:#334155;line-height:1.6;margin:0 0 20px;">
+      <strong>Happy Sunday from the entire FixMart team!</strong> 🌅 We hope today brings you rest, peace, and precious time with family and loved ones.
+    </p>
+
+    <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:12px;padding:20px;margin:20px 0;">
+      <p style="margin:0 0 12px;font-size:16px;color:#15803D;font-weight:700;">☕ Relax &amp; Prepare for a Winning Week Ahead:</p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;font-size:14px;color:#1E293B;line-height:1.6;">
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 8px 0;width:24px;">🔧</td>
+          <td style="padding:4px 0 8px 0;">
+            <strong>Beat the Monday Rush:</strong> Don't start your new week with leaking taps, faulty ACs, or electrical issues. Book a verified artisan today to arrive at your convenient time.
+          </td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 8px 0;width:24px;">🛒</td>
+          <td style="padding:4px 0 8px 0;">
+            <strong>Genuine Hardware &amp; Supplies:</strong> Browse verified merchants for construction materials, quality electrical fittings, paints, and tools with express doorstep delivery.
+          </td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 8px 0;width:24px;">🛵</td>
+          <td style="padding:4px 0 8px 0;">
+            <strong>Express Sunday Delivery:</strong> Need to send gifts, groceries, packages or tools? Our dispatch riders are active with live GPS tracking.
+          </td>
+        </tr>
+        <tr>
+          <td style="vertical-align:top;padding:4px 8px 8px 0;width:24px;">🛡️</td>
+          <td style="padding:4px 0 8px 0;">
+            <strong>100% Escrow Protected:</strong> Your money stays securely held in FixMart Escrow until your ordered product arrives or service is fully completed and approved by you.
+          </td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="text-align:center;margin:28px 0 16px;">
+      <a href="https://fixmart.com.ng" target="_blank"
+        style="display:inline-block;background:#16A34A;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;box-shadow:0 4px 14px rgba(22,163,74,0.35);">
+        ✨ Explore FixMart Services &amp; Store
+      </a>
+    </div>
+
+    <p style="font-size:13px;color:#64748B;line-height:1.5;text-align:center;margin-top:20px;">
+      Have a blessed Sunday and an extraordinary week ahead! 🌟
+    </p>
+  `;
+        return sendNotification({
+            userId: user.id,
+            title,
+            body,
+            type: 'GENERAL',
+            email: (_a = user.email) !== null && _a !== void 0 ? _a : undefined,
+            phone: (_b = user.phone) !== null && _b !== void 0 ? _b : undefined,
+            pushToken: (_c = user.pushToken) !== null && _c !== void 0 ? _c : undefined,
+            emailSubject: `✨ Happy Sunday, ${user.name}! Rest & Prepare for a Successful Week Ahead`,
+            emailHtml: customHtml,
+            smsText,
+            whatsAppText,
+        });
+    });
+}
+/**
  * sendIncompleteRegistrationNotification — Nudge for users missing phone, address, or KYC.
  */
 function sendIncompleteRegistrationNotification(user) {
@@ -1043,6 +1175,7 @@ function sendDailyVendorProductReminder(user) {
       </a>
     </div>
   `;
+        const whatsAppText = `🌅 *Good morning ${user.name}!* Time to boost your FixMart sales!\n\nCustomers are browsing right now. Keep your store active:\n📦 *Today's Action Checklist:*\n1️⃣ Upload at least 1 new product\n2️⃣ Update stock quantities\n3️⃣ Respond to pending customer orders\n\n👉 *Manage Store:* https://fixmart.com.ng`;
         return sendNotification({
             userId: user.id,
             title,
@@ -1054,6 +1187,7 @@ function sendDailyVendorProductReminder(user) {
             emailSubject: `🌅 Good Morning ${user.name} — Stock Your FixMart Store Today!`,
             emailHtml,
             smsText,
+            whatsAppText,
         });
     });
 }
@@ -1066,6 +1200,7 @@ function sendDailyServicemanUpdateReminder(user) {
         const title = '🔧 Good Morning! Keep Your Service Profile Fresh';
         const body = `Hi ${user.name}, customers check profiles before booking. Update your availability, portfolio photos, and rates today to win more jobs!`;
         const smsText = `[FixMart] Good morning ${user.name}! Update your service profile today — fresh profiles get more bookings. Visit: https://fixmart.com.ng`;
+        const whatsAppText = `🌅 *Good morning ${user.name}!* Keep your FixMart service profile fresh!\n\nHomeowners & contractors are looking for skilled artisans right now:\n🔧 *Today's Action Checklist:*\n1️⃣ Update availability status (Available / Busy)\n2️⃣ Upload new completed job photos\n3️⃣ Check and respond to booking requests\n4️⃣ Verify rates and coverage area\n\n👉 *Update Profile:* https://fixmart.com.ng`;
         const emailHtml = `
     <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
       Good morning, <strong>${user.name}</strong>! 🌅
@@ -1101,6 +1236,7 @@ function sendDailyServicemanUpdateReminder(user) {
             emailSubject: `🌅 Good Morning ${user.name} — Get More Bookings Today on FixMart!`,
             emailHtml,
             smsText,
+            whatsAppText,
         });
     });
 }
@@ -1115,6 +1251,7 @@ function sendDailyCustomerNewProductsAlert(user, newProductCount) {
         const title = `🆕 ${newProductCount} New Product${newProductCount > 1 ? 's' : ''} Just Added on FixMart!`;
         const body = `Good morning ${user.name}! ${newProductCount} new item${newProductCount > 1 ? 's have' : ' has'} been added since yesterday. Shop now for the best deals on building materials, tools & services.`;
         const smsText = `[FixMart] ${newProductCount} new product${newProductCount > 1 ? 's' : ''} added overnight! Shop now: https://fixmart.com.ng`;
+        const whatsAppText = `🌅 *Good morning ${user.name}!* 🛍️\n\n*${newProductCount} new product${newProductCount > 1 ? 's' : ''}* just added to FixMart overnight!\n\nBrowse building materials, tools & artisan services before they sell out.\n\n👉 *Shop Now:* https://fixmart.com.ng`;
         const emailHtml = `
     <p style="font-size:16px;color:#1E293B;line-height:1.6;margin:0 0 16px;">
       Good morning, <strong>${user.name}</strong>! 🌅
@@ -1149,6 +1286,7 @@ function sendDailyCustomerNewProductsAlert(user, newProductCount) {
             emailSubject: `🆕 ${newProductCount} New Product${newProductCount > 1 ? 's' : ''} on FixMart — Shop Now, ${user.name}!`,
             emailHtml,
             smsText,
+            whatsAppText,
         });
     });
 }
