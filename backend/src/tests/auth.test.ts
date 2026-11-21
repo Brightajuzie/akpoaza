@@ -9,11 +9,13 @@ describe('Handyman E-Commerce Backend Integration Tests', () => {
   beforeAll(async () => {
     process.env.NODE_ENV = 'test';
     // Clear out any previous test users if they exist
+    await prisma.review.deleteMany({ where: { author: { email: { startsWith: 'test_' } } } }).catch(() => {});
     await prisma.user.deleteMany({ where: { email: { startsWith: 'test_' } } });
   });
 
   afterAll(async () => {
     // Clean up test users
+    await prisma.review.deleteMany({ where: { author: { email: { startsWith: 'test_' } } } }).catch(() => {});
     await prisma.user.deleteMany({ where: { email: { startsWith: 'test_' } } });
     await prisma.$disconnect();
   });

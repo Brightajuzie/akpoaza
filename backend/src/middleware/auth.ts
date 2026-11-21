@@ -28,7 +28,11 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
 
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
     if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token.' });
+      const isExpired = err.name === 'TokenExpiredError';
+      return res.status(401).json({
+        error: isExpired ? 'Your session has expired. Please log in again.' : 'Invalid session token.',
+        code: isExpired ? 'SESSION_EXPIRED' : 'INVALID_TOKEN',
+      });
     }
     req.user = user;
     next();

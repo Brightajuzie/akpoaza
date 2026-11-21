@@ -146,9 +146,9 @@ const apiClient = axios.create({
 // ---------------------------------------------------------------------------
 // 401 / logout handler
 // ---------------------------------------------------------------------------
-let _unauthorizedHandler: (() => void) | null = null;
+let _unauthorizedHandler: ((reason?: string) => void) | null = null;
 
-export const setUnauthorizedHandler = (handler: () => void): void => {
+export const setUnauthorizedHandler = (handler: (reason?: string) => void): void => {
   _unauthorizedHandler = handler;
 };
 
@@ -180,7 +180,13 @@ apiClient.interceptors.response.use(
       );
       delete apiClient.defaults.headers.common['Authorization'];
       if (_unauthorizedHandler) {
-        _unauthorizedHandler();
+        const data = error.response?.data as any;
+        const reason =
+          data?.error ||
+          (data?.code === 'SESSION_EXPIRED'
+            ? 'Your session has expired. Please log in again.'
+            : 'Session expired. Please log in again.');
+        _unauthorizedHandler(reason);
       }
       return Promise.reject(error);
     }
