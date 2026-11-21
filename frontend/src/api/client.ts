@@ -147,16 +147,27 @@ const apiClient = axios.create({
 // 401 / logout handler
 // ---------------------------------------------------------------------------
 let _unauthorizedHandler: ((reason?: string) => void) | null = null;
+let _activityHandler: (() => void) | null = null;
 
 export const setUnauthorizedHandler = (handler: (reason?: string) => void): void => {
   _unauthorizedHandler = handler;
 };
 
+export const setActivityHandler = (handler: () => void): void => {
+  _activityHandler = handler;
+};
+
 // ---------------------------------------------------------------------------
 // Request interceptor – attach a retry counter so the response interceptor
 // can attempt one automatic retry on transient network failures.
+// Also touches session activity tracker.
 // ---------------------------------------------------------------------------
 apiClient.interceptors.request.use((config: any) => {
+  if (_activityHandler) {
+    try {
+      _activityHandler();
+    } catch {}
+  }
   // Initialise the retry counter on the first attempt
   if (config._retryCount === undefined) {
     config._retryCount = 0;

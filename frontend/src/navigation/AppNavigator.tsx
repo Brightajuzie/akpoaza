@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { navigationRef } from './navigationRef';
 import SafeLogo from '../components/SafeLogo';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -297,7 +298,7 @@ export default function AppNavigator() {
   } as any;
 
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer ref={navigationRef} linking={linking}>
       <Stack.Navigator 
         initialRouteName={isFirstLaunch ? 'Onboarding' : 'Main'}
         screenOptions={{

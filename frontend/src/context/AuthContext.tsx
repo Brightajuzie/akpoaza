@@ -2,13 +2,18 @@ import React, { createContext, useState, useEffect, useCallback, useRef } from '
 import { AppState, AppStateStatus } from 'react-native';
 import Toast from 'react-native-toast-message';
 import * as SecureStore from '../utils/storage';
-import apiClient, { setUnauthorizedHandler } from '../api/client';
+import apiClient, { setUnauthorizedHandler, setActivityHandler } from '../api/client';
 import { registerForPushNotificationsAsync, unregisterPushTokenAsync } from '../utils/pushNotifications';
+import { resetToLogin } from '../navigation/navigationRef';
 
 export const AuthContext = createContext<any>(null);
 
 const BIOMETRIC_TOKEN_KEY = 'biometric_auth_token';
 const BIOMETRIC_ENABLED_KEY = 'biometric_enabled';
+const SESSION_LAST_ACTIVE_KEY = 'session_last_active_timestamp';
+
+// Inactivity timeout: 60 minutes of zero user/network activity while logged in
+const INACTIVITY_TIMEOUT_MS = 60 * 60 * 1000;
 
 /**
  * Robust, cross-platform base64url decoder.
@@ -66,6 +71,19 @@ export const AuthProvider = ({ children }: any) => {
   const [userInfo, setUserInfo] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const isLoggingOutRef = useRef(false);
+  const lastActiveRef = useRef<number>(Date.now());
+
+  // ── Touch / Record Activity to Reset Idle Timer ───────────────────────────
+  const touchSession = useCallback(() => {
+    const now = Date.now();
+    lastActiveRef.current = now;
+    SecureStore.setItemAsync(SESSION_LAST_ACTIVE_KEY, String(now)).catch(() => {});
+  }, []);
+
+  // Register touch session handler with apiClient to keep session active during requests
+  useEffect(() => {
+    setActivityHandler(touchSession);
+  }, [touchSession]);
 
   // ── Logout Function ───────────────────────────────────────────────────────
   // Clears credentials, storage, push tokens, and notifies user if session expired
@@ -82,8 +100,8 @@ export const AuthProvider = ({ children }: any) => {
 
       await SecureStore.deleteItemAsync('userToken');
       await SecureStore.deleteItemAsync('userInfo');
-      // Clear stale biometric token so it doesn't auto-login with expired session
       await SecureStore.deleteItemAsync(BIOMETRIC_TOKEN_KEY);
+      await SecureStore.deleteItemAsync(SESSION_LAST_ACTIVE_KEY);
       await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, 'false');
       delete apiClient.defaults.headers.common['Authorization'];
 
@@ -95,6 +113,9 @@ export const AuthProvider = ({ children }: any) => {
           visibilityTime: 4000,
         });
       }
+
+      // Automatically reset navigation and bring the user to Login screen
+      resetToLogin();
     } catch (e) {
       console.error('[AuthContext] Error during logout', e);
     } finally {
@@ -102,6 +123,29 @@ export const AuthProvider = ({ children }: any) => {
       isLoggingOutRef.current = false;
     }
   }, []);
+
+  // ── Check Session Validity (Token Expiry & Idle Timeout) ─────────────────
+  const checkSessionValidity = useCallback(async () => {
+    if (!userToken) return true;
+
+    // 1. Check if token itself has expired
+    if (isTokenExpired(userToken)) {
+      console.warn('[AuthContext] Token expired — automatically logging off user.');
+      await logout('Your session has expired. Please log in again.');
+      return false;
+    }
+
+    // 2. Check if inactivity timeout exceeded
+    const lastActiveStr = await SecureStore.getItemAsync(SESSION_LAST_ACTIVE_KEY).catch(() => null);
+    const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : lastActiveRef.current;
+    if (lastActive && Date.now() - lastActive > INACTIVITY_TIMEOUT_MS) {
+      console.warn('[AuthContext] Session timed out due to inactivity — automatically logging off.');
+      await logout('Your session timed out due to inactivity. Please log in again.');
+      return false;
+    }
+
+    return true;
+  }, [userToken, logout]);
 
   // ── Register 401/403 API Response Handler ──────────────────────────────────
   useEffect(() => {
@@ -125,6 +169,17 @@ export const AuthProvider = ({ children }: any) => {
             return;
           }
 
+          // Check if previous session timed out from inactivity while app was closed
+          const lastActiveStr = await SecureStore.getItemAsync(SESSION_LAST_ACTIVE_KEY).catch(() => null);
+          if (lastActiveStr) {
+            const lastActive = parseInt(lastActiveStr, 10);
+            if (lastActive && Date.now() - lastActive > INACTIVITY_TIMEOUT_MS) {
+              console.warn('[AuthContext] Stored session exceeded inactivity threshold — logging out.');
+              await logout('Your session timed out due to inactivity. Please log in again.');
+              return;
+            }
+          }
+
           // Set the auth header first so the /me call is authenticated
           apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
@@ -135,6 +190,7 @@ export const AuthProvider = ({ children }: any) => {
             setUserToken(token);
             setUserInfo(freshUser);
             await SecureStore.setItemAsync('userInfo', JSON.stringify(freshUser));
+            touchSession();
             // Register device for push notifications in background
             registerForPushNotificationsAsync().catch(() => {});
           } catch (validationErr: any) {
@@ -147,6 +203,7 @@ export const AuthProvider = ({ children }: any) => {
               console.warn('[AuthContext] Network issue validating token — using cached valid session.');
               setUserToken(token);
               setUserInfo(JSON.parse(user));
+              touchSession();
             }
           }
         }
@@ -158,36 +215,30 @@ export const AuthProvider = ({ children }: any) => {
     };
 
     loadToken();
-  }, [logout]);
+  }, [logout, touchSession]);
 
   // ── Proactive Session Expiry Check on AppState Change (Resume from Background)
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active' && userToken) {
-        if (isTokenExpired(userToken)) {
-          console.warn('[AuthContext] Token expired while app was backgrounded — logging out.');
-          logout('Your session has expired. Please log in again.');
-        }
+        checkSessionValidity();
       }
     };
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => subscription.remove();
-  }, [userToken, logout]);
+  }, [userToken, checkSessionValidity]);
 
   // ── Continuous Periodic Heartbeat Check (Every 15s While App Is Open) ─────
   useEffect(() => {
     if (!userToken) return;
 
     const interval = setInterval(() => {
-      if (isTokenExpired(userToken)) {
-        console.warn('[AuthContext] Session expired during active usage — logging out.');
-        logout('Your session has expired. Please log in again.');
-      }
+      checkSessionValidity();
     }, 15000);
 
     return () => clearInterval(interval);
-  }, [userToken, logout]);
+  }, [userToken, checkSessionValidity]);
 
   // ── Login Function ────────────────────────────────────────────────────────
   const login = async (token: string, user: any) => {
@@ -196,6 +247,7 @@ export const AuthProvider = ({ children }: any) => {
     setUserInfo(user);
     await SecureStore.setItemAsync('userToken', token);
     await SecureStore.setItemAsync('userInfo', JSON.stringify(user));
+    touchSession();
     apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
     // Register device for push notifications in background
     registerForPushNotificationsAsync().catch(() => {});
@@ -206,16 +258,16 @@ export const AuthProvider = ({ children }: any) => {
   // ── Refresh User Info ─────────────────────────────────────────────────────
   const refreshUser = async () => {
     if (!userToken) return null;
-    if (isTokenExpired(userToken)) {
-      logout('Your session has expired. Please log in again.');
-      return null;
-    }
+    const isValid = await checkSessionValidity();
+    if (!isValid) return null;
+
     try {
       const response = await apiClient.get('/auth/me');
       const updatedUser = response.data;
       const mergedUser = { ...userInfo, ...updatedUser };
       setUserInfo(mergedUser);
       await SecureStore.setItemAsync('userInfo', JSON.stringify(mergedUser));
+      touchSession();
       return mergedUser;
     } catch (e) {
       console.error('[AuthContext] Failed to refresh user info', e);
@@ -232,6 +284,8 @@ export const AuthProvider = ({ children }: any) => {
         userToken,
         userInfo,
         isLoading,
+        touchSession,
+        checkSessionValidity,
         isTokenExpired: () => isTokenExpired(userToken),
       }}
     >

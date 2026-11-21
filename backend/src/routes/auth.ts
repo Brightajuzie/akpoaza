@@ -9,6 +9,7 @@ import { OAuth2Client } from 'google-auth-library';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-dummy-key';
+const JWT_EXPIRES_IN = (process.env.JWT_EXPIRES_IN || process.env.SESSION_EXPIRES_IN || '24h') as any;
 
 // Register User
 router.post('/register', async (req, res) => {
@@ -100,7 +101,7 @@ router.post('/register', async (req, res) => {
         const token = jwt.sign(
           { userId: updatedUser.id, role: updatedUser.role },
           JWT_SECRET,
-          { expiresIn: '7d' }
+          { expiresIn: JWT_EXPIRES_IN }
         );
 
         const { passwordHash: _, ...userResponse } = updatedUser;
@@ -211,7 +212,7 @@ router.post('/register', async (req, res) => {
     const token = jwt.sign(
       { userId: newUser.id, role: newUser.role },
       JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: JWT_EXPIRES_IN }
     );
 
     // Send notifications to admins if KYC is pending review
@@ -291,7 +292,7 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       JWT_SECRET,
-      { expiresIn: '30d' }
+      { expiresIn: JWT_EXPIRES_IN }
     );
 
     // Return the full user profile so the client never needs a separate /me call right after login
@@ -435,7 +436,7 @@ router.post('/google', async (req, res) => {
     const token = jwt.sign(
       { userId: user.id, role: user.role },
       JWT_SECRET,
-      { expiresIn: '30d' }
+      { expiresIn: JWT_EXPIRES_IN }
     );
 
     const requiresKYC = (user.role === 'VENDOR' || user.role === 'HANDYMAN' || user.role === 'RIDER' || user.role === 'AGENT') && user.verificationStatus === 'UNVERIFIED';
@@ -787,7 +788,7 @@ router.post('/token/refresh', authenticateToken, async (req: AuthRequest, res) =
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(401).json({ error: 'User not found' });
 
-    const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
     res.json({ token });
   } catch (error) {
     console.error('POST /auth/token/refresh error:', error);
