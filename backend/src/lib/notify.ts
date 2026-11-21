@@ -87,8 +87,10 @@ async function getSmtpConfig(): Promise<{
       }, {} as Record<string, string>);
       _lastSettingsFetch = now;
     } catch (e) {
-      console.warn('[notify] Could not query AppSetting for SMTP:', e);
-      _cachedSettings = {};
+      console.warn('[notify] Could not query AppSetting for SMTP (retaining previous cache):', e);
+      if (!_cachedSettings) {
+        _cachedSettings = {};
+      }
     }
   }
 
